@@ -1,41 +1,42 @@
 # Photorealism Project
 
-Coleção de mods e ferramentas gráficas do Palamar. Os mods `.scs` desta
-coleção são destinados ao Euro Truck Simulator 2; o Photorealism Plugin é o
-componente gráfico compatível com Euro Truck Simulator 2 e American Truck
-Simulator.
+[Leia em português](README.pt-BR.md)
 
-## Componentes
+A collection of graphics mods and tools by Palamar. The `.scs` mods in this
+collection target Euro Truck Simulator 2; Photorealism Plugin is the graphics
+component compatible with Euro Truck Simulator 2 and American Truck Simulator.
 
-- `photorealism-weather` (ETS2): clima, céu, chuva e iluminação;
-- `photorealism-landscape` (ETS2): calibração visual de vegetação e paisagem;
-- `photorealism-lights` (ETS2): flares, iluminação urbana e luzes dos
-  veículos;
-- `photorealism-navigation` (ETS2): variantes Light e Dark da navegação;
-- `photorealism-plugin` (ETS2/ATS): plugin gráfico Direct3D 11 para execução
-  via Proton ou Windows.
+## Components
 
-Cada componente possui seu próprio `README.md`, código-fonte, arquivos de
-construção e validação. Saídas geradas localmente — como `build/`, `dist/`,
-caches, binários, logs e arquivos de depuração — não fazem parte do controle
-de versão.
+- `photorealism-weather` (ETS2): weather, sky, rain and lighting;
+- `photorealism-landscape` (ETS2): vegetation and landscape visual tuning;
+- `photorealism-lights` (ETS2): flares, urban lighting and vehicle lights;
+- `photorealism-navigation` (ETS2): Light and Dark navigation variants;
+- `photorealism-plugin` (ETS2/ATS): Direct3D 11 graphics plugin for Proton or
+  Windows.
 
-## Uso do repositório
+Each component has its own README, source code, build files and validation.
+Locally generated outputs — such as `build/`, `dist/`, caches, binaries, logs
+and debug files — are not tracked by Git.
 
-Os scripts de cada componente geram os pacotes de distribuição localmente.
-Consulte o README do componente correspondente antes de construir ou instalar
-um mod.
+## Repository use
 
-## Terceiros
+Each component's scripts build its distribution packages locally. Read the
+corresponding component README before building or installing a mod.
 
-O plugin inclui o FidelityFX FSR 1 da AMD sob a licença MIT, mantida em
+## Third-party components
+
+The plugin includes AMD FidelityFX FSR 1 under the MIT license, available at
 `photorealism-plugin/third_party/fidelityfx-fsr/LICENSE.txt`.
 
-## Licença
+## License
 
-Os materiais originais do projeto são disponibilizados sob a
-`Photorealism Personal Use License — All Rights Reserved`, disponível em
-`LICENSE`. Ela permite somente uso pessoal e não comercial; os direitos de
-venda, sublicenciamento, distribuição comercial e inclusão em packs pagos são
-reservados exclusivamente a Palamar. Componentes de terceiros permanecem sob
-suas próprias licenças.
+Original project materials are provided under the
+[Photorealism Personal Use License — All Rights Reserved](LICENSE). It allows
+personal, non-commercial use only. Rights to sell, sublicense, distribute
+commercially or include the materials in paid packs are exclusively reserved to
+Palamar. Third-party components remain under their own licenses.
+
+The Portuguese translation is available in [LICENSE.pt-BR.md](LICENSE.pt-BR.md)
+for convenience only. In the event of any conflict, the English `LICENSE`
+prevails.

@@ -1,103 +1,101 @@
 # Photorealism Personal Use License — All Rights Reserved
 
-Copyright (c) 2026 Palamar. Todos os direitos reservados.
+Copyright (c) 2026 Palamar. All rights reserved.
 
-## 1. Objeto
+## 1. Subject Matter
 
-Esta licença regula o uso dos materiais originais do projeto Photorealism,
-incluindo, sem limitação, os mods Photorealism Weather, Landscape, Lights e
-Navigation, o Photorealism Plugin, seus arquivos de configuração, código,
-shaders, documentação, artes e pacotes de distribuição (coletivamente,
-“Materiais Photorealism”).
+This license governs the use of original materials from the Photorealism
+Project, including without limitation the Photorealism Weather, Landscape,
+Lights and Navigation mods; the Photorealism Plugin; and their configuration
+files, code, shaders, documentation, artwork and distribution packages
+(collectively, the “Photorealism Materials”).
 
-## 2. Licença pessoal e não comercial
+## 2. Personal, Non-Commercial License
 
-Sujeito ao cumprimento integral desta licença, Palamar concede ao usuário uma
-licença limitada, pessoal, não exclusiva, intransferível, revogável e sem
-sublicenciamento para instalar e usar os Materiais Photorealism exclusivamente
-para fins pessoais e não comerciais.
+Subject to full compliance with this license, Palamar grants you a limited,
+personal, non-exclusive, non-transferable, revocable and non-sublicensable
+license to install and use the Photorealism Materials solely for personal,
+non-commercial purposes.
 
-O uso autorizado inclui jogar Euro Truck Simulator 2 ou American Truck
-Simulator de forma privada com os Materiais Photorealism instalados, quando o
-componente for compatível com o respectivo jogo.
+Authorized use includes private gameplay in Euro Truck Simulator 2 or American
+Truck Simulator with compatible Photorealism Materials installed.
 
-## 3. Direitos comerciais reservados
+## 3. Commercial Rights Reserved
 
-Todos os direitos comerciais sobre os Materiais Photorealism são exclusiva e
-integralmente reservados a Palamar. Somente Palamar pode autorizar, realizar ou
-licenciar qualquer exploração comercial dos Materiais Photorealism.
+All commercial rights in and to the Photorealism Materials are exclusively and
+fully reserved to Palamar. Only Palamar may authorize, conduct or license any
+commercial exploitation of the Photorealism Materials.
 
-Sem autorização prévia, expressa e escrita de Palamar, é proibido:
+Without Palamar's prior express written authorization, you may not:
 
-- vender, alugar, sublicenciar ou cobrar pelo acesso aos Materiais
-  Photorealism;
-- redistribuir, reupar, espelhar, hospedar ou fornecer os Materiais
-  Photorealism, gratuitos ou pagos;
-- incluir os Materiais Photorealism, total ou parcialmente, em packs, bundles,
-  assinaturas, serviços, mods compilados, produtos ou conteúdos pagos;
-- usar os Materiais Photorealism para publicidade, patrocínio, monetização,
-  promoção comercial ou obtenção de vantagem econômica direta ou indireta;
-- oferecer suporte, instalação, acesso ou distribuição dos Materiais
-  Photorealism como parte de serviço remunerado;
-- remover, ocultar ou alterar avisos de autoria, direitos autorais, marca ou
-  esta licença.
+- sell, rent, sublicense or charge for access to the Photorealism Materials;
+- redistribute, re-upload, mirror, host or provide the Photorealism Materials,
+  whether free of charge or paid;
+- include the Photorealism Materials, in whole or in part, in paid packs,
+  bundles, subscriptions, services, compiled mods, products or content;
+- use the Photorealism Materials for advertising, sponsorship, monetization,
+  commercial promotion or any direct or indirect economic advantage;
+- provide support, installation, access to or distribution of the
+  Photorealism Materials as part of a paid service; or
+- remove, conceal or alter authorship, copyright, trademark or license notices.
 
-## 4. Modificações e obras derivadas
+## 4. Modifications and Derivative Works
 
-É proibido modificar, adaptar, traduzir, descompilar, realizar engenharia
-reversa, extrair, criar obra derivada ou publicar versão alterada dos Materiais
-Photorealism sem autorização prévia, expressa e escrita de Palamar, exceto na
-medida em que uma lei aplicável não permita essa restrição.
+You may not modify, adapt, translate, decompile, reverse engineer, extract,
+create derivative works from, or publish an altered version of the
+Photorealism Materials without Palamar's prior express written authorization,
+except to the extent that applicable law does not permit such a restriction.
 
-## 5. Distribuição oficial
+## 5. Official Distribution
 
-Somente os canais expressamente indicados por Palamar são canais oficiais de
-distribuição. A presença de um arquivo em outro site, fórum, servidor ou pack
-não concede autorização de redistribuição nem cria vínculo com Palamar.
+Only channels expressly identified by Palamar are official distribution
+channels. The presence of a file on another website, forum, server or pack does
+not grant redistribution permission and does not create an affiliation with
+Palamar.
 
-## 6. Componentes e materiais de terceiros
+## 6. Third-Party Components and Materials
 
-Esta licença cobre somente os elementos originais sobre os quais Palamar detém
-direitos autorais. Ela não substitui, restringe ou modifica licenças de
-terceiros.
+This license covers only original elements over which Palamar holds copyright.
+It does not replace, restrict or modify third-party licenses.
 
-Em particular:
+In particular:
 
-- o conteúdo em `photorealism-plugin/third_party/fidelityfx-fsr/` permanece
-  sujeito à licença MIT que o acompanha;
-- marcas, jogos, arquivos-base, assets e demais materiais pertencentes à SCS
-  Software ou a outros titulares continuam sujeitos aos direitos e termos de
-  seus respectivos titulares;
-- esta licença não declara propriedade de Palamar sobre materiais de terceiros
-  nem concede direitos sobre eles.
+- content in `photorealism-plugin/third_party/fidelityfx-fsr/` remains subject
+  to its accompanying MIT license;
+- trademarks, games, base files, assets and other materials owned by SCS
+  Software or other rightsholders remain subject to the rights and terms of
+  their respective rightsholders; and
+- this license does not claim ownership of third-party materials or grant any
+  rights in them.
 
-## 7. Isenção de garantias e limitação de responsabilidade
+## 7. Disclaimer and Limitation of Liability
 
-Os Materiais Photorealism são fornecidos “como estão”, sem garantia expressa ou
-implícita de compatibilidade, disponibilidade, desempenho, ausência de erros
-ou adequação a finalidade específica. Na máxima extensão permitida pela lei
-aplicável, Palamar não será responsável por perdas de dados, danos ao jogo,
-perfil, sistema, hardware, desempenho, lucros cessantes ou danos indiretos
-decorrentes do uso ou da impossibilidade de uso dos Materiais Photorealism.
+The Photorealism Materials are provided “as is”, without express or implied
+warranties of compatibility, availability, performance, error-free operation or
+fitness for a particular purpose. To the maximum extent permitted by applicable
+law, Palamar is not liable for data loss, damage to a game, profile, system or
+hardware, performance issues, lost profits or any indirect damages arising from
+use of or inability to use the Photorealism Materials.
 
-## 8. Rescisão
+## 8. Termination
 
-Esta licença termina automaticamente caso o usuário descumpra qualquer uma de
-suas condições. Após a rescisão, o usuário deve cessar imediatamente o uso dos
-Materiais Photorealism e eliminar todas as cópias sob seu controle, salvo
-obrigações de retenção impostas por lei.
+This license terminates automatically if you breach any of its terms. Upon
+termination, you must immediately stop using the Photorealism Materials and
+delete all copies under your control, except where retention is required by
+law.
 
-## 9. Autorizações comerciais
+## 9. Commercial Authorizations
 
-Qualquer exceção a esta licença, inclusive autorização comercial,
-redistribuição, modificação ou inclusão em pack, só será válida se concedida
-por Palamar por escrito. A ausência de resposta, tolerância ou mera publicação
-em canal público não constitui autorização.
+Any exception to this license, including commercial authorization,
+redistribution, modification or inclusion in a pack, is valid only when granted
+in writing by Palamar. Silence, tolerance or publication through a public
+channel does not constitute authorization.
 
-## 10. Disposições gerais
+## 10. General Terms
 
-Se uma disposição desta licença for considerada inválida ou inexequível, as
-demais disposições permanecerão em vigor. Esta licença não cria sociedade,
-emprego, representação, franquia ou exclusividade entre Palamar e o usuário.
+If any provision of this license is held invalid or unenforceable, the
+remaining provisions remain in effect. This license does not create a
+partnership, employment, agency, franchise or exclusivity relationship between
+Palamar and you.
 
-Versão 1.0 — 25 de agosto de 2026.
+Version 1.0 — August 25, 2026.
