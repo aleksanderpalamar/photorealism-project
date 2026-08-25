@@ -30,3 +30,12 @@ um mod.
 
 O plugin inclui o FidelityFX FSR 1 da AMD sob a licença MIT, mantida em
 `photorealism-plugin/third_party/fidelityfx-fsr/LICENSE.txt`.
+
+## Licença
+
+Os materiais originais do projeto são disponibilizados sob a
+`Photorealism Personal Use License — All Rights Reserved`, disponível em
+`LICENSE`. Ela permite somente uso pessoal e não comercial; os direitos de
+venda, sublicenciamento, distribuição comercial e inclusão em packs pagos são
+reservados exclusivamente a Palamar. Componentes de terceiros permanecem sob
+suas próprias licenças.
