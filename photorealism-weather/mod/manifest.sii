@@ -1,0 +1,18 @@
+SiiNunit
+{
+mod_package : .photorealism
+{
+	package_version: "0.11.0"
+	display_name: "Photorealism"
+	author: "Palamar"
+
+	category[]: "weather_setup"
+	category[]: "graphics"
+
+	icon: "mod_icon.jpg"
+	description_file: "mod_description.txt"
+
+	# Defina somente depois de testar uma versão específica do jogo.
+	# compatible_versions[]: "1.60"
+}
+}

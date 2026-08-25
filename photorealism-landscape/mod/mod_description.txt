@@ -1,0 +1,14 @@
+[white]Photorealism Landscape 0.7
+
+[normal]Projeto dedicado à distância visual e à transição da vegetação no ETS2.
+
+Segunda calibração das árvores:
+- baseline oficial do ETS2 1.60
+- vegetação de detalhe ampliada de 410–460 m para 910–960 m
+- árvores ampliadas de 240–300 m para 420–480 m
+- demais parâmetros globais preservados
+- GPS, clima, chuva e iluminação não modificados
+- compatível com o mod Photorealism principal
+
+[orange]Estado atual:
+[normal]Passe intermediário para ampliar a continuidade das árvores preservando desempenho.

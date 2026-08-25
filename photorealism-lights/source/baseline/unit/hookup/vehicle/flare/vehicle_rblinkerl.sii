@@ -1,0 +1,16 @@
+SiiNunit
+{
+flare_vehicle: flare.vehicle.rblinkerl
+{
+	dir_type: wide
+	light_type: right_blinker
+
+@include "vehicle_spot_blinker_orange.sui"
+
+	model: "/model/flare/uniform_orange.pmd"
+	default_scale: 0.63
+	scale_factor: 6
+
+@include "vehicle_bulb_type_incandescent.sui"
+}
+}

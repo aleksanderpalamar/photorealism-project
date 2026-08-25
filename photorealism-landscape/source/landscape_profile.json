@@ -1,0 +1,8 @@
+{
+  "profile_version": "0.7.0",
+  "game_version": "1.60",
+  "tree_lod_start": 420.0,
+  "tree_lod_end": 480.0,
+  "grass_lod_start": 910.0,
+  "grass_lod_end": 960.0
+}

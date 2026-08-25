@@ -1,0 +1,16 @@
+SiiNunit
+{
+mod_package : .pr_nav
+{
+	package_version: "0.1.0"
+	display_name: "Photorealism Navigation"
+	author: "Palamar"
+
+	category[]: "ui"
+
+	icon: "mod_icon.jpg"
+	description_file: "mod_description.txt"
+	compatible_versions[]: "1.60.*"
+}
+}
+

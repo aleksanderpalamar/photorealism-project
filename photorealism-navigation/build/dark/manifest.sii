@@ -1,0 +1,15 @@
+SiiNunit
+{
+mod_package : .pr_nav_d
+{
+	package_version: "0.2.0"
+	display_name: "Photorealism Navigation - Dark"
+	author: "Palamar"
+
+	category[]: "ui"
+
+	icon: "mod_icon.jpg"
+	description_file: "mod_description.txt"
+	compatible_versions[]: "1.60.*"
+}
+}

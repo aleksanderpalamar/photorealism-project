@@ -1,0 +1,14 @@
+[white]Photorealism Navigation 0.1
+
+[normal]Módulo dedicado à aparência e à legibilidade do GPS e dos mapas do ETS2.
+
+Estrutura inicial:
+- baseline oficial do ETS2 1.60
+- calibração isolada de cores e opacidade da navegação
+- nenhuma textura ou mapa modificado
+- clima, paisagem e jogabilidade preservados
+- compatível com os módulos Photorealism e Photorealism Landscape
+
+[orange]Estado atual:
+[normal]Perfil baseline, ainda sem alteração visual do GPS.
+

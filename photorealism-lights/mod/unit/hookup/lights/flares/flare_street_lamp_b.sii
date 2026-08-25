@@ -1,0 +1,9 @@
+SiiNunit
+{
+flare_lamp : flare.street.lamp.b
+{
+	dir_type: all
+	model: "/model/flare/street_lamp_b.pmd"
+	scale_factor: 2.3
+}
+}

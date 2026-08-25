@@ -1,0 +1,2121 @@
+SiiNunit
+{
+flare_traffic_light: flare.traffic.green
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 120, 50)
+	diffuse_color: (25, 120, 100)
+	specular_color: (25, 120, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+
+	fade_distance: 200
+	fade_span: 100
+
+	lamp_color_slot: green
+	semaphore_states[]: green
+	model: "/model/flare/tr_green.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.green.from.red
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 120, 50)
+	diffuse_color: (25, 120, 100)
+	specular_color: (25, 120, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+
+	fade_distance: 200
+	fade_span: 100
+
+	lamp_color_slot: green
+	semaphore_states[]: green
+	semaphore_states[]: orange_to_green
+	model: "/model/flare/tr_green.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.green.trans
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 120, 50)
+	diffuse_color: (25, 120, 100)
+	specular_color: (25, 120, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+
+	fade_distance: 200
+	fade_span: 100
+
+	blink_delay_on: 0.5
+	blink_delay_off: 0.5
+	blink_cycle_shift: 0.5
+
+	lamp_color_slot: green
+	semaphore_states[]: green_trans
+
+	model: "/model/flare/tr_green.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.red
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 100)
+	diffuse_color: (25, 0, 100)
+	specular_color: (25, 0, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 6
+	model: "/model/flare/tr_red.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.red.only
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 100)
+	diffuse_color: (25, 0, 100)
+	specular_color: (25, 0, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 2
+	model: "/model/flare/tr_red.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.red.blink
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 100)
+	diffuse_color: (25, 0, 100)
+	specular_color: (25, 0, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+
+	lamp_color_slot: red
+	lamp_color_index: 0
+	semaphore_states[]: red
+	semaphore_states[]: orange_to_red
+	semaphore_states[]: orange_to_green
+
+	blink_delay_on: 0.5
+	blink_delay_off: 0.5
+	model: "/model/flare/tr_red.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.red.blink.shift
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 100)
+	diffuse_color: (25, 0, 100)
+	specular_color: (25, 0, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 7
+	blink_delay_on: 0.5
+	blink_delay_off: 0.5
+	blink_cycle_shift: 0.5
+	model: "/model/flare/tr_red.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.red.blink.fast
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 100)
+	diffuse_color: (25, 0, 100)
+	specular_color: (25, 0, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 7
+	blink_delay_on: 0.35
+	blink_delay_off: 0.35
+	blink_cycle_shift: 0.5
+	model: "/model/flare/tr_red.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.red.blink.shift.slot1
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 100)
+	diffuse_color: (25, 0, 100)
+	specular_color: (25, 0, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+
+	lamp_color_slot: orange		# 'orange' slot will blink
+	lamp_color_index: 0		# 'red' color will be used for 'orange' slot
+	semaphore_states[]: red
+	semaphore_states[]: orange_to_red
+	semaphore_states[]: orange_to_green
+
+	blink_delay_on: 0.5
+	blink_delay_off: 0.5
+	blink_cycle_shift: 0.5
+	model: "/model/flare/tr_red.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.white.blink.shift.slot2
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 9)
+	diffuse_color: (25, 0, 19)
+	specular_color: (25, 0, 19)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+
+	lamp_color_slot: green		# 'green' slot will blink
+	lamp_color_index: 3		# 'white' color will be used for 'green' slot
+	semaphore_states[]: green
+
+	blink_delay_on: 0.5
+	blink_delay_off: 0.5
+	blink_cycle_shift: 0.5
+	model: "/model/flare/tr_white.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.yellow.blink.shift.slot2
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 48, 50)
+	diffuse_color: (25, 48, 100)
+	specular_color: (25, 48, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+
+	lamp_color_slot: green		# 'green' slot will blink
+	lamp_color_index: 1		# 'orange' color will be used for 'green' slot
+	semaphore_states[]: green
+
+	blink_delay_on: 0.5
+	blink_delay_off: 0.5
+	blink_cycle_shift: 0.5
+	model: "/model/flare/tr_yellow.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.yellow
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 48, 50)
+	diffuse_color: (25, 48, 100)
+	specular_color: (25, 48, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 5
+	model: "/model/flare/tr_yellow.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.yellow.to.red
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 48, 50)
+	diffuse_color: (25, 48, 100)
+	specular_color: (25, 48, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	lamp_color_slot: orange
+	semaphore_states[]: orange_to_red
+	model: "/model/flare/tr_yellow.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.yellow.blink
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 48, 50)
+	diffuse_color: (25, 48, 100)
+	specular_color: (25, 48, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 5
+	blink_delay_on: 0.5
+	blink_delay_off: 0.5
+	model: "/model/flare/tr_yellow.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.yellow.blink.sleep
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 48, 50)
+	diffuse_color: (25, 48, 100)
+	specular_color: (25, 48, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 32
+	blink_delay_on: 1.0
+	blink_delay_off: 1.0
+	model: "/model/flare/tr_yellow.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.white.blink
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 9)
+	diffuse_color: (25, 0, 19)
+	specular_color: (25, 0, 19)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 8
+	blink_delay_on: 0.5
+	blink_delay_off: 0.5
+	model: "/model/flare/tr_white.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.white.blink.long
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 9)
+	diffuse_color: (25, 0, 19)
+	specular_color: (25, 0, 19)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 8
+	blink_delay_on: 0.8
+	blink_delay_off: 0.8
+	model: "/model/flare/tr_white.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.white.blink.short
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 9)
+	diffuse_color: (25, 0, 19)
+	specular_color: (25, 0, 19)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 8
+	blink_delay_on: 0.3
+	blink_delay_off: 1.1
+	model: "/model/flare/tr_white.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.white.r
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 9)
+	diffuse_color: (25, 0, 19)
+	specular_color: (25, 0, 19)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	
+	model: "/model/flare/tr_red_tram.pmd"
+	scale_factor: 2
+
+	semaphore_states[]: red
+
+	lamp_color_slot: red
+	lamp_color_index: 3
+}
+
+flare_traffic_light: flare.traffic.white.o
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 9)
+	diffuse_color: (25, 0, 19)
+	specular_color: (25, 0, 19)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	
+	model: "/model/flare/tr_yellow_tram.pmd"
+	scale_factor: 2
+
+	semaphore_states[]: orange_to_red
+	semaphore_states[]: orange_to_green
+
+	lamp_color_slot: orange
+	lamp_color_index: 3
+}
+
+flare_traffic_light: flare.traffic.white.g
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 9)
+	diffuse_color: (25, 0, 19)
+	specular_color: (25, 0, 19)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	
+	model: "/model/flare/tr_green_tram.pmd"
+	scale_factor: 2
+
+	semaphore_states[]: green
+
+	lamp_color_slot: green
+	lamp_color_index: 3
+}
+
+flare_traffic_light: flare.traffic.white.g.slot1
+{
+    setup: lumen_hue_saturation
+    ambient_color: (0, 0, 9)
+    diffuse_color: (25, 0, 19)
+    specular_color: (25, 0, 19)
+
+    type: spot
+
+    range: 30.0
+    cut_range: 10.0
+    inner_angle: 2.0
+    outer_angle: 110.0
+    forward_distance: false
+
+    dir_type: angle
+    flare_inner_angle: 40.0
+    flare_outer_angle: 110.0
+
+    pitch_offset: -65
+    fade_distance: 200
+    fade_span: 100
+
+    model: "/model/flare/tr_white_toll.pmd"
+    scale_factor: 2
+
+    semaphore_states[]: green
+
+    lamp_color_slot: orange
+    lamp_color_index: 3
+}
+
+flare_traffic_light: flare.traffic.tram.r
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 9)
+	diffuse_color: (25, 0, 19)
+	specular_color: (25, 0, 19)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	
+	model: "/model/flare/tr_yellow_s.pmd"
+	scale_factor: 2
+
+	semaphore_states[]: red
+
+	lamp_color_slot: red
+	lamp_color_index: 1
+}
+
+flare_traffic_light: flare.traffic.tram.o
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 9)
+	diffuse_color: (25, 0, 19)
+	specular_color: (25, 0, 19)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	
+	model: "/model/flare/tr_yellow_s.pmd"
+	scale_factor: 2
+
+	semaphore_states[]: green
+	semaphore_states[]: orange_to_green
+	semaphore_states[]: orange_to_red
+
+	lamp_color_slot: orange
+	lamp_color_index: 1
+}
+
+flare_traffic_light: flare.traffic.tram.g
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 9)
+	diffuse_color: (25, 0, 19)
+	specular_color: (25, 0, 19)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	
+	model: "/model/flare/tr_yellow_s.pmd"
+	scale_factor: 2
+
+	semaphore_states[]: green
+	semaphore_states[]: orange_to_green
+	semaphore_states[]: orange_to_red
+
+	lamp_color_slot: green
+	lamp_color_index: 1
+}
+
+flare_traffic_light: flare.traffic.tram.r.blk
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 9)
+	diffuse_color: (25, 0, 19)
+	specular_color: (25, 0, 19)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	
+	model: "/model/flare/tr_yellow_tram_y.pmd"
+	scale_factor: 2
+
+	semaphore_states[]: red
+
+	lamp_color_slot: red
+	lamp_color_index: 1
+}
+
+flare_traffic_light: flare.traffic.tram.g.blk
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 9)
+	diffuse_color: (25, 0, 19)
+	specular_color: (25, 0, 19)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	
+	model: "/model/flare/tr_green_tram_y.pmd"
+	scale_factor: 2
+
+	semaphore_states[]: green
+	semaphore_states[]: orange_to_green
+	semaphore_states[]: orange_to_red
+
+	lamp_color_slot: green
+	lamp_color_index: 1
+}
+
+flare_traffic_light: flare.traffic.yellow.blink.uk
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 48, 50)
+	diffuse_color: (25, 48, 100)
+	specular_color: (25, 48, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 1
+	blink_delay_on: 10000.0
+	blink_delay_off: 10000
+	model: "/model/flare/tr_yellow.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.red.blink.uk
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 100)
+	diffuse_color: (25, 0, 100)
+	specular_color: (25, 0, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 7
+	blink_delay_on: 0.5
+	blink_delay_off: 0.5
+	blink_cycle_shift: 1.0
+	model: "/model/flare/tr_red.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.red.blink.shift.uk
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 100)
+	diffuse_color: (25, 0, 100)
+	specular_color: (25, 0, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 7
+	blink_delay_on: 0.5
+	blink_delay_off: 0.5
+	blink_cycle_shift: 1.5
+	model: "/model/flare/tr_red.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.red.toll
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 100)
+	diffuse_color: (25, 0, 100)
+	specular_color: (25, 0, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 7
+	model: "/model/flare/tr_red.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.yellow.blink.fr
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 48, 50)
+	diffuse_color: (25, 48, 100)
+	specular_color: (25, 48, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 8
+	blink_delay_on: 1.0
+	blink_delay_off: 1.0
+	model: "/model/flare/tr_yellow.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.yellow.left.lv
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 48, 50)
+	diffuse_color: (25, 48, 100)
+	specular_color: (25, 48, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 5
+	model: "/model/flare/tr_yellow_left_lv.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.yellow.right.lv
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 48, 50)
+	diffuse_color: (25, 48, 100)
+	specular_color: (25, 48, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 5
+	model: "/model/flare/tr_yellow_right_lv.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.yellow.left.lt
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 48, 50)
+	diffuse_color: (25, 48, 100)
+	specular_color: (25, 48, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 5
+	model: "/model/flare/tr_yellow_left_lt.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.yellow.right.lt
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 48, 50)
+	diffuse_color: (25, 48, 100)
+	specular_color: (25, 48, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 5
+	model: "/model/flare/tr_yellow_right_lt.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.yellow.left.est
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 48, 50)
+	diffuse_color: (25, 48, 100)
+	specular_color: (25, 48, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 5
+	model: "/model/flare/tr_yellow_left_est.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.yellow.right.est
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 48, 50)
+	diffuse_color: (25, 48, 100)
+	specular_color: (25, 48, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 5
+	model: "/model/flare/tr_yellow_right_est.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.yellow.left.ru
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 48, 50)
+	diffuse_color: (25, 48, 100)
+	specular_color: (25, 48, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 5
+	model: "/model/flare/tr_yellow_left_ru.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.yellow.right.ru
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 48, 50)
+	diffuse_color: (25, 48, 100)
+	specular_color: (25, 48, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 5
+	model: "/model/flare/tr_yellow_right_ru.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.yellow.left.fi
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 48, 50)
+	diffuse_color: (25, 48, 100)
+	specular_color: (25, 48, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 5
+	model: "/model/flare/tr_yellow_left_fi.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.yellow.right.fi
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 48, 50)
+	diffuse_color: (25, 48, 100)
+	specular_color: (25, 48, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 5
+	model: "/model/flare/tr_yellow_right_fi.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.red.left.lv
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 100)
+	diffuse_color: (25, 0, 100)
+	specular_color: (25, 0, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 6
+	model: "/model/flare/tr_red_left_lv.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.red.right.lv
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 100)
+	diffuse_color: (25, 0, 100)
+	specular_color: (25, 0, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 6
+	model: "/model/flare/tr_red_right_lv.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.red.left.lt
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 100)
+	diffuse_color: (25, 0, 100)
+	specular_color: (25, 0, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 6
+	model: "/model/flare/tr_red_left_lt.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.red.right.lt
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 100)
+	diffuse_color: (25, 0, 100)
+	specular_color: (25, 0, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 6
+	model: "/model/flare/tr_red_right_lt.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.red.left.est
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 100)
+	diffuse_color: (25, 0, 100)
+	specular_color: (25, 0, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 6
+	model: "/model/flare/tr_red_left_est.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.red.right.est
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 100)
+	diffuse_color: (25, 0, 100)
+	specular_color: (25, 0, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 6
+	model: "/model/flare/tr_red_right_est.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.red.left.ru
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 100)
+	diffuse_color: (25, 0, 100)
+	specular_color: (25, 0, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 6
+	model: "/model/flare/tr_red_left_ru.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.red.right.ru
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 100)
+	diffuse_color: (25, 0, 100)
+	specular_color: (25, 0, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 6
+	model: "/model/flare/tr_red_right_ru.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.red.right.fi
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 100)
+	diffuse_color: (25, 0, 100)
+	specular_color: (25, 0, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 6
+	model: "/model/flare/tr_red_right_fi.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.red.left.fi
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 100)
+	diffuse_color: (25, 0, 100)
+	specular_color: (25, 0, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 6
+	model: "/model/flare/tr_red_left_fi.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.green.left.est
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 120, 50)
+	diffuse_color: (25, 120, 100)
+	specular_color: (25, 120, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+
+	fade_distance: 200
+	fade_span: 100
+
+	lamp_color_slot: green
+	semaphore_states[]: green
+
+	model: "/model/flare/tr_green_left_est.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.green.trans.left.est
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 120, 50)
+	diffuse_color: (25, 120, 100)
+	specular_color: (25, 120, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+
+	fade_distance: 200
+	fade_span: 100
+
+	blink_delay_on: 0.5
+	blink_delay_off: 0.5
+	blink_cycle_shift: 0.5
+
+	lamp_color_slot: green
+	semaphore_states[]: green_trans
+
+	model: "/model/flare/tr_green_left_est.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.green.right.est
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 120, 50)
+	diffuse_color: (25, 120, 100)
+	specular_color: (25, 120, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+
+	fade_distance: 200
+	fade_span: 100
+
+	lamp_color_slot: green
+	semaphore_states[]: green
+
+	model: "/model/flare/tr_green_right_est.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.green.trans.right.est
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 120, 50)
+	diffuse_color: (25, 120, 100)
+	specular_color: (25, 120, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+
+	fade_distance: 200
+	fade_span: 100
+
+	blink_delay_on: 0.5
+	blink_delay_off: 0.5
+	blink_cycle_shift: 0.5
+
+	lamp_color_slot: green
+	semaphore_states[]: green_trans
+
+	model: "/model/flare/tr_green_right_est.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.green.left.ru
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 120, 50)
+	diffuse_color: (25, 120, 100)
+	specular_color: (25, 120, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+
+	fade_distance: 200
+	fade_span: 100
+
+	lamp_color_slot: green
+	semaphore_states[]: green
+
+	model: "/model/flare/tr_green_left_ru.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.green.trans.left.ru
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 120, 50)
+	diffuse_color: (25, 120, 100)
+	specular_color: (25, 120, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+
+	fade_distance: 200
+	fade_span: 100
+
+	blink_delay_on: 0.5
+	blink_delay_off: 0.5
+	blink_cycle_shift: 0.5
+
+	lamp_color_slot: green
+	semaphore_states[]: green_trans
+
+	model: "/model/flare/tr_green_left_ru.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.green.right.ru
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 120, 50)
+	diffuse_color: (25, 120, 100)
+	specular_color: (25, 120, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+
+	fade_distance: 200
+	fade_span: 100
+
+	lamp_color_slot: green
+	semaphore_states[]: green
+
+	model: "/model/flare/tr_green_right_ru.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.green.trans.right.ru
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 120, 50)
+	diffuse_color: (25, 120, 100)
+	specular_color: (25, 120, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+
+	fade_distance: 200
+	fade_span: 100
+
+	blink_delay_on: 0.5
+	blink_delay_off: 0.5
+	blink_cycle_shift: 0.5
+
+	lamp_color_slot: green
+	semaphore_states[]: green_trans
+
+	model: "/model/flare/tr_green_right_ru.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.red.left.au
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 100)
+	diffuse_color: (25, 0, 100)
+	specular_color: (25, 0, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 6
+	model: "/model/flare/tr_red_left_au.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.yellow.left.au
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 48, 50)
+	diffuse_color: (25, 48, 100)
+	specular_color: (25, 48, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 5
+	model: "/model/flare/tr_yellow_left_au.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.green.left.au
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 120, 50)
+	diffuse_color: (25, 120, 100)
+	specular_color: (25, 120, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+
+	fade_distance: 200
+	fade_span: 100
+
+	lamp_color_slot: green
+	semaphore_states[]: green
+
+	model: "/model/flare/tr_green_left_au.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.green.trans.left.au
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 120, 50)
+	diffuse_color: (25, 120, 100)
+	specular_color: (25, 120, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+
+	fade_distance: 200
+	fade_span: 100
+
+	blink_delay_on: 0.5
+	blink_delay_off: 0.5
+	blink_cycle_shift: 0.5
+
+	lamp_color_slot: green
+	semaphore_states[]: green_trans
+
+	model: "/model/flare/tr_green_left_au.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.yellow.left.de
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 48, 50)
+	diffuse_color: (25, 48, 100)
+	specular_color: (25, 48, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 5
+	model: "/model/flare/tr_yellow_left_de.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.red.left.de
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 100)
+	diffuse_color: (25, 0, 100)
+	specular_color: (25, 0, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 6
+	model: "/model/flare/tr_red_left_de.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.green.left.de
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 120, 50)
+	diffuse_color: (25, 120, 100)
+	specular_color: (25, 120, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+
+	fade_distance: 200
+	fade_span: 100
+
+	lamp_color_slot: green
+	semaphore_states[]: green
+
+	model: "/model/flare/tr_green_left_de.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.red.left.ch
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 0, 100)
+	diffuse_color: (25, 0, 100)
+	specular_color: (25, 0, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 6
+	model: "/model/flare/tr_red_left_ch.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.yellow.left.ch
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 48, 50)
+	diffuse_color: (25, 48, 100)
+	specular_color: (25, 48, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+	fade_distance: 200
+	fade_span: 100
+	active_state: 5
+	model: "/model/flare/tr_yellow_left_ch.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.green.left.ch
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 120, 50)
+	diffuse_color: (25, 120, 100)
+	specular_color: (25, 120, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+
+	fade_distance: 200
+	fade_span: 100
+
+	lamp_color_slot: green
+	semaphore_states[]: green
+
+	model: "/model/flare/tr_green_left_ch.pmd"
+	scale_factor: 2
+}
+
+flare_traffic_light: flare.traffic.green.trans.left.ch
+{
+	setup: lumen_hue_saturation
+	ambient_color: (0, 120, 50)
+	diffuse_color: (25, 120, 100)
+	specular_color: (25, 120, 100)
+
+	type: spot
+
+	range: 30.0
+	cut_range: 10.0
+	inner_angle: 2.0
+	outer_angle: 110.0
+	forward_distance: false
+
+	dir_type: angle
+	flare_inner_angle: 40.0
+	flare_outer_angle: 110.0
+
+	pitch_offset: -65
+
+	fade_distance: 200
+	fade_span: 100
+
+	blink_delay_on: 0.5
+	blink_delay_off: 0.5
+	blink_cycle_shift: 0.5
+
+	lamp_color_slot: green
+	semaphore_states[]: green_trans
+
+	model: "/model/flare/tr_green_left_ch.pmd"
+	scale_factor: 2
+}
+
+}

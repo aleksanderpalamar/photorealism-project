@@ -1,0 +1,215 @@
+SiiNunit
+{
+
+light_source : street.lamp.b.5m
+{
+	setup: lumen_hue_saturation
+	ambient_color: (5, 181, 40)
+	diffuse_color: (800, 216, 38)
+	specular_color: (800, 57, 0)
+
+	range: 24
+	cut_range: 8
+	inner_angle: 80.0
+	outer_angle: 140.0
+	
+	
+	
+
+	dir_type: all
+	model: "/model/flare/street_lamp_b.pmd"
+	scale_factor: 1
+}
+
+light_source : street.lamp.b.6m
+{
+	setup: lumen_hue_saturation
+	ambient_color: (5, 181, 40)
+	diffuse_color: (2800, 216, 38)
+	specular_color: (2800, 57, 0)
+
+	range: 21
+	cut_range: 7
+	inner_angle: 80.0
+	outer_angle: 140.0
+	
+	
+	
+
+	dir_type: all
+	model: "/model/flare/street_lamp_b.pmd"
+	scale_factor: 1
+}
+
+light_source : street.lamp.b.7m
+{
+	setup: lumen_hue_saturation
+	ambient_color: (5, 181, 40)
+	diffuse_color: (1400, 216, 38)
+	specular_color: (1400, 57, 0)
+
+	range: 30
+	cut_range: 10
+	inner_angle: 80.0
+	outer_angle: 140.0
+	
+	
+	
+
+	dir_type: all
+	model: "/model/flare/street_lamp_b.pmd"
+	scale_factor: 1
+}
+
+light_source : street.lamp.b.9m
+{
+	setup: lumen_hue_saturation
+	ambient_color: (5, 181, 40)
+	diffuse_color: (1900, 216, 38)
+	specular_color: (1900, 57, 0)
+
+	range: 36
+	cut_range: 12
+	inner_angle: 80.0
+	outer_angle: 140.0
+	
+	
+	
+
+	dir_type: all
+	model: "/model/flare/street_lamp_b.pmd"
+	scale_factor: 1
+}
+
+light_source : street.lamp.b.10.5m
+{
+	setup: lumen_hue_saturation
+	ambient_color: (5, 181, 40)
+	diffuse_color: (12000, 216, 38)
+	specular_color: (12000, 57, 0)
+
+	range: 35
+	cut_range: 11.5
+	inner_angle: 80.0
+	outer_angle: 140.0
+	
+	
+	
+
+	dir_type: all
+	model: "/model/flare/street_lamp_b.pmd"
+	scale_factor: 1
+}
+
+light_source : street.lamp.b.10.5m.angled10
+{
+	setup: lumen_hue_saturation
+	ambient_color: (5, 181, 40)
+	diffuse_color: (13000, 216, 38)
+	specular_color: (13000, 57, 0)
+
+	range: 35
+	cut_range: 11.5
+	inner_angle: 80.0
+	outer_angle: 140.0
+	
+	cut_direction: vertical
+	
+
+	dir_type: all
+	model: "/model/flare/street_lamp_b.pmd"
+	scale_factor: 1
+}
+
+light_source : street.lamp.b.11m
+{
+	setup: lumen_hue_saturation
+	ambient_color: (3, 181, 40)
+	diffuse_color: (6900, 216, 38)
+	specular_color: (6900, 57, 0)
+
+	range: 36
+	cut_range: 12
+	inner_angle: 5.0
+	outer_angle: 140.0
+	cut_direction: vertical
+	
+	dir_type: all
+	model: "/model/flare/street_lamp_b.pmd"
+	scale_factor: 1
+}
+
+light_source : street.lamp.b.13m
+{
+	setup: lumen_hue_saturation
+	ambient_color: (5, 181, 40)
+	diffuse_color: (2800, 216, 38)
+	specular_color: (2800, 57, 0)
+
+	range: 48
+	cut_range: 16
+	inner_angle: 80.0
+	outer_angle: 140.0
+	
+	
+	
+
+	dir_type: all
+	model: "/model/flare/street_lamp_b.pmd"
+	scale_factor: 1
+}
+
+light_source : street.lamp.b.15m #big double US street lamp
+{
+	setup: lumen_hue_saturation
+	ambient_color: (5, 181, 40)
+	diffuse_color: (3300, 216, 38)
+	specular_color: (3300, 57, 0)
+
+	range: 54
+	cut_range: 18
+	inner_angle: 80.0
+	outer_angle: 140.0
+
+	dir_type: all
+	model: "/model/flare/street_lamp_b.pmd"
+	scale_factor: 1
+}
+
+light_source : street.lamp.b.17m
+{
+	setup: lumen_hue_saturation
+	ambient_color: (5, 181, 40)
+	diffuse_color: (3700, 216, 38)
+	specular_color: (3700, 57, 0)
+
+	range: 60
+	cut_range: 20
+	inner_angle: 80.0
+	outer_angle: 140.0
+	
+
+	dir_type: all
+	model: "/model/flare/street_lamp_b.pmd"
+	scale_factor: 1
+}
+
+light_source : street.lamp.b.20m
+{
+	setup: lumen_hue_saturation
+	ambient_color: (5, 181, 40)
+	diffuse_color: (4000, 216, 38)
+	specular_color: (4000, 57, 0)
+
+	range: 69
+	cut_range: 23
+	inner_angle: 80.0
+	outer_angle: 140.0
+	
+
+	dir_type: all
+	model: "/model/flare/street_lamp_b.pmd"
+	scale_factor: 1
+}
+
+}

@@ -1,0 +1,82 @@
+SiiNunit
+{
+vehicle_particle : wheel.particle.asp_m_rain {
+    gen_array: 2
+    gen_array[0]: _nameless.prain.0006
+    gen_array[1]: _nameless.prain.10006
+    auto_disable_delay: 0
+    editor: false
+}
+
+particle_gen : _nameless.prain.0006 {
+    list_order_up: false
+    blend_alpha: true
+    gen_pos: (0.08, 0, 0.08)
+    scale_acc: 0.34
+    rotation_speed: 72
+    alpha_blend_coef: 0.12
+    base_alpha: 0.38
+    alpha_attack_time: 0.12
+    flow_speed: (-0.35, 1.4, 0.02)
+    flow_speed_acc: (0, -2.4, -1.6)
+    particle_size: (0.17, 0.36)
+    particle_size_var: (0.45, 0.30)
+    particle_displacement: (-0.18, 0.09, -0.08)
+    color_multiplier: nil
+    key_pos: 5
+    key_pos[0]: 0
+    key_pos[1]: 96
+    key_pos[2]: 176
+    key_pos[3]: 224
+    key_pos[4]: 255
+    key_color: 5
+    key_color[0]: nil
+    key_color[1]: nil
+    key_color[2]: nil
+    key_color[3]: nil
+    key_color[4]: nil
+    time_to_live: 1.8
+    time_to_live_rand: 0.35
+    particles_max_count: 110
+    model_path: "/model/particle/smoke.pmd"
+    model_look: rain
+    relative_space: false
+    use_sprites: true
+}
+
+particle_gen : _nameless.prain.10006 {
+    list_order_up: true
+    blend_alpha: true
+    gen_pos: (-0.15, -0.2, -1.6)
+    scale_acc: 0.32
+    rotation_speed: 54
+    alpha_blend_coef: 0.30
+    base_alpha: 0.30
+    alpha_attack_time: 0
+    flow_speed: (0, 0.4, -0.4)
+    flow_speed_acc: (0, -0.7, 0)
+    particle_size: (0.035, 0.035)
+    particle_size_var: (0.30, 0.30)
+    particle_displacement: (0.35, 0.30, 0.35)
+    color_multiplier: nil
+    key_pos: 5
+    key_pos[0]: 0
+    key_pos[1]: 64
+    key_pos[2]: 128
+    key_pos[3]: 192
+    key_pos[4]: 255
+    key_color: 5
+    key_color[0]: nil
+    key_color[1]: nil
+    key_color[2]: nil
+    key_color[3]: nil
+    key_color[4]: nil
+    time_to_live: 1.8
+    time_to_live_rand: 0.30
+    particles_max_count: 45
+    model_path: "/asset/particles/wheels/w_smoke.pmd"
+    model_look: rain
+    relative_space: false
+    use_sprites: true
+}
+}

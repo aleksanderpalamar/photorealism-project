@@ -1,0 +1,17 @@
+SiiNunit
+{
+flare_vehicle: flare.vehicle.brakel
+{
+	dir_type: wide
+	light_type: brake
+
+@include "vehicle_spot_brake_red.sui"
+
+
+	model: "/model/flare/uniform_red.pmd"
+	default_scale: 0.53
+	scale_factor: 5
+
+@include "vehicle_bulb_type_incandescent.sui"
+}
+}

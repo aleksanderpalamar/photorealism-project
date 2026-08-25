@@ -1,0 +1,13 @@
+[white]Photorealism Lights 0.8
+
+[normal]Módulo independente da coleção Photorealism dedicado à iluminação artificial do ETS2.
+
+Escopo planejado:
+- flares e iluminação dos postes
+- lâmpadas e flares dos semáforos
+- faróis, lanternas, freios, setas e luzes de ré
+- materiais emissivos e resposta visual de bloom
+- equilíbrio entre legibilidade, realismo e desempenho
+
+[orange]Calibração atual:
+[normal]Mantém todas as calibrações consolidadas. Os 47 perfis oficiais recebem uma projeção auxiliar controlada: dianteiros/neblina com 3% de alcance e 2% de intensidade; teto e conjunto combinado com 4% de alcance e 3% de intensidade. Temperatura de cor, distribuição, máscaras e fachos principais são preservados.

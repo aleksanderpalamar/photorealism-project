@@ -1,0 +1,44 @@
+SiiNunit
+{
+core_interior_glass_config : .glass.config.rain {
+	drop_material: "/material/environment/blobs_rain.mat"
+
+	drop_count_per_meter: 5000
+
+	min_initial_splash_scale: 3.333
+	max_initial_splash_scale: 3.333
+
+	min_splash_duration: 0.2
+	max_splash_duration: 0.2
+
+	minimal_lifetime: 1
+	maximal_lifetime: 8
+
+	minimal_fadeout: 0.3
+	maximal_fadeout: 2.0
+
+	min_distortion_strength: 1.0
+	max_distortion_strength: 1.0
+	blur_strength: 1.0
+
+	deformation_duration: 0.8
+	maximal_deformation: 2.8
+
+	moving_size_threshold: 0.5
+	vertical_acceleration_factor: -0.2
+	movement_acceleration_factor: 0.025
+	min_adhesion_factor: 0.2
+	max_adhesion_factor: 0.9
+
+	min_speed_effect_mps: 2.78     # 10 km/h
+	max_speed_effect_mps: 19.4     # 70 km/h
+
+	min_angle_cosine: 0.05
+	max_angle_cosine: 0.5
+	min_angle_factor: 0.2
+	max_angle_factor: 0.6
+
+	drops_wiping_factor: 0.05
+	drops_moving_offset: 0.01
+}
+}

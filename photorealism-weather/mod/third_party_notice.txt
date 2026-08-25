@@ -1,0 +1,11 @@
+Photorealism 0.11.0 — aviso de assets de terceiros
+
+Texturas, materiais e máscaras selecionadas foram extraídas de:
+Elite Rain & Spray Physics ETS2 v1.60, versão 1.2
+Autor: Orion
+Canal informado pelo autor: https://www.youtube.com/@OrionModDesign
+
+Esses assets foram incluídos para desenvolvimento e teste privado a pedido do
+usuário. O arquivo de origem não continha licença explícita de redistribuição.
+É necessário obter autorização do autor antes de publicar ou redistribuir este
+pacote, ou substituir os assets por alternativas próprias.

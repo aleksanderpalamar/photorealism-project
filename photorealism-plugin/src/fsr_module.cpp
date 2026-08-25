@@ -1,0 +1,1992 @@
+#include "photorealism_fsr_api.hpp"
+
+#include "fsr_color_scoring.hpp"
+#include "fsr_runtime.hpp"
+
+#include <dxgi.h>
+#include <windows.h>
+
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <cstdarg>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <cwchar>
+
+namespace {
+
+constexpr std::size_t kViewCacheCapacity = 4096;
+constexpr std::size_t kViewCacheMaxProbe = 16;
+constexpr std::size_t kResourceCapacity = 256;
+constexpr std::size_t kBackBufferIdentityCapacity = 8;
+constexpr std::size_t kMaximumReportedTargets = 32;
+constexpr std::size_t kDiagnosticQueueCapacity = 2;
+constexpr ULONGLONG kObservationWindowMilliseconds = 30000;
+constexpr std::uint32_t kAutomaticSelectionConfirmFrames = 12;
+constexpr std::uint32_t kAutomaticSelectionLostGraceFrames = 30;
+
+struct ViewCacheEntry {
+    ID3D11RenderTargetView* view = nullptr;
+    std::uint16_t resource_index = 0;
+    bool occupied = false;
+};
+
+struct ShaderViewCacheEntry {
+    ID3D11ShaderResourceView* view = nullptr;
+    void* identity = nullptr;
+    UINT width = 0;
+    UINT height = 0;
+    UINT format = 0;
+    bool occupied = false;
+};
+
+struct ColorResourceEntry {
+    void* identity = nullptr;
+    UINT width = 0;
+    UINT height = 0;
+    UINT texture_format = 0;
+    UINT primary_view_format = 0;
+    UINT view_format_variants = 0;
+    UINT sample_count = 0;
+    UINT bind_flags = 0;
+    UINT misc_flags = 0;
+    UINT mip_levels = 0;
+    UINT array_size = 0;
+    UINT views = 0;
+    std::uint64_t bindings = 0;
+    std::uint64_t slot_zero_bindings = 0;
+    std::uint64_t first_serial = 0;
+    std::uint64_t last_serial = 0;
+    std::uint64_t first_frame = 0;
+    std::uint64_t last_frame = 0;
+    UINT slot_mask = 0;
+    UINT event_flags = 0;
+    bool exact_backbuffer_resource = false;
+    std::uint64_t direct_composition_hits = 0;
+    std::uint64_t last_composition_frame = 0;
+};
+
+struct BackBufferIdentityEntry {
+    ID3D11Texture2D* interface_pointer = nullptr;
+    void* identity = nullptr;
+};
+
+struct ColorReportSnapshot {
+    std::array<ColorResourceEntry, kResourceCapacity> resources = {};
+    std::size_t resource_count = 0;
+    UINT backbuffer_width = 0;
+    UINT backbuffer_height = 0;
+    UINT backbuffer_format = 0;
+    UINT backbuffer_samples = 0;
+    std::uint64_t frames = 0;
+    std::uint64_t serial = 0;
+    std::uint64_t event_count = 0;
+    std::uint64_t uav_event_count = 0;
+    std::uint64_t slot_bindings = 0;
+    std::uint64_t total_resource_bindings = 0;
+    std::uint64_t view_cache_entries = 0;
+    std::uint64_t view_cache_replacements = 0;
+    std::uint64_t resource_overflow = 0;
+    std::uint64_t unsupported_views = 0;
+    std::uint64_t lock_contention_drops = 0;
+    std::uint64_t async_job_drops = 0;
+    std::uint64_t report_queue_drops = 0;
+    ULONGLONG elapsed_milliseconds = 0;
+};
+
+enum class DiagnosticJobState : std::uint8_t {
+    empty,
+    filling,
+    pending,
+    processing,
+};
+
+enum class DiagnosticJobType : std::uint8_t {
+    none,
+    color_report,
+    window_notice,
+    reset_notice,
+    automatic_selection_ready,
+    automatic_selection_fallback,
+    fsr_active,
+    fsr_timing,
+};
+
+enum class AutomaticSelectionNotice : std::uint8_t {
+    none,
+    ready,
+    fallback,
+};
+
+struct AutomaticSelectionState {
+    void* identity = nullptr;
+    UINT source_width = 0;
+    UINT source_height = 0;
+    UINT source_format = 0;
+    UINT output_width = 0;
+    UINT output_height = 0;
+    UINT confidence = 0;
+    std::uint64_t generation = 0;
+    std::uint64_t last_seen_frame = 0;
+    std::uint32_t confirmations = 0;
+    bool ready = false;
+};
+
+enum class ColorReportReason : std::uint8_t {
+    window_complete,
+    device_shutdown,
+    device_replaced,
+};
+
+struct DiagnosticJob {
+    DiagnosticJobState state = DiagnosticJobState::empty;
+    DiagnosticJobType type = DiagnosticJobType::none;
+    ColorReportReason report_reason = ColorReportReason::window_complete;
+    ColorReportSnapshot snapshot = {};
+    UINT width = 0;
+    UINT height = 0;
+    UINT format = 0;
+    UINT sample_count = 0;
+    std::uint32_t reset_reason = 0;
+    bool signature_changed = false;
+    std::uint64_t generation = 0;
+    UINT source_width = 0;
+    UINT source_height = 0;
+    UINT confidence = 0;
+    std::uint64_t timing_samples = 0;
+    std::uint64_t timing_dropped = 0;
+    double easu_sum_ms = 0.0;
+    double rcas_sum_ms = 0.0;
+    double temporal_aa_sum_ms = 0.0;
+    double easu_max_ms = 0.0;
+    double rcas_max_ms = 0.0;
+    double temporal_aa_max_ms = 0.0;
+    bool fsr_upscale_enabled = false;
+};
+
+HMODULE g_module = nullptr;
+ID3D11Device* g_device = nullptr;
+SRWLOCK g_catalog_lock = SRWLOCK_INIT;
+SRWLOCK g_runtime_lock = SRWLOCK_INIT;
+SRWLOCK g_diagnostic_queue_lock = SRWLOCK_INIT;
+CONDITION_VARIABLE g_diagnostic_fill_condition = CONDITION_VARIABLE_INIT;
+INIT_ONCE g_log_path_once = INIT_ONCE_STATIC_INIT;
+wchar_t g_log_path[MAX_PATH] = {};
+
+std::array<ViewCacheEntry, kViewCacheCapacity> g_view_cache = {};
+std::array<ShaderViewCacheEntry, kViewCacheCapacity> g_shader_view_cache = {};
+std::array<ColorResourceEntry, kResourceCapacity> g_resources = {};
+std::array<BackBufferIdentityEntry, kBackBufferIdentityCapacity>
+    g_backbuffer_identities = {};
+std::size_t g_resource_count = 0;
+std::size_t g_backbuffer_identity_count = 0;
+std::uint64_t g_view_cache_entries = 0;
+std::uint64_t g_view_cache_replacements = 0;
+std::uint64_t g_resource_overflow = 0;
+std::uint64_t g_unsupported_views = 0;
+std::uint64_t g_frame_serial = 0;
+std::uint64_t g_lifetime_frame_serial = 0;
+std::uint64_t g_binding_serial = 0;
+std::uint64_t g_event_count = 0;
+std::uint64_t g_uav_event_count = 0;
+std::uint64_t g_slot_bindings = 0;
+std::uint64_t g_total_resource_bindings = 0;
+volatile LONG64 g_lock_contention_drops = 0;
+ULONGLONG g_window_started_at = 0;
+UINT g_backbuffer_width = 0;
+UINT g_backbuffer_height = 0;
+UINT g_backbuffer_format = 0;
+UINT g_backbuffer_samples = 0;
+bool g_window_active = false;
+void* g_current_output_identity = nullptr;
+ID3D11DeviceContext* g_current_output_context = nullptr;
+bool g_current_output_is_backbuffer = false;
+bool g_fsr_execution_notice_pending = false;
+std::uint64_t g_fsr_logged_generation = UINT64_MAX;
+bool g_fsr_runtime_available = false;
+ULONGLONG g_last_timing_report_at = 0;
+AutomaticSelectionState g_automatic_selection = {};
+AutomaticSelectionNotice g_automatic_selection_notice =
+    AutomaticSelectionNotice::none;
+AutomaticSelectionState g_automatic_selection_notice_state = {};
+
+std::array<DiagnosticJob, kDiagnosticQueueCapacity> g_diagnostic_jobs = {};
+HANDLE g_diagnostic_event = nullptr;
+HANDLE g_diagnostic_stop_event = nullptr;
+HANDLE g_diagnostic_thread = nullptr;
+bool g_diagnostic_accepting = false;
+UINT g_diagnostic_active_fillers = 0;
+volatile LONG64 g_async_job_drops = 0;
+volatile LONG64 g_report_queue_drops = 0;
+
+void reset_automatic_selection_locked(bool announce_fallback) {
+    if (announce_fallback && g_automatic_selection.ready) {
+        g_automatic_selection_notice = AutomaticSelectionNotice::fallback;
+        g_automatic_selection_notice_state = g_automatic_selection;
+    } else if (!announce_fallback) {
+        g_automatic_selection_notice = AutomaticSelectionNotice::none;
+        g_automatic_selection_notice_state = {};
+    }
+    const std::uint64_t next_generation =
+        g_automatic_selection.generation + 1u;
+    g_automatic_selection = {};
+    g_automatic_selection.generation = next_generation;
+}
+
+bool append_path(wchar_t* destination, size_t capacity, const wchar_t* suffix) {
+    const size_t used = std::wcslen(destination);
+    const size_t extra = std::wcslen(suffix);
+    if (used + extra + 1 > capacity) {
+        return false;
+    }
+    std::wmemcpy(destination + used, suffix, extra + 1);
+    return true;
+}
+
+BOOL CALLBACK initialize_log_path(PINIT_ONCE, PVOID, PVOID*) {
+    wchar_t module_path[MAX_PATH] = {};
+    if (g_module == nullptr ||
+        GetModuleFileNameW(g_module, module_path, MAX_PATH) == 0) {
+        std::wcsncpy(module_path, L".", MAX_PATH - 1);
+    } else {
+        wchar_t* separator = std::wcsrchr(module_path, L'\\');
+        if (separator != nullptr) {
+            *separator = L'\0';
+        }
+    }
+
+    if (!append_path(module_path, MAX_PATH, L"\\photorealism-plugin")) {
+        return FALSE;
+    }
+    CreateDirectoryW(module_path, nullptr);
+    std::wcsncpy(g_log_path, module_path, MAX_PATH - 1);
+    return append_path(g_log_path, MAX_PATH, L"\\photorealism-fsr.log")
+               ? TRUE
+               : FALSE;
+}
+
+void log_message(const char* format, ...) {
+    if (!InitOnceExecuteOnce(
+            &g_log_path_once, initialize_log_path, nullptr, nullptr)) {
+        return;
+    }
+
+    char message[2048] = {};
+    va_list arguments;
+    va_start(arguments, format);
+    std::vsnprintf(message, sizeof(message), format, arguments);
+    va_end(arguments);
+
+    SYSTEMTIME time = {};
+    GetLocalTime(&time);
+    char line[2304] = {};
+    const int length = std::snprintf(
+        line,
+        sizeof(line),
+        "[%02u:%02u:%02u.%03u] %s\r\n",
+        static_cast<unsigned>(time.wHour),
+        static_cast<unsigned>(time.wMinute),
+        static_cast<unsigned>(time.wSecond),
+        static_cast<unsigned>(time.wMilliseconds),
+        message);
+    if (length <= 0) {
+        return;
+    }
+
+    OutputDebugStringA(line);
+    HANDLE file = CreateFileW(
+        g_log_path,
+        FILE_APPEND_DATA,
+        FILE_SHARE_READ | FILE_SHARE_WRITE,
+        nullptr,
+        OPEN_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL,
+        nullptr);
+    if (file == INVALID_HANDLE_VALUE) {
+        return;
+    }
+    DWORD written = 0;
+    const DWORD bytes = static_cast<DWORD>(
+        length < static_cast<int>(sizeof(line))
+            ? length
+            : static_cast<int>(sizeof(line) - 1));
+    WriteFile(file, line, bytes, &written, nullptr);
+    CloseHandle(file);
+}
+
+const char* feature_level_name(D3D_FEATURE_LEVEL level) {
+    switch (level) {
+        case D3D_FEATURE_LEVEL_12_1:
+            return "12_1";
+        case D3D_FEATURE_LEVEL_12_0:
+            return "12_0";
+        case D3D_FEATURE_LEVEL_11_1:
+            return "11_1";
+        case D3D_FEATURE_LEVEL_11_0:
+            return "11_0";
+        case D3D_FEATURE_LEVEL_10_1:
+            return "10_1";
+        case D3D_FEATURE_LEVEL_10_0:
+            return "10_0";
+        case D3D_FEATURE_LEVEL_9_3:
+            return "9_3";
+        case D3D_FEATURE_LEVEL_9_2:
+            return "9_2";
+        case D3D_FEATURE_LEVEL_9_1:
+            return "9_1";
+        default:
+            return "unknown";
+    }
+}
+
+const char* format_name(UINT format) {
+    switch (static_cast<DXGI_FORMAT>(format)) {
+        case DXGI_FORMAT_R16G16B16A16_FLOAT:
+            return "R16G16B16A16_FLOAT";
+        case DXGI_FORMAT_R11G11B10_FLOAT:
+            return "R11G11B10_FLOAT";
+        case DXGI_FORMAT_R10G10B10A2_UNORM:
+            return "R10G10B10A2_UNORM";
+        case DXGI_FORMAT_R8G8B8A8_UNORM:
+            return "R8G8B8A8_UNORM";
+        case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
+            return "R8G8B8A8_UNORM_SRGB";
+        case DXGI_FORMAT_B8G8R8A8_UNORM:
+            return "B8G8R8A8_UNORM";
+        case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
+            return "B8G8R8A8_UNORM_SRGB";
+        default:
+            return "other";
+    }
+}
+
+void log_format_support(
+    ID3D11Device* device, DXGI_FORMAT format, const char* name) {
+    UINT support = 0;
+    const HRESULT result = device->CheckFormatSupport(format, &support);
+    if (FAILED(result)) {
+        log_message(
+            "Formato %s: consulta falhou result=0x%08X.",
+            name,
+            static_cast<unsigned>(result));
+        return;
+    }
+    log_message(
+        "Formato %s: texture2d=%s sample=%s render_target=%s typed_uav=%s "
+        "flags=0x%08X.",
+        name,
+        (support & D3D11_FORMAT_SUPPORT_TEXTURE2D) != 0 ? "sim" : "nao",
+        (support & D3D11_FORMAT_SUPPORT_SHADER_SAMPLE) != 0 ? "sim" : "nao",
+        (support & D3D11_FORMAT_SUPPORT_RENDER_TARGET) != 0 ? "sim" : "nao",
+        (support & D3D11_FORMAT_SUPPORT_TYPED_UNORDERED_ACCESS_VIEW) != 0
+            ? "sim"
+            : "nao",
+        support);
+}
+
+void log_adapter(ID3D11Device* device) {
+    IDXGIDevice* dxgi_device = nullptr;
+    HRESULT result = device->QueryInterface(
+        IID_IDXGIDevice, reinterpret_cast<void**>(&dxgi_device));
+    if (FAILED(result) || dxgi_device == nullptr) {
+        log_message(
+            "Adaptador DXGI indisponivel: result=0x%08X.",
+            static_cast<unsigned>(result));
+        return;
+    }
+
+    IDXGIAdapter* adapter = nullptr;
+    result = dxgi_device->GetAdapter(&adapter);
+    dxgi_device->Release();
+    if (FAILED(result) || adapter == nullptr) {
+        log_message(
+            "GetAdapter falhou: result=0x%08X.",
+            static_cast<unsigned>(result));
+        return;
+    }
+
+    DXGI_ADAPTER_DESC description = {};
+    result = adapter->GetDesc(&description);
+    adapter->Release();
+    if (FAILED(result)) {
+        log_message(
+            "GetDesc do adaptador falhou: result=0x%08X.",
+            static_cast<unsigned>(result));
+        return;
+    }
+
+    char adapter_name[256] = {};
+    if (WideCharToMultiByte(
+            CP_UTF8,
+            0,
+            description.Description,
+            -1,
+            adapter_name,
+            static_cast<int>(sizeof(adapter_name)),
+            nullptr,
+            nullptr) == 0) {
+        std::snprintf(adapter_name, sizeof(adapter_name), "indisponivel");
+    }
+    log_message(
+        "Adapter: name=%s vendor=0x%04X device=0x%04X subsystem=0x%08X "
+        "revision=0x%X dedicated_vram=%lluMiB shared_memory=%lluMiB "
+        "luid=%08lX:%08lX.",
+        adapter_name,
+        description.VendorId,
+        description.DeviceId,
+        description.SubSysId,
+        description.Revision,
+        static_cast<unsigned long long>(
+            description.DedicatedVideoMemory / (1024ull * 1024ull)),
+        static_cast<unsigned long long>(
+            description.SharedSystemMemory / (1024ull * 1024ull)),
+        static_cast<unsigned long>(description.AdapterLuid.HighPart),
+        static_cast<unsigned long>(description.AdapterLuid.LowPart));
+}
+
+std::size_t pointer_hash(const void* pointer, std::size_t capacity) {
+    std::uintptr_t value = reinterpret_cast<std::uintptr_t>(pointer);
+    value >>= 4;
+    value ^= value >> 17;
+    value *= static_cast<std::uintptr_t>(0x9E3779B185EBCA87ull);
+    return static_cast<std::size_t>(value) & (capacity - 1);
+}
+
+void* normalized_identity(IUnknown* object) {
+    if (object == nullptr) {
+        return nullptr;
+    }
+    IUnknown* identity = nullptr;
+    if (FAILED(object->QueryInterface(
+            IID_IUnknown, reinterpret_cast<void**>(&identity))) ||
+        identity == nullptr) {
+        return static_cast<void*>(object);
+    }
+    void* token = static_cast<void*>(identity);
+    identity->Release();
+    return token;
+}
+
+bool is_backbuffer_identity_locked(void* identity) {
+    for (std::size_t index = 0; index < g_backbuffer_identity_count; ++index) {
+        if (g_backbuffer_identities[index].identity == identity) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void clear_catalog_locked(bool clear_signature) {
+    std::memset(g_view_cache.data(), 0, sizeof(g_view_cache));
+    std::memset(g_shader_view_cache.data(), 0, sizeof(g_shader_view_cache));
+    std::memset(g_resources.data(), 0, sizeof(g_resources));
+    g_resource_count = 0;
+    g_view_cache_entries = 0;
+    g_view_cache_replacements = 0;
+    g_resource_overflow = 0;
+    g_unsupported_views = 0;
+    g_frame_serial = 0;
+    g_binding_serial = 0;
+    g_event_count = 0;
+    g_uav_event_count = 0;
+    g_slot_bindings = 0;
+    g_total_resource_bindings = 0;
+    g_current_output_identity = nullptr;
+    g_current_output_context = nullptr;
+    g_current_output_is_backbuffer = false;
+    InterlockedExchange64(&g_lock_contention_drops, 0);
+    g_window_started_at = GetTickCount64();
+    if (clear_signature) {
+        std::memset(
+            g_backbuffer_identities.data(), 0, sizeof(g_backbuffer_identities));
+        g_backbuffer_identity_count = 0;
+        g_backbuffer_width = 0;
+        g_backbuffer_height = 0;
+        g_backbuffer_format = 0;
+        g_backbuffer_samples = 0;
+        g_window_active = false;
+        g_lifetime_frame_serial = 0;
+        reset_automatic_selection_locked(false);
+    }
+}
+
+bool resolve_shader_view_locked(
+    ID3D11ShaderResourceView* view,
+    void** identity,
+    UINT* width,
+    UINT* height,
+    UINT* format) {
+    if (view == nullptr || identity == nullptr || width == nullptr ||
+        height == nullptr || format == nullptr) {
+        return false;
+    }
+    const std::size_t base = pointer_hash(view, kViewCacheCapacity);
+    std::size_t empty_slot = kViewCacheCapacity;
+    for (std::size_t probe = 0; probe < kViewCacheMaxProbe; ++probe) {
+        const std::size_t slot = (base + probe) & (kViewCacheCapacity - 1);
+        const ShaderViewCacheEntry& cached = g_shader_view_cache[slot];
+        if (cached.occupied && cached.view == view) {
+            *identity = cached.identity;
+            *width = cached.width;
+            *height = cached.height;
+            *format = cached.format;
+            return true;
+        }
+        if (!cached.occupied) {
+            empty_slot = slot;
+            break;
+        }
+    }
+    ID3D11Resource* resource = nullptr;
+    view->GetResource(&resource);
+    if (resource == nullptr) {
+        return false;
+    }
+    ID3D11Texture2D* texture = nullptr;
+    const HRESULT result = resource->QueryInterface(
+        IID_ID3D11Texture2D, reinterpret_cast<void**>(&texture));
+    resource->Release();
+    if (FAILED(result) || texture == nullptr) {
+        return false;
+    }
+    D3D11_TEXTURE2D_DESC description = {};
+    texture->GetDesc(&description);
+    D3D11_SHADER_RESOURCE_VIEW_DESC view_description = {};
+    view->GetDesc(&view_description);
+    const void* token = normalized_identity(texture);
+    texture->Release();
+    std::size_t slot = empty_slot == kViewCacheCapacity ? base : empty_slot;
+    ShaderViewCacheEntry& entry = g_shader_view_cache[slot];
+    entry.view = view;
+    entry.identity = const_cast<void*>(token);
+    entry.width = description.Width;
+    entry.height = description.Height;
+    entry.format =
+        view_description.Format != DXGI_FORMAT_UNKNOWN
+            ? view_description.Format
+            : description.Format;
+    entry.occupied = true;
+    *identity = entry.identity;
+    *width = entry.width;
+    *height = entry.height;
+    *format = entry.format;
+    return true;
+}
+
+int find_resource_locked(void* identity) {
+    for (std::size_t index = 0; index < g_resource_count; ++index) {
+        if (g_resources[index].identity == identity) {
+            return static_cast<int>(index);
+        }
+    }
+    return -1;
+}
+
+int resolve_view_locked(ID3D11RenderTargetView* view) {
+    if (view == nullptr) {
+        return -1;
+    }
+    const std::size_t base = pointer_hash(view, kViewCacheCapacity);
+    std::size_t empty_slot = kViewCacheCapacity;
+    for (std::size_t probe = 0; probe < kViewCacheMaxProbe; ++probe) {
+        const std::size_t slot = (base + probe) & (kViewCacheCapacity - 1);
+        const ViewCacheEntry& cached = g_view_cache[slot];
+        if (cached.occupied && cached.view == view) {
+            return cached.resource_index;
+        }
+        if (!cached.occupied) {
+            empty_slot = slot;
+            break;
+        }
+    }
+
+    ID3D11Resource* resource = nullptr;
+    view->GetResource(&resource);
+    if (resource == nullptr) {
+        ++g_unsupported_views;
+        return -1;
+    }
+    D3D11_RESOURCE_DIMENSION dimension = D3D11_RESOURCE_DIMENSION_UNKNOWN;
+    resource->GetType(&dimension);
+    if (dimension != D3D11_RESOURCE_DIMENSION_TEXTURE2D) {
+        resource->Release();
+        ++g_unsupported_views;
+        return -1;
+    }
+
+    ID3D11Texture2D* texture = nullptr;
+    const HRESULT texture_result = resource->QueryInterface(
+        IID_ID3D11Texture2D, reinterpret_cast<void**>(&texture));
+    if (FAILED(texture_result) || texture == nullptr) {
+        resource->Release();
+        ++g_unsupported_views;
+        return -1;
+    }
+
+    D3D11_TEXTURE2D_DESC texture_description = {};
+    texture->GetDesc(&texture_description);
+    D3D11_RENDER_TARGET_VIEW_DESC view_description = {};
+    view->GetDesc(&view_description);
+    void* identity = normalized_identity(texture);
+
+    int resource_index = find_resource_locked(identity);
+    if (resource_index < 0) {
+        if (g_resource_count >= kResourceCapacity) {
+            ++g_resource_overflow;
+            texture->Release();
+            resource->Release();
+            return -1;
+        }
+        resource_index = static_cast<int>(g_resource_count++);
+        ColorResourceEntry& entry = g_resources[resource_index];
+        entry.identity = identity;
+        entry.width = texture_description.Width;
+        entry.height = texture_description.Height;
+        entry.texture_format = texture_description.Format;
+        entry.primary_view_format = view_description.Format;
+        entry.sample_count = texture_description.SampleDesc.Count;
+        entry.bind_flags = texture_description.BindFlags;
+        entry.misc_flags = texture_description.MiscFlags;
+        entry.mip_levels = texture_description.MipLevels;
+        entry.array_size = texture_description.ArraySize;
+        entry.exact_backbuffer_resource =
+            is_backbuffer_identity_locked(identity);
+    } else if (g_resources[resource_index].primary_view_format !=
+               static_cast<UINT>(view_description.Format)) {
+        ++g_resources[resource_index].view_format_variants;
+    }
+    ++g_resources[resource_index].views;
+
+    texture->Release();
+    resource->Release();
+
+    std::size_t cache_slot = empty_slot;
+    if (cache_slot == kViewCacheCapacity) {
+        cache_slot = base;
+        if (g_view_cache[cache_slot].occupied) {
+            ++g_view_cache_replacements;
+        }
+    } else {
+        ++g_view_cache_entries;
+    }
+    g_view_cache[cache_slot].view = view;
+    g_view_cache[cache_slot].resource_index =
+        static_cast<std::uint16_t>(resource_index);
+    g_view_cache[cache_slot].occupied = true;
+    return resource_index;
+}
+
+void register_backbuffer_locked(ID3D11Texture2D* back_buffer) {
+    if (back_buffer == nullptr) {
+        return;
+    }
+    for (std::size_t index = 0; index < g_backbuffer_identity_count; ++index) {
+        if (g_backbuffer_identities[index].interface_pointer == back_buffer) {
+            return;
+        }
+    }
+    if (g_backbuffer_identity_count >= kBackBufferIdentityCapacity) {
+        return;
+    }
+    void* identity = normalized_identity(back_buffer);
+    BackBufferIdentityEntry& entry =
+        g_backbuffer_identities[g_backbuffer_identity_count++];
+    entry.interface_pointer = back_buffer;
+    entry.identity = identity;
+    for (std::size_t index = 0; index < g_resource_count; ++index) {
+        if (g_resources[index].identity == identity) {
+            g_resources[index].exact_backbuffer_resource = true;
+        }
+    }
+}
+
+bool take_report_snapshot(ColorReportSnapshot* snapshot) {
+    if (snapshot == nullptr) {
+        return false;
+    }
+    if (!TryAcquireSRWLockExclusive(&g_catalog_lock)) {
+        InterlockedIncrement64(&g_lock_contention_drops);
+        return false;
+    }
+    if (!g_window_active) {
+        ReleaseSRWLockExclusive(&g_catalog_lock);
+        return false;
+    }
+    const ULONGLONG now = GetTickCount64();
+    snapshot->resource_count = g_resource_count;
+    std::copy_n(
+        g_resources.begin(), g_resource_count, snapshot->resources.begin());
+    snapshot->backbuffer_width = g_backbuffer_width;
+    snapshot->backbuffer_height = g_backbuffer_height;
+    snapshot->backbuffer_format = g_backbuffer_format;
+    snapshot->backbuffer_samples = g_backbuffer_samples;
+    snapshot->frames = g_frame_serial;
+    snapshot->serial = g_binding_serial;
+    snapshot->event_count = g_event_count;
+    snapshot->uav_event_count = g_uav_event_count;
+    snapshot->slot_bindings = g_slot_bindings;
+    snapshot->total_resource_bindings = g_total_resource_bindings;
+    snapshot->view_cache_entries = g_view_cache_entries;
+    snapshot->view_cache_replacements = g_view_cache_replacements;
+    snapshot->resource_overflow = g_resource_overflow;
+    snapshot->unsupported_views = g_unsupported_views;
+    snapshot->lock_contention_drops = static_cast<std::uint64_t>(
+        InterlockedExchange64(&g_lock_contention_drops, 0));
+    snapshot->elapsed_milliseconds = now - g_window_started_at;
+    clear_catalog_locked(false);
+    ReleaseSRWLockExclusive(&g_catalog_lock);
+    return true;
+}
+
+const char* report_reason_name(ColorReportReason reason) {
+    switch (reason) {
+        case ColorReportReason::window_complete:
+            return "window-complete";
+        case ColorReportReason::device_shutdown:
+            return "device-shutdown";
+        case ColorReportReason::device_replaced:
+            return "device-replaced";
+        default:
+            return "unknown";
+    }
+}
+
+void write_color_report(
+    ColorReportSnapshot* snapshot, ColorReportReason reason) {
+    if (snapshot == nullptr) {
+        return;
+    }
+    std::sort(
+        snapshot->resources.begin(),
+        snapshot->resources.begin() + snapshot->resource_count,
+        [](const ColorResourceEntry& left, const ColorResourceEntry& right) {
+            if (left.bindings != right.bindings) {
+                return left.bindings > right.bindings;
+            }
+            const std::uint64_t left_area =
+                static_cast<std::uint64_t>(left.width) * left.height;
+            const std::uint64_t right_area =
+                static_cast<std::uint64_t>(right.width) * right.height;
+            return left_area > right_area;
+        });
+
+    log_message(
+        "Relatorio color 0.6.0: reason=%s janela=%llums frames=%llu "
+        "events=%llu uav_events=%llu slot_bindings=%llu resources=%llu "
+        "views=%llu cache_replacements=%llu resource_overflow=%llu "
+        "unsupported_views=%llu contention_drops=%llu async_job_drops=%llu "
+        "report_queue_drops=%llu backbuffer=%ux%u format=%u(%s) samples=%u.",
+        report_reason_name(reason),
+        static_cast<unsigned long long>(snapshot->elapsed_milliseconds),
+        static_cast<unsigned long long>(snapshot->frames),
+        static_cast<unsigned long long>(snapshot->event_count),
+        static_cast<unsigned long long>(snapshot->uav_event_count),
+        static_cast<unsigned long long>(snapshot->slot_bindings),
+        static_cast<unsigned long long>(snapshot->resource_count),
+        static_cast<unsigned long long>(snapshot->view_cache_entries),
+        static_cast<unsigned long long>(snapshot->view_cache_replacements),
+        static_cast<unsigned long long>(snapshot->resource_overflow),
+        static_cast<unsigned long long>(snapshot->unsupported_views),
+        static_cast<unsigned long long>(snapshot->lock_contention_drops),
+        static_cast<unsigned long long>(snapshot->async_job_drops),
+        static_cast<unsigned long long>(snapshot->report_queue_drops),
+        snapshot->backbuffer_width,
+        snapshot->backbuffer_height,
+        snapshot->backbuffer_format,
+        format_name(snapshot->backbuffer_format),
+        snapshot->backbuffer_samples);
+
+    const std::size_t reported = std::min(
+        snapshot->resource_count, kMaximumReportedTargets);
+    for (std::size_t index = 0; index < reported; ++index) {
+        const ColorResourceEntry& entry = snapshot->resources[index];
+        const auto evidence = photorealism::fsr::classify_color_target(
+            photorealism::fsr::ColorEvidenceInput{
+                entry.width,
+                entry.height,
+                snapshot->backbuffer_width,
+                snapshot->backbuffer_height,
+                entry.views,
+                entry.bindings,
+                entry.slot_zero_bindings,
+                snapshot->total_resource_bindings,
+                entry.first_serial,
+                entry.last_serial,
+                snapshot->serial,
+                entry.exact_backbuffer_resource});
+        const double seconds = snapshot->elapsed_milliseconds > 0
+                                   ? snapshot->elapsed_milliseconds / 1000.0
+                                   : 1.0;
+        log_message(
+            "Color target #%llu: evidence=%s confidence=%u "
+            "scores(scene=%u reflection=%u interface=%u) resource=%p "
+            "size=%ux%u area=%u.%u%% aspect_error=%u.%u%% "
+            "texture_format=%u(%s) view_format=%u(%s) "
+            "view_format_variants=%u samples=%u bind_flags=0x%08X "
+            "misc_flags=0x%08X mips=%u array=%u views=%u bindings=%llu "
+            "rate=%.1f/s slot0=%llu slot_mask=0x%02X "
+            "order=%llu-%llu frames=%llu-%llu event_flags=0x%X "
+            "exact_backbuffer=%s direct_composition_hits=%llu.",
+            static_cast<unsigned long long>(index + 1),
+            photorealism::fsr::color_evidence_label_name(evidence.label),
+            evidence.confidence,
+            evidence.scene_score,
+            evidence.reflection_score,
+            evidence.interface_score,
+            entry.identity,
+            entry.width,
+            entry.height,
+            evidence.area_per_mille / 10,
+            evidence.area_per_mille % 10,
+            evidence.aspect_error_per_mille / 10,
+            evidence.aspect_error_per_mille % 10,
+            entry.texture_format,
+            format_name(entry.texture_format),
+            entry.primary_view_format,
+            format_name(entry.primary_view_format),
+            entry.view_format_variants,
+            entry.sample_count,
+            entry.bind_flags,
+            entry.misc_flags,
+            entry.mip_levels,
+            entry.array_size,
+            entry.views,
+            static_cast<unsigned long long>(entry.bindings),
+            entry.bindings / seconds,
+            static_cast<unsigned long long>(entry.slot_zero_bindings),
+            entry.slot_mask,
+            static_cast<unsigned long long>(entry.first_serial),
+            static_cast<unsigned long long>(entry.last_serial),
+            static_cast<unsigned long long>(entry.first_frame),
+            static_cast<unsigned long long>(entry.last_frame),
+            entry.event_flags,
+            entry.exact_backbuffer_resource ? "sim" : "nao",
+            static_cast<unsigned long long>(entry.direct_composition_hits));
+    }
+    if (reported < snapshot->resource_count) {
+        log_message(
+            "Relatorio color 0.6.0 limitado aos %llu alvos mais ativos; "
+            "%llu recursos de baixa atividade omitidos.",
+            static_cast<unsigned long long>(reported),
+            static_cast<unsigned long long>(
+                snapshot->resource_count - reported));
+    }
+    log_message(
+        "Rotulos color 0.6.0 sao hipoteses por evidencia observavel; AA "
+        "temporal/RCAS exigem prova repetida scene-SRV -> backbuffer; EASU "
+        "tambem exige gates de escala, proporcao e formato.");
+}
+
+int reserve_diagnostic_job(DiagnosticJobType type) {
+    AcquireSRWLockExclusive(&g_diagnostic_queue_lock);
+    if (!g_diagnostic_accepting || g_diagnostic_thread == nullptr) {
+        ReleaseSRWLockExclusive(&g_diagnostic_queue_lock);
+        InterlockedIncrement64(&g_async_job_drops);
+        return -1;
+    }
+    for (std::size_t index = 0; index < g_diagnostic_jobs.size(); ++index) {
+        DiagnosticJob& job = g_diagnostic_jobs[index];
+        if (job.state == DiagnosticJobState::empty) {
+            job.state = DiagnosticJobState::filling;
+            job.type = type;
+            ++g_diagnostic_active_fillers;
+            ReleaseSRWLockExclusive(&g_diagnostic_queue_lock);
+            return static_cast<int>(index);
+        }
+    }
+    ReleaseSRWLockExclusive(&g_diagnostic_queue_lock);
+    InterlockedIncrement64(&g_async_job_drops);
+    return -1;
+}
+
+void cancel_diagnostic_job(int index) {
+    if (index < 0 ||
+        static_cast<std::size_t>(index) >= g_diagnostic_jobs.size()) {
+        return;
+    }
+    AcquireSRWLockExclusive(&g_diagnostic_queue_lock);
+    DiagnosticJob& job = g_diagnostic_jobs[static_cast<std::size_t>(index)];
+    job.state = DiagnosticJobState::empty;
+    job.type = DiagnosticJobType::none;
+    if (g_diagnostic_active_fillers > 0) {
+        --g_diagnostic_active_fillers;
+    }
+    WakeAllConditionVariable(&g_diagnostic_fill_condition);
+    ReleaseSRWLockExclusive(&g_diagnostic_queue_lock);
+}
+
+bool publish_diagnostic_job(int index) {
+    if (index < 0 ||
+        static_cast<std::size_t>(index) >= g_diagnostic_jobs.size()) {
+        return false;
+    }
+    AcquireSRWLockExclusive(&g_diagnostic_queue_lock);
+    DiagnosticJob& job = g_diagnostic_jobs[static_cast<std::size_t>(index)];
+    if (!g_diagnostic_accepting ||
+        job.state != DiagnosticJobState::filling ||
+        g_diagnostic_event == nullptr) {
+        job.state = DiagnosticJobState::empty;
+        job.type = DiagnosticJobType::none;
+        if (g_diagnostic_active_fillers > 0) {
+            --g_diagnostic_active_fillers;
+        }
+        WakeAllConditionVariable(&g_diagnostic_fill_condition);
+        ReleaseSRWLockExclusive(&g_diagnostic_queue_lock);
+        InterlockedIncrement64(&g_async_job_drops);
+        return false;
+    }
+    job.state = DiagnosticJobState::pending;
+    if (g_diagnostic_active_fillers > 0) {
+        --g_diagnostic_active_fillers;
+    }
+    WakeAllConditionVariable(&g_diagnostic_fill_condition);
+    SetEvent(g_diagnostic_event);
+    ReleaseSRWLockExclusive(&g_diagnostic_queue_lock);
+    return true;
+}
+
+void discard_current_report_window() {
+    AcquireSRWLockExclusive(&g_catalog_lock);
+    if (g_window_active) {
+        clear_catalog_locked(false);
+    }
+    ReleaseSRWLockExclusive(&g_catalog_lock);
+}
+
+bool enqueue_color_report(ColorReportReason reason) {
+    const int index = reserve_diagnostic_job(DiagnosticJobType::color_report);
+    if (index < 0) {
+        InterlockedIncrement64(&g_report_queue_drops);
+        discard_current_report_window();
+        return false;
+    }
+    DiagnosticJob& job = g_diagnostic_jobs[static_cast<std::size_t>(index)];
+    job.report_reason = reason;
+    if (!take_report_snapshot(&job.snapshot)) {
+        cancel_diagnostic_job(index);
+        return false;
+    }
+    job.snapshot.async_job_drops = static_cast<std::uint64_t>(
+        InterlockedExchange64(&g_async_job_drops, 0));
+    job.snapshot.report_queue_drops = static_cast<std::uint64_t>(
+        InterlockedExchange64(&g_report_queue_drops, 0));
+    return publish_diagnostic_job(index);
+}
+
+void enqueue_window_notice(
+    bool signature_changed,
+    UINT width,
+    UINT height,
+    UINT format,
+    UINT sample_count) {
+    const int index = reserve_diagnostic_job(DiagnosticJobType::window_notice);
+    if (index < 0) {
+        return;
+    }
+    DiagnosticJob& job = g_diagnostic_jobs[static_cast<std::size_t>(index)];
+    job.signature_changed = signature_changed;
+    job.width = width;
+    job.height = height;
+    job.format = format;
+    job.sample_count = sample_count;
+    publish_diagnostic_job(index);
+}
+
+void enqueue_reset_notice(std::uint32_t reason) {
+    const int index = reserve_diagnostic_job(DiagnosticJobType::reset_notice);
+    if (index < 0) {
+        return;
+    }
+    DiagnosticJob& job = g_diagnostic_jobs[static_cast<std::size_t>(index)];
+    job.reset_reason = reason;
+    publish_diagnostic_job(index);
+}
+
+void enqueue_automatic_selection_notice(
+    AutomaticSelectionNotice notice,
+    const AutomaticSelectionState& selection) {
+    const DiagnosticJobType type =
+        notice == AutomaticSelectionNotice::ready
+            ? DiagnosticJobType::automatic_selection_ready
+            : DiagnosticJobType::automatic_selection_fallback;
+    const int index = reserve_diagnostic_job(type);
+    if (index < 0) {
+        return;
+    }
+    DiagnosticJob& job = g_diagnostic_jobs[static_cast<std::size_t>(index)];
+    job.generation = selection.generation;
+    job.source_width = selection.source_width;
+    job.source_height = selection.source_height;
+    job.format = selection.source_format;
+    job.width = selection.output_width;
+    job.height = selection.output_height;
+    job.confidence = selection.confidence;
+    publish_diagnostic_job(index);
+}
+
+void enqueue_fsr_active_notice(const AutomaticSelectionState& selection) {
+    const int index = reserve_diagnostic_job(DiagnosticJobType::fsr_active);
+    if (index < 0) {
+        return;
+    }
+    DiagnosticJob& job = g_diagnostic_jobs[static_cast<std::size_t>(index)];
+    job.generation = selection.generation;
+    job.source_width = selection.source_width;
+    job.source_height = selection.source_height;
+    job.format = selection.source_format;
+    job.width = selection.output_width;
+    job.height = selection.output_height;
+    job.confidence = selection.confidence;
+    job.fsr_upscale_enabled =
+        photorealism::fsr::evaluate_fsr_execution_policy(
+            selection.source_width,
+            selection.source_height,
+            selection.output_width,
+            selection.output_height)
+            .execute;
+    publish_diagnostic_job(index);
+}
+
+void enqueue_fsr_timing(const FsrGpuTimingSummary& summary) {
+    if (summary.samples == 0 && summary.dropped == 0) {
+        return;
+    }
+    const int index = reserve_diagnostic_job(DiagnosticJobType::fsr_timing);
+    if (index < 0) {
+        return;
+    }
+    DiagnosticJob& job = g_diagnostic_jobs[static_cast<std::size_t>(index)];
+    job.timing_samples = summary.samples;
+    job.timing_dropped = summary.dropped;
+    job.easu_sum_ms = summary.easu_sum_ms;
+    job.rcas_sum_ms = summary.rcas_sum_ms;
+    job.temporal_aa_sum_ms = summary.temporal_aa_sum_ms;
+    job.easu_max_ms = summary.easu_max_ms;
+    job.rcas_max_ms = summary.rcas_max_ms;
+    job.temporal_aa_max_ms = summary.temporal_aa_max_ms;
+    publish_diagnostic_job(index);
+}
+
+bool process_one_diagnostic_job() {
+    std::size_t selected = g_diagnostic_jobs.size();
+    AcquireSRWLockExclusive(&g_diagnostic_queue_lock);
+    for (std::size_t index = 0; index < g_diagnostic_jobs.size(); ++index) {
+        if (g_diagnostic_jobs[index].state == DiagnosticJobState::pending) {
+            selected = index;
+            g_diagnostic_jobs[index].state = DiagnosticJobState::processing;
+            break;
+        }
+    }
+    ReleaseSRWLockExclusive(&g_diagnostic_queue_lock);
+    if (selected == g_diagnostic_jobs.size()) {
+        return false;
+    }
+
+    DiagnosticJob& job = g_diagnostic_jobs[selected];
+    switch (job.type) {
+        case DiagnosticJobType::color_report:
+            write_color_report(&job.snapshot, job.report_reason);
+            break;
+        case DiagnosticJobType::window_notice:
+            log_message(
+                "Janela color 0.6.0 %s: backbuffer=%ux%u format=%u(%s) "
+                "samples=%u; captura exclusivamente diagnostica.",
+                job.signature_changed ? "reiniciada por assinatura" : "iniciada",
+                job.width,
+                job.height,
+                job.format,
+                format_name(job.format),
+                job.sample_count);
+            break;
+        case DiagnosticJobType::reset_notice:
+            log_message(
+                "Janela color 0.6.0 limpa: reason=%s; recursos nao foram "
+                "retidos.",
+                job.reset_reason == PHOTOREALISM_FSR_RESET_RESIZE
+                    ? "resize"
+                    : (job.reset_reason ==
+                               PHOTOREALISM_FSR_RESET_PLUGIN_DISABLED
+                           ? "Home-disabled"
+                           : "unknown"));
+            break;
+        case DiagnosticJobType::automatic_selection_ready:
+            log_message(
+                "AA/FSR source selecionado: source=%ux%u format=%u(%s) "
+                "output=%ux%u confidence=%u generation=%llu; selecao "
+                "automatica estabilizada por composicao direta; execucao "
+                "ainda depende dos gates runtime.",
+                job.source_width,
+                job.source_height,
+                job.format,
+                format_name(job.format),
+                job.width,
+                job.height,
+                job.confidence,
+                static_cast<unsigned long long>(job.generation));
+            break;
+        case DiagnosticJobType::automatic_selection_fallback:
+            log_message(
+                "AA/FSR automatico voltou ao fallback pass-through: ultimo "
+                "source=%ux%u format=%u(%s) output=%ux%u generation=%llu; "
+                "observacao continua sem alterar frames.",
+                job.source_width,
+                job.source_height,
+                job.format,
+                format_name(job.format),
+                job.width,
+                job.height,
+                static_cast<unsigned long long>(job.generation));
+            break;
+        case DiagnosticJobType::fsr_active:
+            log_message(
+                "AA Photorealism ativo antes da UI: spatial=edge-aware "
+                "temporal=history-clamp+screenspace-3x3 "
+                "engine_motion_vectors=indisponiveis jitter=indisponivel; "
+                "source=%ux%u format=%u(%s) output=%ux%u confidence=%u "
+                "generation=%llu EASU=%s RCAS=ativo(0.4-stops).",
+                job.source_width,
+                job.source_height,
+                job.format,
+                format_name(job.format),
+                job.width,
+                job.height,
+                job.confidence,
+                static_cast<unsigned long long>(job.generation),
+                job.fsr_upscale_enabled ? "ativo" : "pass-through-nativo");
+            break;
+        case DiagnosticJobType::fsr_timing:
+            log_message(
+                "Telemetria GPU AA/FSR 0.6.0: samples=%llu dropped=%llu "
+                "TemporalAA_avg=%.3fms TemporalAA_max=%.3fms "
+                "EASU_avg=%.3fms EASU_max=%.3fms RCAS_avg=%.3fms "
+                "RCAS_max=%.3fms.",
+                static_cast<unsigned long long>(job.timing_samples),
+                static_cast<unsigned long long>(job.timing_dropped),
+                job.timing_samples != 0
+                    ? job.temporal_aa_sum_ms / job.timing_samples
+                    : 0.0,
+                job.temporal_aa_max_ms,
+                job.timing_samples != 0
+                    ? job.easu_sum_ms / job.timing_samples
+                    : 0.0,
+                job.easu_max_ms,
+                job.timing_samples != 0
+                    ? job.rcas_sum_ms / job.timing_samples
+                    : 0.0,
+                job.rcas_max_ms);
+            break;
+        default:
+            break;
+    }
+
+    AcquireSRWLockExclusive(&g_diagnostic_queue_lock);
+    job.state = DiagnosticJobState::empty;
+    job.type = DiagnosticJobType::none;
+    ReleaseSRWLockExclusive(&g_diagnostic_queue_lock);
+    return true;
+}
+
+DWORD WINAPI diagnostic_worker(LPVOID) {
+    for (;;) {
+        HANDLE events[2] = {g_diagnostic_stop_event, g_diagnostic_event};
+        const DWORD wait_result =
+            WaitForMultipleObjects(2, events, FALSE, INFINITE);
+        const bool stopping = wait_result == WAIT_OBJECT_0;
+        if (wait_result != WAIT_OBJECT_0 &&
+            wait_result != WAIT_OBJECT_0 + 1) {
+            break;
+        }
+        while (process_one_diagnostic_job()) {
+        }
+        if (stopping) {
+            break;
+        }
+    }
+    return 0;
+}
+
+bool start_diagnostic_worker() {
+    AcquireSRWLockExclusive(&g_diagnostic_queue_lock);
+    if (g_diagnostic_thread != nullptr) {
+        const bool running = g_diagnostic_accepting;
+        ReleaseSRWLockExclusive(&g_diagnostic_queue_lock);
+        return running;
+    }
+    for (DiagnosticJob& job : g_diagnostic_jobs) {
+        job.state = DiagnosticJobState::empty;
+        job.type = DiagnosticJobType::none;
+    }
+    g_diagnostic_active_fillers = 0;
+    g_diagnostic_event = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    g_diagnostic_stop_event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    if (g_diagnostic_event == nullptr || g_diagnostic_stop_event == nullptr) {
+        if (g_diagnostic_event != nullptr) {
+            CloseHandle(g_diagnostic_event);
+        }
+        if (g_diagnostic_stop_event != nullptr) {
+            CloseHandle(g_diagnostic_stop_event);
+        }
+        g_diagnostic_event = nullptr;
+        g_diagnostic_stop_event = nullptr;
+        ReleaseSRWLockExclusive(&g_diagnostic_queue_lock);
+        return false;
+    }
+    g_diagnostic_thread =
+        CreateThread(nullptr, 0, diagnostic_worker, nullptr, 0, nullptr);
+    if (g_diagnostic_thread == nullptr) {
+        CloseHandle(g_diagnostic_event);
+        CloseHandle(g_diagnostic_stop_event);
+        g_diagnostic_event = nullptr;
+        g_diagnostic_stop_event = nullptr;
+        ReleaseSRWLockExclusive(&g_diagnostic_queue_lock);
+        return false;
+    }
+    g_diagnostic_accepting = true;
+    InterlockedExchange64(&g_async_job_drops, 0);
+    InterlockedExchange64(&g_report_queue_drops, 0);
+    ReleaseSRWLockExclusive(&g_diagnostic_queue_lock);
+    return true;
+}
+
+void stop_diagnostic_worker() {
+    AcquireSRWLockExclusive(&g_diagnostic_queue_lock);
+    HANDLE thread = g_diagnostic_thread;
+    HANDLE stop_event = g_diagnostic_stop_event;
+    HANDLE wake_event = g_diagnostic_event;
+    g_diagnostic_accepting = false;
+    while (g_diagnostic_active_fillers != 0) {
+        SleepConditionVariableSRW(
+            &g_diagnostic_fill_condition,
+            &g_diagnostic_queue_lock,
+            INFINITE,
+            0);
+    }
+    if (stop_event != nullptr) {
+        SetEvent(stop_event);
+    }
+    if (wake_event != nullptr) {
+        SetEvent(wake_event);
+    }
+    ReleaseSRWLockExclusive(&g_diagnostic_queue_lock);
+
+    if (thread != nullptr) {
+        WaitForSingleObject(thread, INFINITE);
+    }
+
+    AcquireSRWLockExclusive(&g_diagnostic_queue_lock);
+    if (thread != nullptr) {
+        CloseHandle(thread);
+    }
+    if (stop_event != nullptr) {
+        CloseHandle(stop_event);
+    }
+    if (wake_event != nullptr) {
+        CloseHandle(wake_event);
+    }
+    g_diagnostic_thread = nullptr;
+    g_diagnostic_stop_event = nullptr;
+    g_diagnostic_event = nullptr;
+    for (DiagnosticJob& job : g_diagnostic_jobs) {
+        job.state = DiagnosticJobState::empty;
+        job.type = DiagnosticJobType::none;
+    }
+    ReleaseSRWLockExclusive(&g_diagnostic_queue_lock);
+}
+
+HRESULT WINAPI initialize_device(ID3D11Device* device) {
+    if (device == nullptr) {
+        return E_INVALIDARG;
+    }
+
+    const bool diagnostic_worker_ready = start_diagnostic_worker();
+
+    AcquireSRWLockExclusive(&g_catalog_lock);
+    if (g_device == device) {
+        ReleaseSRWLockExclusive(&g_catalog_lock);
+        return S_FALSE;
+    }
+    const bool replacing_device = g_device != nullptr;
+    ReleaseSRWLockExclusive(&g_catalog_lock);
+
+    if (replacing_device) {
+        enqueue_color_report(ColorReportReason::device_replaced);
+    }
+
+    AcquireSRWLockExclusive(&g_catalog_lock);
+    ID3D11Device* previous = g_device;
+    device->AddRef();
+    g_device = device;
+    clear_catalog_locked(true);
+    ReleaseSRWLockExclusive(&g_catalog_lock);
+    if (previous != nullptr) {
+        previous->Release();
+        log_message("Dispositivo anterior liberado antes da reinicializacao.");
+    }
+
+    AcquireSRWLockExclusive(&g_runtime_lock);
+    shutdown_fsr_runtime();
+    const bool fsr_runtime_ready = initialize_fsr_runtime(device, g_module);
+    ReleaseSRWLockExclusive(&g_runtime_lock);
+    AcquireSRWLockExclusive(&g_catalog_lock);
+    g_fsr_runtime_available = fsr_runtime_ready;
+    g_last_timing_report_at = GetTickCount64();
+    ReleaseSRWLockExclusive(&g_catalog_lock);
+
+    const D3D_FEATURE_LEVEL feature_level = device->GetFeatureLevel();
+    log_message(
+        "Photorealism FSR/AA 0.6.0 inicializado: ABI=v1+v2+v3+v4 "
+        "feature_level=%s(0x%X) device=%p.",
+        feature_level_name(feature_level),
+        static_cast<unsigned>(feature_level),
+        static_cast<void*>(device));
+    log_adapter(device);
+
+    D3D11_FEATURE_DATA_THREADING threading = {};
+    HRESULT result = device->CheckFeatureSupport(
+        D3D11_FEATURE_THREADING, &threading, sizeof(threading));
+    if (SUCCEEDED(result)) {
+        log_message(
+            "Capacidades D3D11: concurrent_creates=%s command_lists=%s.",
+            threading.DriverConcurrentCreates ? "sim" : "nao",
+            threading.DriverCommandLists ? "sim" : "nao");
+    } else {
+        log_message(
+            "Capacidades de threading indisponiveis: result=0x%08X.",
+            static_cast<unsigned>(result));
+    }
+
+    D3D11_FEATURE_DATA_D3D10_X_HARDWARE_OPTIONS compute_options = {};
+    result = device->CheckFeatureSupport(
+        D3D11_FEATURE_D3D10_X_HARDWARE_OPTIONS,
+        &compute_options,
+        sizeof(compute_options));
+    log_message(
+        "Compute shader 4.x raw/structured=%s (query=0x%08X); "
+        "feature level 11.x ou superior habilita compute SM5 planejado.",
+        SUCCEEDED(result) &&
+                compute_options
+                    .ComputeShaders_Plus_RawAndStructuredBuffers_Via_Shader_4_x
+            ? "sim"
+            : "nao",
+        static_cast<unsigned>(result));
+
+    log_format_support(
+        device, DXGI_FORMAT_R16G16B16A16_FLOAT, "R16G16B16A16_FLOAT");
+    log_format_support(
+        device, DXGI_FORMAT_R11G11B10_FLOAT, "R11G11B10_FLOAT");
+    log_format_support(
+        device, DXGI_FORMAT_R8G8B8A8_UNORM, "R8G8B8A8_UNORM");
+    log_message(
+        "Observador color 0.6.0 pronto: janela=30000ms resources=256 "
+        "view_cache=4096 max_report=32 diagnostic_queue=2 worker=%s; "
+        "consultas COM apenas em cache miss.",
+        diagnostic_worker_ready ? "ativo" : "indisponivel");
+    log_message(
+        "AA/FSR 0.6.0 automatico sem tecla: runtime temporal+RCAS=%s; "
+        "scene-SRV R11 nativo exige composicao direta forte, scene-SRV "
+        "menor exige gates FSR 1.05x-2.00x/aspect_error<=1.5%%. Sem alvo "
+        "seguro o plugin registra pass-through; AA nativo nao e reativado.",
+        fsr_runtime_ready ? "disponivel" : "indisponivel");
+    return S_OK;
+}
+
+void WINAPI observe_color_targets(
+    const PhotorealismFsrColorTargetsEventV2* event) {
+    if (event == nullptr || event->struct_size < sizeof(*event) ||
+        (event->render_target_count != 0 && event->render_targets == nullptr)) {
+        return;
+    }
+    if (!TryAcquireSRWLockExclusive(&g_catalog_lock)) {
+        InterlockedIncrement64(&g_lock_contention_drops);
+        return;
+    }
+    if (g_device == nullptr || !g_window_active) {
+        ReleaseSRWLockExclusive(&g_catalog_lock);
+        return;
+    }
+
+    g_current_output_identity = nullptr;
+    g_current_output_context =
+        event->struct_size >= sizeof(PhotorealismFsrColorTargetsEventV4)
+            ? reinterpret_cast<const PhotorealismFsrColorTargetsEventV4*>(event)
+                  ->context
+            : nullptr;
+    g_current_output_is_backbuffer = false;
+    if (event->render_target_count == 0) {
+        ReleaseSRWLockExclusive(&g_catalog_lock);
+        return;
+    }
+
+    ++g_binding_serial;
+    ++g_event_count;
+    if ((event->flags &
+         PHOTOREALISM_FSR_COLOR_EVENT_OM_SET_RENDER_TARGETS_AND_UAVS) != 0) {
+        ++g_uav_event_count;
+    }
+    const UINT count = std::min<UINT>(
+        event->render_target_count, D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT);
+    std::array<int, D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT> unique_resources =
+        {};
+    unique_resources.fill(-1);
+    UINT unique_count = 0;
+    for (UINT slot = 0; slot < count; ++slot) {
+        ID3D11RenderTargetView* view = event->render_targets[slot];
+        if (view == nullptr) {
+            continue;
+        }
+        ++g_slot_bindings;
+        const int resource_index = resolve_view_locked(view);
+        if (resource_index < 0) {
+            continue;
+        }
+        bool already_seen = false;
+        for (UINT seen = 0; seen < unique_count; ++seen) {
+            if (unique_resources[seen] == resource_index) {
+                already_seen = true;
+                break;
+            }
+        }
+        ColorResourceEntry& resource = g_resources[resource_index];
+        if (slot == 0) {
+            g_current_output_identity = resource.identity;
+            g_current_output_is_backbuffer =
+                resource.exact_backbuffer_resource;
+        }
+        resource.slot_mask |= 1u << slot;
+        resource.event_flags |= event->flags;
+        if (slot == 0) {
+            ++resource.slot_zero_bindings;
+        }
+        if (already_seen) {
+            continue;
+        }
+        unique_resources[unique_count++] = resource_index;
+        ++resource.bindings;
+        ++g_total_resource_bindings;
+        if (resource.first_serial == 0) {
+            resource.first_serial = g_binding_serial;
+            resource.first_frame = g_frame_serial;
+        }
+        resource.last_serial = g_binding_serial;
+        resource.last_frame = g_frame_serial;
+    }
+    ReleaseSRWLockExclusive(&g_catalog_lock);
+}
+
+void WINAPI observe_frame(const PhotorealismFsrFrameEventV2* event) {
+    if (event == nullptr || event->struct_size < sizeof(*event) ||
+        event->back_buffer == nullptr || event->width == 0 ||
+        event->height == 0) {
+        return;
+    }
+    bool started = false;
+    bool signature_changed = false;
+    bool report_due = false;
+    AutomaticSelectionNotice selection_notice =
+        AutomaticSelectionNotice::none;
+    AutomaticSelectionState selection_snapshot = {};
+    AutomaticSelectionState current_selection = {};
+    bool fsr_active_notice = false;
+    AutomaticSelectionState fsr_active_snapshot = {};
+    AcquireSRWLockExclusive(&g_catalog_lock);
+    if (g_device == nullptr) {
+        ReleaseSRWLockExclusive(&g_catalog_lock);
+        return;
+    }
+    if (!g_window_active || g_backbuffer_width != event->width ||
+        g_backbuffer_height != event->height ||
+        g_backbuffer_format != event->format ||
+        g_backbuffer_samples != event->sample_count) {
+        signature_changed = g_window_active;
+        clear_catalog_locked(true);
+        g_backbuffer_width = event->width;
+        g_backbuffer_height = event->height;
+        g_backbuffer_format = event->format;
+        g_backbuffer_samples = event->sample_count;
+        g_window_active = true;
+        g_window_started_at = GetTickCount64();
+        started = true;
+    }
+    register_backbuffer_locked(event->back_buffer);
+    ++g_frame_serial;
+    ++g_lifetime_frame_serial;
+    if (g_automatic_selection_notice != AutomaticSelectionNotice::none) {
+        selection_notice = g_automatic_selection_notice;
+        selection_snapshot = g_automatic_selection_notice_state;
+        g_automatic_selection_notice = AutomaticSelectionNotice::none;
+        g_automatic_selection_notice_state = {};
+    }
+    if (g_fsr_execution_notice_pending) {
+        fsr_active_notice = true;
+        fsr_active_snapshot = g_automatic_selection;
+        g_fsr_execution_notice_pending = false;
+    }
+    current_selection = g_automatic_selection;
+    report_due =
+        GetTickCount64() - g_window_started_at >=
+        kObservationWindowMilliseconds;
+    ReleaseSRWLockExclusive(&g_catalog_lock);
+
+    if (started) {
+        enqueue_window_notice(
+            signature_changed,
+            event->width,
+            event->height,
+            event->format,
+            event->sample_count);
+        if (TryAcquireSRWLockExclusive(&g_runtime_lock)) {
+            discard_fsr_runtime_output();
+            ReleaseSRWLockExclusive(&g_runtime_lock);
+        }
+    }
+    if (report_due) {
+        enqueue_color_report(ColorReportReason::window_complete);
+    }
+    if (selection_notice != AutomaticSelectionNotice::none) {
+        enqueue_automatic_selection_notice(
+            selection_notice, selection_snapshot);
+    }
+    if (selection_notice == AutomaticSelectionNotice::fallback &&
+        TryAcquireSRWLockExclusive(&g_runtime_lock)) {
+        discard_fsr_runtime_output();
+        ReleaseSRWLockExclusive(&g_runtime_lock);
+    }
+    if (current_selection.ready) {
+        const auto policy = photorealism::fsr::evaluate_fsr_execution_policy(
+            current_selection.source_width,
+            current_selection.source_height,
+            current_selection.output_width,
+            current_selection.output_height);
+        if (TryAcquireSRWLockExclusive(&g_runtime_lock)) {
+            prepare_fsr_runtime_output(
+                current_selection.source_width,
+                current_selection.source_height,
+                current_selection.output_width,
+                current_selection.output_height,
+                policy.execute);
+            ReleaseSRWLockExclusive(&g_runtime_lock);
+        }
+    }
+    if (fsr_active_notice) {
+        enqueue_fsr_active_notice(fsr_active_snapshot);
+    }
+    const ULONGLONG now = GetTickCount64();
+    if (TryAcquireSRWLockExclusive(&g_runtime_lock)) {
+        poll_fsr_gpu_timing();
+        if (now - g_last_timing_report_at >= 10000u) {
+            const FsrGpuTimingSummary timing =
+                take_fsr_gpu_timing_summary();
+            g_last_timing_report_at = now;
+            ReleaseSRWLockExclusive(&g_runtime_lock);
+            enqueue_fsr_timing(timing);
+        } else {
+            ReleaseSRWLockExclusive(&g_runtime_lock);
+        }
+    }
+}
+
+HRESULT WINAPI update_automatic_selection(
+    const PhotorealismFsrSelectionContextV3* context,
+    PhotorealismFsrAutomaticSelectionV3* selection) {
+    if (context == nullptr || context->struct_size < sizeof(*context) ||
+        selection == nullptr || selection->struct_size < sizeof(*selection) ||
+        context->backbuffer_width == 0 || context->backbuffer_height == 0) {
+        return E_INVALIDARG;
+    }
+    std::memset(selection, 0, sizeof(*selection));
+    selection->struct_size = sizeof(*selection);
+
+    if (!TryAcquireSRWLockExclusive(&g_catalog_lock)) {
+        InterlockedIncrement64(&g_lock_contention_drops);
+        return S_FALSE;
+    }
+    if (g_device == nullptr || !g_window_active) {
+        ReleaseSRWLockExclusive(&g_catalog_lock);
+        return S_FALSE;
+    }
+    int best_index = -1;
+    photorealism::fsr::AutomaticSceneCandidateResult best_score = {};
+    for (std::size_t index = 0; index < g_resource_count; ++index) {
+        const ColorResourceEntry& entry = g_resources[index];
+        const UINT candidate_format =
+            photorealism::fsr::is_fsr_color_format(entry.texture_format)
+                ? entry.texture_format
+                : entry.primary_view_format;
+        const auto score =
+            photorealism::fsr::score_automatic_scene_candidate({
+                entry.width,
+                entry.height,
+                candidate_format,
+                entry.sample_count,
+                entry.bind_flags,
+                entry.misc_flags,
+                entry.mip_levels,
+                entry.array_size,
+                context->backbuffer_width,
+                context->backbuffer_height,
+                context->depth_width,
+                context->depth_height,
+                entry.bindings,
+                entry.slot_zero_bindings,
+                entry.last_serial,
+                g_binding_serial,
+                entry.last_frame,
+                g_frame_serial,
+                entry.direct_composition_hits,
+                entry.last_composition_frame,
+                entry.exact_backbuffer_resource});
+        if (!score.eligible) {
+            continue;
+        }
+        if (best_index < 0 ||
+            photorealism::fsr::automatic_candidate_is_better(
+                score,
+                entry.bindings,
+                entry.last_serial,
+                best_score,
+                g_resources[static_cast<std::size_t>(best_index)].bindings,
+                g_resources[static_cast<std::size_t>(best_index)].last_serial)) {
+            best_index = static_cast<int>(index);
+            best_score = score;
+        }
+    }
+
+    if (best_index >= 0) {
+        const ColorResourceEntry& best =
+            g_resources[static_cast<std::size_t>(best_index)];
+        const bool same_candidate =
+            g_automatic_selection.identity == best.identity &&
+            photorealism::fsr::automatic_candidate_signature_matches(
+                {
+                    g_automatic_selection.source_width,
+                    g_automatic_selection.source_height,
+                    g_automatic_selection.source_format,
+                    g_automatic_selection.output_width,
+                    g_automatic_selection.output_height,
+                },
+                {
+                    best.width,
+                    best.height,
+                    photorealism::fsr::is_fsr_color_format(best.texture_format)
+                        ? best.texture_format
+                        : best.primary_view_format,
+                    context->backbuffer_width,
+                    context->backbuffer_height,
+                });
+        if (same_candidate) {
+            if (g_automatic_selection.confirmations < UINT32_MAX) {
+                ++g_automatic_selection.confirmations;
+            }
+        } else {
+            if (g_automatic_selection.ready) {
+                g_automatic_selection_notice =
+                    AutomaticSelectionNotice::fallback;
+                g_automatic_selection_notice_state = g_automatic_selection;
+            }
+            const std::uint64_t next_generation =
+                g_automatic_selection.generation + 1u;
+            g_automatic_selection = {};
+            g_automatic_selection.identity = best.identity;
+            g_automatic_selection.generation = next_generation;
+            g_automatic_selection.confirmations = 1;
+        }
+        g_automatic_selection.source_width = best.width;
+        g_automatic_selection.source_height = best.height;
+        g_automatic_selection.source_format =
+            photorealism::fsr::is_fsr_color_format(best.texture_format)
+                ? best.texture_format
+                : best.primary_view_format;
+        g_automatic_selection.output_width = context->backbuffer_width;
+        g_automatic_selection.output_height = context->backbuffer_height;
+        g_automatic_selection.confidence = best_score.confidence;
+        g_automatic_selection.last_seen_frame = g_lifetime_frame_serial;
+
+        if (!g_automatic_selection.ready &&
+            photorealism::fsr::automatic_candidate_can_lock(best_score) &&
+            g_automatic_selection.confirmations >=
+                kAutomaticSelectionConfirmFrames) {
+            g_automatic_selection.ready = true;
+            g_automatic_selection_notice = AutomaticSelectionNotice::ready;
+            g_automatic_selection_notice_state = g_automatic_selection;
+        }
+    } else if (
+        g_automatic_selection.identity != nullptr &&
+        g_lifetime_frame_serial > g_automatic_selection.last_seen_frame +
+                                      kAutomaticSelectionLostGraceFrames) {
+        if (g_automatic_selection.ready) {
+            g_automatic_selection_notice_state = g_automatic_selection;
+            g_automatic_selection.ready = false;
+            g_automatic_selection_notice = AutomaticSelectionNotice::fallback;
+        }
+        g_automatic_selection.identity = nullptr;
+        g_automatic_selection.confirmations = 0;
+        ++g_automatic_selection.generation;
+    }
+
+    selection->generation = g_automatic_selection.generation;
+    selection->source_width = g_automatic_selection.source_width;
+    selection->source_height = g_automatic_selection.source_height;
+    selection->source_format = g_automatic_selection.source_format;
+    selection->output_width = g_automatic_selection.output_width;
+    selection->output_height = g_automatic_selection.output_height;
+    selection->confidence = g_automatic_selection.confidence;
+    if (g_automatic_selection.ready) {
+        selection->flags |= PHOTOREALISM_FSR_AUTOMATIC_SELECTION_READY;
+    }
+    const bool ready = g_automatic_selection.ready;
+    ReleaseSRWLockExclusive(&g_catalog_lock);
+    return ready ? S_OK : S_FALSE;
+}
+
+HRESULT WINAPI process_shader_resources(
+    PhotorealismFsrShaderResourcesEventV4* event) {
+    if (event == nullptr || event->struct_size < sizeof(*event) ||
+        event->context == nullptr || event->view_count == 0 ||
+        event->input_views == nullptr || event->output_views == nullptr ||
+        event->output_capacity < event->view_count) {
+        return E_INVALIDARG;
+    }
+    event->result_flags = 0;
+    if (!TryAcquireSRWLockExclusive(&g_catalog_lock)) {
+        InterlockedIncrement64(&g_lock_contention_drops);
+        return S_FALSE;
+    }
+    if (g_device == nullptr || !g_window_active ||
+        !g_current_output_is_backbuffer) {
+        ReleaseSRWLockExclusive(&g_catalog_lock);
+        return S_FALSE;
+    }
+    if (g_current_output_context != nullptr &&
+        g_current_output_context != event->context) {
+        ReleaseSRWLockExclusive(&g_catalog_lock);
+        return S_FALSE;
+    }
+
+    int selected_view = -1;
+    UINT selected_width = 0;
+    UINT selected_height = 0;
+    UINT selected_format = 0;
+    for (UINT index = 0; index < event->view_count; ++index) {
+        ID3D11ShaderResourceView* view = event->input_views[index];
+        if (view == nullptr) {
+            continue;
+        }
+        void* identity = nullptr;
+        UINT width = 0;
+        UINT height = 0;
+        UINT format = 0;
+        if (!resolve_shader_view_locked(
+                view, &identity, &width, &height, &format)) {
+            continue;
+        }
+        const int resource_index = find_resource_locked(identity);
+        if (resource_index >= 0) {
+            ColorResourceEntry& resource =
+                g_resources[static_cast<std::size_t>(resource_index)];
+            ++resource.direct_composition_hits;
+            resource.last_composition_frame = g_frame_serial;
+        }
+        if (g_automatic_selection.ready &&
+            identity == g_automatic_selection.identity &&
+            width == g_automatic_selection.source_width &&
+            height == g_automatic_selection.source_height &&
+            photorealism::fsr::is_fsr_color_format(format)) {
+            selected_view = static_cast<int>(index);
+            selected_width = width;
+            selected_height = height;
+            selected_format = format;
+        }
+    }
+
+    const AutomaticSelectionState selection = g_automatic_selection;
+    const std::uint64_t frame_serial = g_lifetime_frame_serial;
+    const bool runtime_available = g_fsr_runtime_available;
+    ReleaseSRWLockExclusive(&g_catalog_lock);
+    if (selected_view < 0 || !runtime_available) {
+        return S_FALSE;
+    }
+    const auto policy = photorealism::fsr::evaluate_fsr_execution_policy(
+        selected_width,
+        selected_height,
+        selection.output_width,
+        selection.output_height);
+    if (!TryAcquireSRWLockExclusive(&g_runtime_lock)) {
+        return S_FALSE;
+    }
+    ID3D11ShaderResourceView* replacement = nullptr;
+    bool temporal_aa_executed = false;
+    bool easu_executed = false;
+    bool rcas_executed = false;
+    const bool executed = execute_fsr_runtime(
+        event->context,
+        event->input_views[static_cast<UINT>(selected_view)],
+        selected_width,
+        selected_height,
+        selected_format,
+        selection.output_width,
+        selection.output_height,
+        frame_serial,
+        policy.execute,
+        &replacement,
+        &temporal_aa_executed,
+        &easu_executed,
+        &rcas_executed);
+    ReleaseSRWLockExclusive(&g_runtime_lock);
+    if (!executed || replacement == nullptr) {
+        return S_FALSE;
+    }
+    event->output_views[static_cast<UINT>(selected_view)] = replacement;
+    event->result_flags = PHOTOREALISM_FSR_SHADER_RESOURCES_REPLACED;
+    if (temporal_aa_executed) {
+        event->result_flags |= PHOTOREALISM_TEMPORAL_AA_EXECUTED |
+                               PHOTOREALISM_SPATIAL_AA_EXECUTED;
+    }
+    if (easu_executed) {
+        event->result_flags |= PHOTOREALISM_FSR_EASU_EXECUTED;
+    }
+    if (rcas_executed) {
+        event->result_flags |= PHOTOREALISM_FSR_RCAS_EXECUTED;
+    }
+    AcquireSRWLockExclusive(&g_catalog_lock);
+    if (g_fsr_logged_generation != selection.generation) {
+        g_fsr_execution_notice_pending = true;
+        g_fsr_logged_generation = selection.generation;
+    }
+    ReleaseSRWLockExclusive(&g_catalog_lock);
+    return S_OK;
+}
+
+void WINAPI reset_color_observation(std::uint32_t reason) {
+    AcquireSRWLockExclusive(&g_catalog_lock);
+    const bool was_active = g_window_active;
+    clear_catalog_locked(true);
+    ReleaseSRWLockExclusive(&g_catalog_lock);
+    AcquireSRWLockExclusive(&g_runtime_lock);
+    discard_fsr_runtime_output();
+    ReleaseSRWLockExclusive(&g_runtime_lock);
+    if (was_active) {
+        enqueue_reset_notice(reason);
+    }
+}
+
+void WINAPI shutdown_device() {
+    enqueue_color_report(ColorReportReason::device_shutdown);
+    AcquireSRWLockExclusive(&g_catalog_lock);
+    ID3D11Device* device = g_device;
+    g_device = nullptr;
+    g_fsr_runtime_available = false;
+    clear_catalog_locked(true);
+    ReleaseSRWLockExclusive(&g_catalog_lock);
+
+    AcquireSRWLockExclusive(&g_runtime_lock);
+    shutdown_fsr_runtime();
+    ReleaseSRWLockExclusive(&g_runtime_lock);
+
+    if (device != nullptr) {
+        device->Release();
+    }
+    stop_diagnostic_worker();
+    if (device != nullptr) {
+        log_message(
+            "Photorealism FSR/AA 0.6.0: dispositivo encerrado; worker "
+            "diagnostico drenado com seguranca.");
+    }
+}
+
+const PhotorealismFsrApiV1 g_api_v1 = {
+    sizeof(PhotorealismFsrApiV1),
+    PHOTOREALISM_FSR_ABI_V1,
+    PHOTOREALISM_FSR_MODULE_0_6_0,
+    0,
+    &initialize_device,
+    &shutdown_device,
+};
+
+const PhotorealismFsrApiV2 g_api_v2 = {
+    {
+        sizeof(PhotorealismFsrApiV2),
+        PHOTOREALISM_FSR_ABI_V2,
+        PHOTOREALISM_FSR_MODULE_0_6_0,
+        0,
+        &initialize_device,
+        &shutdown_device,
+    },
+    &observe_color_targets,
+    &observe_frame,
+    &reset_color_observation,
+};
+
+const PhotorealismFsrApiV3 g_api_v3 = {
+    {
+        {
+            sizeof(PhotorealismFsrApiV3),
+            PHOTOREALISM_FSR_ABI_V3,
+            PHOTOREALISM_FSR_MODULE_0_6_0,
+            0,
+            &initialize_device,
+            &shutdown_device,
+        },
+        &observe_color_targets,
+        &observe_frame,
+        &reset_color_observation,
+    },
+    &update_automatic_selection,
+};
+
+const PhotorealismFsrApiV4 g_api_v4 = {
+    {
+        {
+            {
+                sizeof(PhotorealismFsrApiV4),
+                PHOTOREALISM_FSR_ABI_V4,
+                PHOTOREALISM_FSR_MODULE_0_6_0,
+                0,
+                &initialize_device,
+                &shutdown_device,
+            },
+            &observe_color_targets,
+            &observe_frame,
+            &reset_color_observation,
+        },
+        &update_automatic_selection,
+    },
+    &process_shader_resources,
+};
+
+}  // namespace
+
+extern "C" HRESULT WINAPI PhotorealismFsrGetApi(
+    std::uint32_t requested_abi,
+    const PhotorealismFsrApiV1** api) {
+    if (api == nullptr) {
+        return E_POINTER;
+    }
+    *api = nullptr;
+    if (requested_abi == PHOTOREALISM_FSR_ABI_V4) {
+        *api = &g_api_v4.base.base.base;
+        return S_OK;
+    }
+    if (requested_abi == PHOTOREALISM_FSR_ABI_V3) {
+        *api = &g_api_v3.base.base;
+        return S_OK;
+    }
+    if (requested_abi == PHOTOREALISM_FSR_ABI_V2) {
+        *api = &g_api_v2.base;
+        return S_OK;
+    }
+    if (requested_abi == PHOTOREALISM_FSR_ABI_V1) {
+        *api = &g_api_v1;
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+
+BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID) {
+    if (reason == DLL_PROCESS_ATTACH) {
+        g_module = instance;
+        DisableThreadLibraryCalls(instance);
+    }
+    return TRUE;
+}

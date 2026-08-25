@@ -1,0 +1,28 @@
+{
+  "profile_version": "0.8.0",
+  "game_version": "1.60",
+  "mode": "vehicle_auxiliary_projection_pass",
+  "street_lamps": {
+    "flare_scale_multiplier": 1.15,
+    "light_range_multiplier": 1.05,
+    "luminous_flux_multiplier": 1.06
+  },
+  "traffic_lights": {
+    "flare_scale_multiplier": 1.1,
+    "fade_distance_multiplier": 1.0
+  },
+  "vehicle_lights": {
+    "rear_signal_flare_multiplier": 1.08,
+    "front_light_flare_multiplier": 1.06,
+    "default_scale_multiplier": 1.0,
+    "low_beam_range_multiplier": 1.05,
+    "high_beam_range_multiplier": 1.05,
+    "projected_beam_flux_multiplier": 1.03,
+    "front_aux_range_multiplier": 1.03,
+    "roof_aux_range_multiplier": 1.04,
+    "combined_aux_range_multiplier": 1.04,
+    "front_aux_flux_multiplier": 1.02,
+    "roof_aux_flux_multiplier": 1.03,
+    "combined_aux_flux_multiplier": 1.03
+  }
+}

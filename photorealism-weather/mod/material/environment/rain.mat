@@ -1,0 +1,7 @@
+effect : "eut2.dif.flat.billb.over.rfx" {
+	diffuse : { 0.32 , 0.32 , 0.32 }
+	texture : "texture_base" {
+		source : "rain.tobj"
+		sampler : default
+	}
+}

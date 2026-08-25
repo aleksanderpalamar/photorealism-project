@@ -1,0 +1,17 @@
+SiiNunit
+{
+flare_vehicle: flare.vehicle.reversel
+{
+	dir_type: narrow
+	flare_inner_angle: 45
+	light_type: reverse
+
+@include "vehicle_spot_reverse_white.sui"
+
+	model: "/model/flare/uniform_cold_white.pmd"
+	default_scale: 0.534
+	scale_factor: 6
+
+@include "vehicle_bulb_type_incandescent.sui"
+}
+}

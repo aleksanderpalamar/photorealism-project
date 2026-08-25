@@ -1,0 +1,4 @@
+map	2d	clear_midday_01-mask.tga
+addr	repeat	clamp_to_edge
+nocompress
+color_space	linear

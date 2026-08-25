@@ -1,0 +1,16 @@
+SiiNunit
+{
+flare_vehicle: flare.vehicle.rearl
+{
+	dir_type: wide
+	light_type: parking
+
+@include "vehicle_spot_positional_rear_red.sui"
+
+	model: "/model/flare/uniform_red_dimmed.pmd"
+	default_scale: 0.534
+	scale_factor: 5.4
+
+@include "vehicle_bulb_type_incandescent.sui"
+}
+}

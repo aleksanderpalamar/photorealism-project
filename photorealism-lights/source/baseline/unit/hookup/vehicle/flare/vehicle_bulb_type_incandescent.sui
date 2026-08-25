@@ -1,0 +1,5 @@
+	# Incandescent bulbs need some time before they come up to full intensity.
+	# However we don't have such system in place yet, thus use almost instant state change.
+
+	state_change_duration: 0.083
+

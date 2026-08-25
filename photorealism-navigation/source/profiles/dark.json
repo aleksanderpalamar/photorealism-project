@@ -1,0 +1,38 @@
+{
+  "profile_version": "0.2.0",
+  "game_version": "1.60",
+  "theme": "dark",
+  "display_name": "Photorealism Navigation - Dark",
+  "ui_map_background": "FF202020",
+  "road_color": "0xFF4A4A4A",
+  "road_discovered_color": "0xFF8A8A8A",
+  "job_road_color": "0x504A4A4A",
+  "job_road_discovered_color": "0xFF8A8A8A",
+  "world_road_color": "0xFF4A4A4A",
+  "world_road_discovered_color": "0xFF8A8A8A",
+  "fleet_manager_road_color": "0xFF4A4A4A",
+  "fleet_manager_road_discovered_color": "0xFF8A8A8A",
+  "prefab_color": "0xFF323232",
+  "prefab_obstacle_color": "0xFF202020",
+  "prefab_grass_color": "0xFF2A3826",
+  "prefab_discovered_color": "0xFF68635F",
+  "prefab_obstacle_discovered_color": "0xFF43403C",
+  "prefab_grass_discovered_color": "0xFF3F5634",
+  "outline_color": "0xFF202020",
+  "navigation_color": "0xFFF8B48A",
+  "navigation_highlight_color": "0xFFFACBAE",
+  "navigation_fade_color": "0xFFF69D66",
+  "navigation_arrow_color": "0xFFFFFFFF",
+  "map_area_color": [
+    "0xFF4A4A4A",
+    "0xFF323232",
+    "0xFF202020",
+    "0xFF2A3826"
+  ],
+  "map_area_discovered_color": [
+    "0xFF8A8A8A",
+    "0xFF68635F",
+    "0xFF43403C",
+    "0xFF3F5634"
+  ]
+}

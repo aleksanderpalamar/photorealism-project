@@ -1,0 +1,3 @@
+map	2d	clear_midday_p19.hdr
+addr	repeat	clamp_to_edge
+color_space	linear

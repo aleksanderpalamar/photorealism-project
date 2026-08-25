@@ -1,0 +1,7 @@
+effect : "eut2.glassdrops.rain.rfx" {
+	distortion_strength : { 0.5, 0.5 }
+	texture : "texture_base" {
+		source : "/material/environment/blobs_rain.tobj"
+		sampler : default
+	}
+}

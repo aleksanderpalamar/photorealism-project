@@ -1,0 +1,13 @@
+[white]Photorealism Navigation - Light 0.2.0
+
+[normal]Interface de navegação inspirada na clareza dos mapas modernos, com identidade própria da coleção Photorealism.
+
+Esta variante aplica:
+- paleta clara no GPS e nos mapas
+- rota azul com destaque e segmento percorrido calibrados
+- fundo dedicado no Route Advisor e no GPS comum
+- suporte visual aos GPS Volvo FH 2021 e FH 2024, incluindo MPH
+- compatibilidade com Photorealism e Photorealism Landscape
+
+[orange]Importante:
+[normal]Ative somente uma variante do Photorealism Navigation por vez: Light ou Dark.

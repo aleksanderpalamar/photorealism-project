@@ -1,0 +1,4 @@
+	# LEDs are having almost instant state change.
+
+	state_change_duration: 0.083
+

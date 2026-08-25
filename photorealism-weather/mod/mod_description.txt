@@ -1,0 +1,27 @@
+[white]Photorealism 0.11 - 1.60
+
+[normal]Reformulação experimental de iluminação, exposição, atmosfera, céu e clima.
+
+Calibração neutra para o ciclo completo de 24 horas em tempo bom e mau tempo:
+- bloom e raios solares mais sutis
+- saturação e contraste mais naturais
+- sombras menos pesadas
+- atmosfera matinal discretamente reforçada
+- chuva e spray preservados sem alterar sua intensidade
+- halos noturnos mais definidos e controlados
+- skybox fotorealista de meio-dia sem alongamento horizontal
+- nuvens menores, menos brilhantes e com mais espaço de céu azul
+- família coerente de skyboxes entre o meio-dia e o início da tarde
+- adaptação ocular mais natural entre cabine, túneis e ambiente externo
+- altas luzes mais controladas no céu, metais e veículos claros
+- separação solar e reflexos discretamente reforçados em tempo limpo
+- chuva diurna com melhor definição sem reduzir gotas ou spray
+- gotas de tamanhos variados com aderência e movimento mais naturais
+- reação aerodinâmica progressiva conforme a velocidade do caminhão
+- rastro do limpador com umidade residual mais convincente
+- spray de rodas escalonado para chuva leve, média e forte
+- frequência de mau tempo moderada conforme a região
+- molhamento progressivo e secagem regional da pista
+
+[orange]Ordem recomendada:
+[normal]Coloque este mod acima de outros mods de clima, céu ou iluminação.

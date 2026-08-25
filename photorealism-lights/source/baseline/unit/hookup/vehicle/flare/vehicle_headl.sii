@@ -1,0 +1,17 @@
+SiiNunit
+{
+flare_vehicle: flare.vehicle.headl
+{
+	dir_type: narrow
+	flare_inner_angle: 7
+	light_type: low_beam
+	model: "/model/flare/uniform_white_amplified.pmd"
+	visual_offset: 0.6
+	default_scale: 1.53
+	scale_factor: 3
+	scaling_start_distance: 0
+	scaling_end_distance: 60.0
+
+@include "vehicle_bulb_type_incandescent.sui"
+}
+}

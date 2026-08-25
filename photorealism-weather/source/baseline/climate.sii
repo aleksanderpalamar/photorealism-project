@@ -1,0 +1,255 @@
+SiiNunit
+{
+# For modders: Please do not modify this file if you want to add a new entry. Create in
+# this directory a new file "<base_name>.<idofyourmod>.sii" where <base_name> is name of
+# base file without the extension (e.g. "climate" for "/def/climate.sii") and <idofyourmod> is
+# some string which is unlikely to conflict with other mod.
+#
+# Warning: Even if the units are specified in more than one source file, they share the
+# same namespace so suffixes or prefixes should be used to avoid conflicts.
+
+climate_profile : climate.reference {
+	bad_weather_factor: 0.0
+	wetting_factor: 0.1
+	drying_factor: 0.01
+
+	// Globe coordinates (in degrees) are based on map position:
+	// latitude = map_origin[0] + (map_z - map_offset[0]) * map_factor[0]
+	// longitude = map_origin[1] + (map_x - map_offset[1]) * map_factor[1]
+	//
+	// If advanced map projection is used (eg lambert) projection is applied on coordinates accordingly.
+
+	map_projection: lambert_conic
+	standard_paralel_1: 37
+	standard_paralel_2: 65
+
+	map_origin: (50, 15)
+	map_offset: (16660.0, 4150.0)
+	map_factor: (-1.71570875e-4, 1.729241463e-4)
+}
+
+climate_profile : climate.default {
+	clear_skyboxes_count: 3
+	bad_weather_factor: 0.07
+	wetting_factor: 0.1
+	drying_factor: 0.01
+
+	// Globe coordinates (in degrees) are based on map position:
+	// latitude = map_origin[0] + (map_z - map_offset[0]) * map_factor[0]
+	// longitude = map_origin[1] + (map_x - map_offset[1]) * map_factor[1]
+	//
+	// If advanced map projection is used (eg lambert) projection is applied on coordinates accordingly.
+
+	map_projection: lambert_conic
+	standard_paralel_1: 37
+	standard_paralel_2: 65
+
+	map_origin: (50, 15)
+	map_offset: (16660.0, 4150.0)
+	map_factor: (-1.71570875e-4, 1.729241463e-4)
+}
+
+climate_profile : climate.cold {
+	clear_skyboxes_count: 3
+	bad_weather_factor: 0.07
+	wetting_factor: 0.1
+	drying_factor: 0.01
+
+	// Globe coordinates (in degrees) are based on map position:
+	// latitude = map_origin[0] + (map_z - map_offset[0]) * map_factor[0]
+	// longitude = map_origin[1] + (map_x - map_offset[1]) * map_factor[1]
+	//
+	// If advanced map projection is used (eg lambert) projection is applied on coordinates accordingly.
+
+	map_projection: lambert_conic
+	standard_paralel_1: 37
+	standard_paralel_2: 65
+
+	map_origin: (50, 15)
+	map_offset: (16660.0, 4150.0)
+	map_factor: (-1.71570875e-4, 1.729241463e-4)
+
+	copy: default
+	temperatures: 1
+	temperatures[]: -5
+}
+
+climate_profile : climate.arid {
+	clear_skyboxes_count: 3
+	bad_weather_factor: 0.03
+	wetting_factor: 0.1
+	drying_factor: 0.01
+
+	// Globe coordinates (in degrees) are based on map position:
+	// latitude = map_origin[0] + (map_z - map_offset[0]) * map_factor[0]
+	// longitude = map_origin[1] + (map_x - map_offset[1]) * map_factor[1]
+	//
+	// If advanced map projection is used (eg lambert) projection is applied on coordinates accordingly.
+
+	map_projection: lambert_conic
+	standard_paralel_1: 37
+	standard_paralel_2: 65
+
+	map_origin: (50, 15)
+	map_offset: (16660.0, 4150.0)
+	map_factor: (-1.71570875e-4, 1.729241463e-4)
+
+	copy: default
+	weights: 23
+	weights[]: 1
+	weights[]: 0.9
+	weights[]: 2
+	weights[]: 0.6
+	weights[]: 0.1
+	weights[]: 1
+	weights[]: 1
+	weights[]: 1
+	weights[]: 1
+	weights[]: 1
+	weights[]: 1
+	weights[]: 1
+	weights[]: 1
+	weights[]: 1
+	weights[]: 0.2
+	weights[]: 2
+	weights[]: 2
+	weights[]: 2
+	weights[]: 0.3
+	weights[]: 0.5
+	weights[]: 0.6
+	weights[]: 0.9
+	weights[]: 2
+	temperatures: 1
+	temperatures[]: +2
+}
+
+climate_profile : climate.desert {
+	clear_skyboxes_count: 3
+	bad_weather_factor: 0.01
+	wetting_factor: 0.1
+	drying_factor: 0.01
+
+	// Globe coordinates (in degrees) are based on map position:
+	// latitude = map_origin[0] + (map_z - map_offset[0]) * map_factor[0]
+	// longitude = map_origin[1] + (map_x - map_offset[1]) * map_factor[1]
+	//
+	// If advanced map projection is used (eg lambert) projection is applied on coordinates accordingly.
+
+	map_projection: lambert_conic
+	standard_paralel_1: 37
+	standard_paralel_2: 65
+
+	map_origin: (50, 15)
+	map_offset: (16660.0, 4150.0)
+	map_factor: (-1.71570875e-4, 1.729241463e-4)
+
+	copy: default
+	weights: 23
+	weights[]: 3
+	weights[]: 3
+	weights[]: 3
+	weights[]: 1
+	weights[]: 0
+	weights[]: 1
+	weights[]: 1
+	weights[]: 1
+	weights[]: 1
+	weights[]: 1
+	weights[]: 1
+	weights[]: 1
+	weights[]: 1
+	weights[]: 1
+	weights[]: 0
+	weights[]: 2
+	weights[]: 1
+	weights[]: 1
+	weights[]: 1
+	weights[]: 1
+	weights[]: 1
+	weights[]: 1
+	weights[]: 1
+	temperatures: 1
+	temperatures[]: +6
+}
+
+climate_profile : climate.albedo {
+	bad_weather_factor: 0.0
+	wetting_factor: 0.1
+	drying_factor: 0.01
+
+	// Globe coordinates (in degrees) are based on map position:
+	// latitude = map_origin[0] + (map_z - map_offset[0]) * map_factor[0]
+	// longitude = map_origin[1] + (map_x - map_offset[1]) * map_factor[1]
+	//
+	// If advanced map projection is used (eg lambert) projection is applied on coordinates accordingly.
+
+	map_projection: lambert_conic
+	standard_paralel_1: 37
+	standard_paralel_2: 65
+
+	map_origin: (50, 15)
+	map_offset: (16660.0, 4150.0)
+	map_factor: (-1.71570875e-4, 1.729241463e-4)
+}
+
+climate_profile : climate.black {
+	bad_weather_factor: 0.0
+	wetting_factor: 0.1
+	drying_factor: 0.01
+
+	// Globe coordinates (in degrees) are based on map position:
+	// latitude = map_origin[0] + (map_z - map_offset[0]) * map_factor[0]
+	// longitude = map_origin[1] + (map_x - map_offset[1]) * map_factor[1]
+	//
+	// If advanced map projection is used (eg lambert) projection is applied on coordinates accordingly.
+
+	map_projection: lambert_conic
+	standard_paralel_1: 37
+	standard_paralel_2: 65
+
+	map_origin: (50, 15)
+	map_offset: (16660.0, 4150.0)
+	map_factor: (-1.71570875e-4, 1.729241463e-4)
+}
+
+climate_profile : climate.integrity {
+	bad_weather_factor: 0.0
+	wetting_factor: 0.1
+	drying_factor: 0.01
+
+	// Globe coordinates (in degrees) are based on map position:
+	// latitude = map_origin[0] + (map_z - map_offset[0]) * map_factor[0]
+	// longitude = map_origin[1] + (map_x - map_offset[1]) * map_factor[1]
+	//
+	// If advanced map projection is used (eg lambert) projection is applied on coordinates accordingly.
+
+	map_projection: lambert_conic
+	standard_paralel_1: 37
+	standard_paralel_2: 65
+
+	map_origin: (50, 15)
+	map_offset: (16660.0, 4150.0)
+	map_factor: (-1.71570875e-4, 1.729241463e-4)
+}
+
+climate_profile : climate.grayscale {
+	bad_weather_factor: 0.0
+	wetting_factor: 0.1
+	drying_factor: 0.01
+
+	// Globe coordinates (in degrees) are based on map position:
+	// latitude = map_origin[0] + (map_z - map_offset[0]) * map_factor[0]
+	// longitude = map_origin[1] + (map_x - map_offset[1]) * map_factor[1]
+	//
+	// If advanced map projection is used (eg lambert) projection is applied on coordinates accordingly.
+
+	map_projection: lambert_conic
+	standard_paralel_1: 37
+	standard_paralel_2: 65
+
+	map_origin: (50, 15)
+	map_offset: (16660.0, 4150.0)
+	map_factor: (-1.71570875e-4, 1.729241463e-4)
+}
+
+}
