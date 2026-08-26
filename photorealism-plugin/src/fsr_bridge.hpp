@@ -31,12 +31,18 @@ void report_fsr_automatic_selection_context(
     UINT depth_width,
     UINT depth_height,
     std::uint64_t depth_generation);
-bool process_fsr_pixel_shader_resources(
+void observe_fsr_pixel_shader_resources(
     ID3D11DeviceContext* context,
     UINT start_slot,
     UINT view_count,
-    ID3D11ShaderResourceView* const* input_views,
-    ID3D11ShaderResourceView** output_views,
-    UINT output_capacity);
+    ID3D11ShaderResourceView* const* views);
+void observe_fsr_final_draw(
+    ID3D11DeviceContext* context,
+    std::uint32_t kind,
+    UINT primitive_count,
+    UINT instance_count,
+    UINT start_location,
+    INT base_vertex_location,
+    UINT start_instance_location);
 
 }  // namespace photorealism

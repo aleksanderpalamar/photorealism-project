@@ -81,7 +81,7 @@ Este criterio valida a captura oficial do core; nao e um efeito FSR:
 8. verificar no log deteccao do overlay, `Present1`, auditoria da cadeia e
    ativacao de `ISteamScreenshots v003`.
 
-## FSR 0.5.0 - EASU + RCAS automaticos (consolidado)
+## FSR 0.5.0 - EASU + RCAS automaticos (implementacao substituida)
 
 - ABI v4 retrocompativel e hook opcional de `PSSetShaderResources`;
 - prova repetida de uma relacao scene-SRV -> backbuffer em OM antes de
@@ -111,7 +111,7 @@ Este criterio valida a captura oficial do core; nao e um efeito FSR:
 O ganho de desempenho depende de o Prism3D realmente fornecer scene-color
 menor. O modulo nao reduz sozinho o custo dos passes anteriores da engine.
 
-## Core 0.11.0 + FSR/AA 0.6.0 - substituicao automatica (teste atual)
+## Core 0.11.0 + FSR/AA 0.6.0 - substituicao automatica (substituida)
 
 - bootstrap restrito aos executaveis ETS2/ATS, backup unico reversivel e
   escrita atomica de `r_aa=0`, `r_taa_tuning=0`,
@@ -130,6 +130,45 @@ menor. O modulo nao reduz sozinho o custo dos passes anteriores da engine.
 - telemetria GPU separada TemporalAA/EASU/RCAS, sem `Flush` ou I/O no hot path;
 - ativacao inteiramente automatica, sem tecla nova; Home/End/Insert e F12
   permanecem com as funcoes consolidadas.
+
+Esta abordagem usava a observacao de `PSSetShaderResources` como se ela fosse
+prova de composicao. O teste em ETS2 revelou imagem em quadrantes; portanto ela
+nao e liberada para uso e foi substituida pelo fail-closed 0.6.1.
+
+## FSR 0.6.1 - fail-closed de composicao (consolidado)
+
+- nenhum bind de SRV altera o frame;
+- o modulo continua registrando candidatos, mas EASU, Temporal e RCAS ficam em
+  pass-through;
+- corrigido o flicker/imagem em quadrantes no ETS2;
+- o nucleo `dxgi.dll` segue com iluminacao, SSAO e temporal consolidados.
+
+## Core 0.11.3 + FSR/AA 0.7.0 - prova passiva do draw final (teste atual)
+
+- ABI v5 adiciona observacao de `Draw`, `DrawIndexed`, `DrawInstanced` e
+  `DrawIndexedInstanced`;
+- a sombra dos 128 slots PS e apenas um pre-filtro; a prova consulta o estado
+  vivo do contexto D3D11 imediatamente antes do draw;
+- exige RTV0 no backbuffer registrado, nenhum RTV adicional ou depth, source
+  elegivel no slot 0, viewport/scissor fullscreen, pixel shader e topologia de
+  triangulo fullscreen;
+- uma assinatura de source, backbuffer, shader, chamada e dimensoes precisa
+  ser identica por 24 frames apresentados para ser bloqueada;
+- resize, troca de dispositivo, Home ou perda prolongada da assinatura limpam
+  a prova;
+- `replacement=0` e `dispatch=0`: nao ha alteracao visual nesta etapa;
+- os logs agregados a cada dez segundos registram provas e gates rejeitados
+  sem I/O por frame.
+
+## Core 0.11.4 + FSR/AA 0.7.1 - Temporal + RCAS por draw comprovado (planejado)
+
+- reutilizar sem flexibilizacao a assinatura bloqueada pelo 0.7.0;
+- somente source nativo de mesma resolucao do backbuffer;
+- executar Temporal + RCAS automaticamente antes do draw comprovado;
+- EASU continua desativado nesta etapa;
+- substituir o SRV apenas durante aquela chamada Draw e restaurar o original
+  imediatamente depois; falhas retornam ao draw nativo;
+- nenhuma tecla adicional e nenhuma alteracao no fluxo de F12 nesta etapa.
 
 ## Consolidacao
 

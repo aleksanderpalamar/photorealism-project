@@ -64,4 +64,4 @@ common_flags=(
 
 echo "Gerado: ${build_dir}/dinput8.dll"
 echo "Gerado: ${build_dir}/dxgi.dll"
-echo "Gerado: ${build_dir}/photorealism-fsr.dll (AA/FSR 0.6.0 ABI v1-v4 temporal+EASU+RCAS automatico)"
+echo "Gerado: ${build_dir}/photorealism-fsr.dll (AA/FSR 0.7.0 ABI v1-v5 prova passiva de draw final; replacement=0 dispatch=0)"

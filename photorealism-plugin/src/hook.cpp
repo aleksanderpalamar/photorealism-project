@@ -1,6 +1,7 @@
 #include "hook.hpp"
 
 #include "fsr_bridge.hpp"
+#include "photorealism_fsr_api.hpp"
 #include "postprocess.hpp"
 #include "resource_observer.hpp"
 #include "runtime.hpp"
@@ -47,6 +48,13 @@ using PSSetShaderResourcesFunction = void(STDMETHODCALLTYPE*)(
     UINT,
     UINT,
     ID3D11ShaderResourceView* const*);
+using DrawIndexedFunction = void(STDMETHODCALLTYPE*)(
+    ID3D11DeviceContext*, UINT, UINT, INT);
+using DrawFunction = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*, UINT, UINT);
+using DrawIndexedInstancedFunction = void(STDMETHODCALLTYPE*)(
+    ID3D11DeviceContext*, UINT, UINT, UINT, INT, UINT);
+using DrawInstancedFunction = void(STDMETHODCALLTYPE*)(
+    ID3D11DeviceContext*, UINT, UINT, UINT, UINT);
 using CreateDeviceAndSwapChainFunction = decltype(&D3D11CreateDeviceAndSwapChain);
 
 std::atomic<PresentFunction> g_original_present{nullptr};
@@ -60,6 +68,11 @@ std::atomic<ClearDepthStencilViewFunction>
     g_original_clear_depth_stencil_view{nullptr};
 std::atomic<PSSetShaderResourcesFunction>
     g_original_ps_set_shader_resources{nullptr};
+std::atomic<DrawIndexedFunction> g_original_draw_indexed{nullptr};
+std::atomic<DrawFunction> g_original_draw{nullptr};
+std::atomic<DrawIndexedInstancedFunction>
+    g_original_draw_indexed_instanced{nullptr};
+std::atomic<DrawInstancedFunction> g_original_draw_instanced{nullptr};
 std::atomic<void**> g_present_vtable_entry{nullptr};
 std::atomic<void**> g_present1_vtable_entry{nullptr};
 std::atomic<bool> g_present_runtime_audited{false};
@@ -291,29 +304,114 @@ void STDMETHODCALLTYPE hooked_ps_set_shader_resources(
     UINT start_slot,
     UINT view_count,
     ID3D11ShaderResourceView* const* views) {
-    constexpr UINT kMaximumObservedViews = 16;
-    ID3D11ShaderResourceView* substituted[kMaximumObservedViews] = {};
-    ID3D11ShaderResourceView* const* forwarded = views;
     if (!is_processing_frame() && fsr_processing_enabled() &&
         view_count != 0 && views != nullptr &&
-        view_count <= kMaximumObservedViews) {
-        for (UINT index = 0; index < view_count; ++index) {
-            substituted[index] = views[index];
-        }
-        if (process_fsr_pixel_shader_resources(
-                context,
-                start_slot,
-                view_count,
-                views,
-                substituted,
-                kMaximumObservedViews)) {
-            forwarded = substituted;
-        }
+        start_slot < D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT &&
+        view_count <= D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT - start_slot) {
+        observe_fsr_pixel_shader_resources(context, start_slot, view_count, views);
     }
     const PSSetShaderResourcesFunction original =
         g_original_ps_set_shader_resources.load(std::memory_order_acquire);
     if (original != nullptr) {
-        original(context, start_slot, view_count, forwarded);
+        original(context, start_slot, view_count, views);
+    }
+}
+
+void STDMETHODCALLTYPE hooked_draw_indexed(
+    ID3D11DeviceContext* context,
+    UINT index_count,
+    UINT start_index_location,
+    INT base_vertex_location) {
+    if (!is_processing_frame() && fsr_processing_enabled()) {
+        observe_fsr_final_draw(
+            context,
+            PHOTOREALISM_FSR_DRAW_INDEXED,
+            index_count,
+            1,
+            start_index_location,
+            base_vertex_location,
+            0);
+    }
+    const DrawIndexedFunction original =
+        g_original_draw_indexed.load(std::memory_order_acquire);
+    if (original != nullptr) {
+        original(context, index_count, start_index_location, base_vertex_location);
+    }
+}
+
+void STDMETHODCALLTYPE hooked_draw(
+    ID3D11DeviceContext* context, UINT vertex_count, UINT start_vertex_location) {
+    if (!is_processing_frame() && fsr_processing_enabled()) {
+        observe_fsr_final_draw(
+            context,
+            PHOTOREALISM_FSR_DRAW,
+            vertex_count,
+            1,
+            start_vertex_location,
+            0,
+            0);
+    }
+    const DrawFunction original = g_original_draw.load(std::memory_order_acquire);
+    if (original != nullptr) {
+        original(context, vertex_count, start_vertex_location);
+    }
+}
+
+void STDMETHODCALLTYPE hooked_draw_indexed_instanced(
+    ID3D11DeviceContext* context,
+    UINT index_count_per_instance,
+    UINT instance_count,
+    UINT start_index_location,
+    INT base_vertex_location,
+    UINT start_instance_location) {
+    if (!is_processing_frame() && fsr_processing_enabled()) {
+        observe_fsr_final_draw(
+            context,
+            PHOTOREALISM_FSR_DRAW_INDEXED_INSTANCED,
+            index_count_per_instance,
+            instance_count,
+            start_index_location,
+            base_vertex_location,
+            start_instance_location);
+    }
+    const DrawIndexedInstancedFunction original =
+        g_original_draw_indexed_instanced.load(std::memory_order_acquire);
+    if (original != nullptr) {
+        original(
+            context,
+            index_count_per_instance,
+            instance_count,
+            start_index_location,
+            base_vertex_location,
+            start_instance_location);
+    }
+}
+
+void STDMETHODCALLTYPE hooked_draw_instanced(
+    ID3D11DeviceContext* context,
+    UINT vertex_count_per_instance,
+    UINT instance_count,
+    UINT start_vertex_location,
+    UINT start_instance_location) {
+    if (!is_processing_frame() && fsr_processing_enabled()) {
+        observe_fsr_final_draw(
+            context,
+            PHOTOREALISM_FSR_DRAW_INSTANCED,
+            vertex_count_per_instance,
+            instance_count,
+            start_vertex_location,
+            0,
+            start_instance_location);
+    }
+    const DrawInstancedFunction original =
+        g_original_draw_instanced.load(std::memory_order_acquire);
+    if (original != nullptr) {
+        original(
+            context,
+            vertex_count_per_instance,
+            instance_count,
+            start_vertex_location,
+            start_instance_location);
     }
 }
 
@@ -365,7 +463,12 @@ bool install_swap_chain_hooks() {
         g_original_clear_depth_stencil_view.load(
             std::memory_order_acquire) != nullptr &&
         g_original_ps_set_shader_resources.load(
-            std::memory_order_acquire) != nullptr) {
+            std::memory_order_acquire) != nullptr &&
+        g_original_draw_indexed.load(std::memory_order_acquire) != nullptr &&
+        g_original_draw.load(std::memory_order_acquire) != nullptr &&
+        g_original_draw_indexed_instanced.load(
+            std::memory_order_acquire) != nullptr &&
+        g_original_draw_instanced.load(std::memory_order_acquire) != nullptr) {
         return true;
     }
 
@@ -476,6 +579,10 @@ bool install_swap_chain_hooks() {
         bool depth_uav_observer_installed = false;
         bool depth_clear_observer_installed = false;
         bool composition_observer_installed = false;
+        bool draw_indexed_observer_installed = false;
+        bool draw_observer_installed = false;
+        bool draw_indexed_instanced_observer_installed = false;
+        bool draw_instanced_observer_installed = false;
         if (probe_context != nullptr) {
             void** context_vtable = *reinterpret_cast<void***>(probe_context);
             depth_observer_installed = replace_vtable_entry(
@@ -494,6 +601,22 @@ bool install_swap_chain_hooks() {
                 &context_vtable[8],
                 reinterpret_cast<void*>(&hooked_ps_set_shader_resources),
                 &g_original_ps_set_shader_resources);
+            draw_indexed_observer_installed = replace_vtable_entry(
+                &context_vtable[12],
+                reinterpret_cast<void*>(&hooked_draw_indexed),
+                &g_original_draw_indexed);
+            draw_observer_installed = replace_vtable_entry(
+                &context_vtable[13],
+                reinterpret_cast<void*>(&hooked_draw),
+                &g_original_draw);
+            draw_indexed_instanced_observer_installed = replace_vtable_entry(
+                &context_vtable[20],
+                reinterpret_cast<void*>(&hooked_draw_indexed_instanced),
+                &g_original_draw_indexed_instanced);
+            draw_instanced_observer_installed = replace_vtable_entry(
+                &context_vtable[21],
+                reinterpret_cast<void*>(&hooked_draw_instanced),
+                &g_original_draw_instanced);
         }
         installed = present_installed &&
                     (!present1_available || present1_installed) &&
@@ -504,9 +627,16 @@ bool install_swap_chain_hooks() {
             log_message(
                 "Hooks Present/Present1/ResizeBuffers/OMSetRenderTargets*/"
                 "ClearDepthStencilView instalados; PSSetShaderResources=%s; "
+                "DrawProof=[indexed=%s draw=%s indexed_instanced=%s instanced=%s]; "
                 "feature level=0x%X "
                 "Present1=%s.",
                 composition_observer_installed ? "ativo-slot8" : "pass-through",
+                draw_indexed_observer_installed ? "ativo-slot12" : "pass-through",
+                draw_observer_installed ? "ativo-slot13" : "pass-through",
+                draw_indexed_instanced_observer_installed
+                    ? "ativo-slot20"
+                    : "pass-through",
+                draw_instanced_observer_installed ? "ativo-slot21" : "pass-through",
                 static_cast<unsigned>(selected_level),
                 present1_available
                     ? (present1_installed ? "ativo-slot22" : "falha-slot22")
@@ -545,6 +675,13 @@ bool install_swap_chain_hooks() {
                 log_message(
                     "PSSetShaderResources slot8 nao instalado; FSR real "
                     "permanece em pass-through.");
+            }
+            if (!draw_indexed_observer_installed || !draw_observer_installed ||
+                !draw_indexed_instanced_observer_installed ||
+                !draw_instanced_observer_installed) {
+                log_message(
+                    "Draw proof parcial: FSR 0.7.0 permanece em observacao "
+                    "segura sem substituicao de SRV.");
             }
         }
     } else {

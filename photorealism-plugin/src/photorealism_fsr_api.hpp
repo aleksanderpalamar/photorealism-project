@@ -11,10 +11,13 @@ constexpr std::uint32_t PHOTOREALISM_FSR_ABI_V1 = 0x00010000u;
 constexpr std::uint32_t PHOTOREALISM_FSR_ABI_V2 = 0x00020000u;
 constexpr std::uint32_t PHOTOREALISM_FSR_ABI_V3 = 0x00030000u;
 constexpr std::uint32_t PHOTOREALISM_FSR_ABI_V4 = 0x00040000u;
+constexpr std::uint32_t PHOTOREALISM_FSR_ABI_V5 = 0x00050000u;
 constexpr std::uint32_t PHOTOREALISM_FSR_MODULE_0_2_0 = 0x00000200u;
 constexpr std::uint32_t PHOTOREALISM_FSR_MODULE_0_3_0 = 0x00000300u;
 constexpr std::uint32_t PHOTOREALISM_FSR_MODULE_0_5_0 = 0x00000500u;
 constexpr std::uint32_t PHOTOREALISM_FSR_MODULE_0_6_0 = 0x00000600u;
+constexpr std::uint32_t PHOTOREALISM_FSR_MODULE_0_6_1 = 0x00000601u;
+constexpr std::uint32_t PHOTOREALISM_FSR_MODULE_0_7_0 = 0x00000700u;
 
 struct PhotorealismFsrApiV1 {
     std::uint32_t struct_size;
@@ -161,6 +164,56 @@ static_assert(
 static_assert(
     sizeof(PhotorealismFsrApiV4) == 72,
     "Photorealism FSR ABI v4 layout changed unexpectedly");
+
+// ABI v5 deliberately separates observation from replacement. A shader
+// resource bind is cached as a low-cost hint, while the module validates the
+// live D3D11 state immediately before the game's Draw call. No COM pointer
+// passed through these events is retained by the module.
+enum PhotorealismFsrDrawKindV5 : std::uint32_t {
+    PHOTOREALISM_FSR_DRAW = 1u,
+    PHOTOREALISM_FSR_DRAW_INDEXED = 2u,
+    PHOTOREALISM_FSR_DRAW_INSTANCED = 3u,
+    PHOTOREALISM_FSR_DRAW_INDEXED_INSTANCED = 4u,
+};
+
+struct PhotorealismFsrPixelShaderResourcesEventV5 {
+    std::uint32_t struct_size;
+    std::uint32_t start_slot;
+    std::uint32_t view_count;
+    std::uint32_t reserved;
+    ID3D11DeviceContext* context;
+    ID3D11ShaderResourceView* const* views;
+};
+
+struct PhotorealismFsrDrawEventV5 {
+    std::uint32_t struct_size;
+    std::uint32_t kind;
+    std::uint32_t primitive_count;
+    std::uint32_t instance_count;
+    std::uint32_t start_location;
+    std::int32_t base_vertex_location;
+    std::uint32_t start_instance_location;
+    std::uint32_t reserved;
+    ID3D11DeviceContext* context;
+};
+
+struct PhotorealismFsrApiV5 {
+    // v1 through v4 remain an exact prefix. v5 is observation-only in 0.7.0.
+    PhotorealismFsrApiV4 base;
+    void(WINAPI* observe_pixel_shader_resources)(
+        const PhotorealismFsrPixelShaderResourcesEventV5* event);
+    void(WINAPI* observe_final_draw)(const PhotorealismFsrDrawEventV5* event);
+};
+
+static_assert(
+    sizeof(PhotorealismFsrPixelShaderResourcesEventV5) == 32,
+    "Photorealism FSR ABI v5 PS event layout changed unexpectedly");
+static_assert(
+    sizeof(PhotorealismFsrDrawEventV5) == 40,
+    "Photorealism FSR ABI v5 draw event layout changed unexpectedly");
+static_assert(
+    sizeof(PhotorealismFsrApiV5) == 88,
+    "Photorealism FSR ABI v5 layout changed unexpectedly");
 
 using PhotorealismFsrGetApiFunction = HRESULT(WINAPI*)(
     std::uint32_t requested_abi,

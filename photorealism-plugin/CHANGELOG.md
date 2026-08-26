@@ -1,5 +1,29 @@
 # Changelog
 
+## Pacote 0.11.3 + Photorealism FSR/AA 0.7.0 - 2026-08-26
+
+- adicionada a prova passiva do draw final via `Draw`, `DrawIndexed`,
+  `DrawInstanced` e `DrawIndexedInstanced`;
+- o modulo valida o estado D3D11 vivo antes do draw: backbuffer, RTVs, depth,
+  source no slot 0, viewport, scissor, pixel shader e topologia fullscreen;
+- uma assinatura identica precisa aparecer por 24 frames apresentados para ser
+  bloqueada; quebra de assinatura, resize ou perda da prova a invalida;
+- esta versao permanece deliberadamente sem efeito visual auxiliar:
+  `replacement=0`, `dispatch=0`, EASU/Temporal/RCAS nao executam;
+- o log agrega a cada dez segundos as provas validas e os gates rejeitados,
+  preparando a ativacao automatica de Temporal + RCAS na proxima etapa.
+
+## Pacote 0.11.2 + Photorealism FSR/AA 0.6.1 - 2026-08-25
+
+- corrigida a substituicao insegura de scene-SRV que podia repetir a imagem em
+  quadrantes no menu, garagem ou outras composicoes internas;
+- FSR/AA auxiliar passou para fail-closed: binds de SRV continuam observados,
+  mas nenhum SRV e trocado ate uma etapa posterior validar o draw final;
+- o pipeline visual principal (`dxgi.dll`), incluindo iluminacao, SSAO e
+  temporal ja consolidados, continua ativo;
+- esta e uma correcao de seguranca: EASU, RCAS e AA temporal auxiliares ficam
+  em pass-through ate a integracao de prova por draw.
+
 ## Pacote 0.11.1 + Photorealism FSR/AA 0.6.0 - 2026-08-24
 
 - removida do ZIP a pasta `references`, reservada a documentacao interna de

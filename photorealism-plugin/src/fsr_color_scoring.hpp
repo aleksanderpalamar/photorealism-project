@@ -235,8 +235,9 @@ constexpr bool is_fsr_color_format(std::uint32_t format) {
 // D3D11_BIND_SHADER_RESOURCE=0x8,
 // D3D11_BIND_RENDER_TARGET=0x20 and D3D11_RESOURCE_MISC_TEXTURECUBE=0x4.
 // Numeric values keep this pure classifier testable on the Linux build host.
-constexpr AutomaticSceneCandidateResult score_automatic_scene_candidate(
-    const AutomaticSceneCandidateInput& input) {
+constexpr AutomaticSceneCandidateResult score_automatic_scene_candidate_impl(
+    const AutomaticSceneCandidateInput& input,
+    bool require_draw_proof) {
     AutomaticSceneCandidateResult result = {};
     if (input.exact_backbuffer_resource || !is_fsr_color_format(input.format) ||
         input.sample_count != 1u || input.mip_levels != 1u ||
@@ -244,9 +245,10 @@ constexpr AutomaticSceneCandidateResult score_automatic_scene_candidate(
         (input.misc_flags & 0x4u) != 0u || input.width == 0u ||
         input.height == 0u || input.current_frame < input.last_frame ||
         input.current_frame - input.last_frame > 2u ||
-        input.direct_composition_hits == 0u ||
-        input.current_frame < input.last_composition_frame ||
-        input.current_frame - input.last_composition_frame > 2u) {
+        (require_draw_proof &&
+         (input.direct_composition_hits == 0u ||
+          input.current_frame < input.last_composition_frame ||
+          input.current_frame - input.last_composition_frame > 2u))) {
         return result;
     }
 
@@ -259,7 +261,8 @@ constexpr AutomaticSceneCandidateResult score_automatic_scene_candidate(
         input.height >= input.backbuffer_height;
     if (native_or_supersampled_dimensions) {
         if (input.format != 26u || input.slot_zero_bindings == 0u ||
-            input.bindings < 12u || input.direct_composition_hits < 12u) {
+            input.bindings < 12u ||
+            (require_draw_proof && input.direct_composition_hits < 12u)) {
             return result;
         }
         const bool exact_native =
@@ -338,8 +341,22 @@ constexpr AutomaticSceneCandidateResult score_automatic_scene_candidate(
     if (order >= 300u && order <= 950u) {
         result.confidence += 8u;
     }
-    result.eligible = result.confidence >= 130u;
+    result.eligible = result.confidence >= (require_draw_proof ? 130u : 110u);
     return result;
+}
+
+// Used only to locate a possible source before a final draw has been proven.
+// It intentionally does not authorize processing or selection lock.
+constexpr AutomaticSceneCandidateResult score_automatic_scene_candidate_base(
+    const AutomaticSceneCandidateInput& input) {
+    return score_automatic_scene_candidate_impl(input, false);
+}
+
+// Production selection requires evidence accumulated exclusively by a live
+// pre-draw proof; PSSetShaderResources by itself is never sufficient.
+constexpr AutomaticSceneCandidateResult score_automatic_scene_candidate(
+    const AutomaticSceneCandidateInput& input) {
+    return score_automatic_scene_candidate_impl(input, true);
 }
 
 constexpr bool automatic_candidate_is_better(

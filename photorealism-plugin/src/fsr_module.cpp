@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <cstdarg>
 #include <cstdint>
 #include <cstdio>
@@ -24,8 +25,20 @@ constexpr std::size_t kBackBufferIdentityCapacity = 8;
 constexpr std::size_t kMaximumReportedTargets = 32;
 constexpr std::size_t kDiagnosticQueueCapacity = 2;
 constexpr ULONGLONG kObservationWindowMilliseconds = 30000;
+constexpr ULONGLONG kDrawProofReportMilliseconds = 10000;
 constexpr std::uint32_t kAutomaticSelectionConfirmFrames = 12;
 constexpr std::uint32_t kAutomaticSelectionLostGraceFrames = 30;
+constexpr std::uint32_t kFinalDrawProofConfirmFrames = 24;
+constexpr std::uint64_t kFinalDrawProofLostGraceFrames = 2;
+constexpr std::size_t kPixelShaderResourceSlotCount =
+    D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT;
+// A resource bind alone does not prove that the following draw is the final
+// full-screen composition. Do not replace the game's SRV until that proof is
+// available; replacing it here caused invalid UI/garage compositions.
+constexpr bool kSrvReplacementRequiresDrawProof = true;
+// 0.7.0 records proof only. Runtime textures and compute dispatch are held for
+// the separately tested activation release.
+constexpr bool kEnableFsrRuntimeAfterDrawProof = false;
 
 struct ViewCacheEntry {
     ID3D11RenderTargetView* view = nullptr;
@@ -112,6 +125,7 @@ enum class DiagnosticJobType : std::uint8_t {
     automatic_selection_fallback,
     fsr_active,
     fsr_timing,
+    draw_proof_report,
 };
 
 enum class AutomaticSelectionNotice : std::uint8_t {
@@ -134,6 +148,55 @@ struct AutomaticSelectionState {
     bool ready = false;
 };
 
+struct FinalDrawProofSignature {
+    void* source_identity = nullptr;
+    void* backbuffer_identity = nullptr;
+    ID3D11PixelShader* pixel_shader = nullptr;
+    D3D11_PRIMITIVE_TOPOLOGY topology = D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
+    std::uint32_t kind = 0;
+    std::uint32_t primitive_count = 0;
+    std::uint32_t instance_count = 0;
+    std::uint32_t start_location = 0;
+    std::int32_t base_vertex_location = 0;
+    std::uint32_t start_instance_location = 0;
+    UINT source_width = 0;
+    UINT source_height = 0;
+    UINT source_format = 0;
+    UINT output_width = 0;
+    UINT output_height = 0;
+};
+
+struct DrawProofDiagnostics {
+    std::uint64_t observed = 0;
+    std::uint64_t valid = 0;
+    std::uint64_t missing_shadow = 0;
+    std::uint64_t wrong_context = 0;
+    std::uint64_t missing_rtv = 0;
+    std::uint64_t multiple_rtvs = 0;
+    std::uint64_t depth_bound = 0;
+    std::uint64_t wrong_backbuffer = 0;
+    std::uint64_t source_mismatch = 0;
+    std::uint64_t source_ineligible = 0;
+    std::uint64_t viewport = 0;
+    std::uint64_t scissor = 0;
+    std::uint64_t pixel_shader = 0;
+    std::uint64_t topology = 0;
+    std::uint64_t call_shape = 0;
+    std::uint64_t duplicate_frame = 0;
+    std::uint64_t lock_contention = 0;
+};
+
+struct DrawProofReportSnapshot {
+    DrawProofDiagnostics diagnostics = {};
+    std::uint64_t streak = 0;
+    bool locked = false;
+    void* source_identity = nullptr;
+    UINT source_width = 0;
+    UINT source_height = 0;
+    UINT output_width = 0;
+    UINT output_height = 0;
+};
+
 enum class ColorReportReason : std::uint8_t {
     window_complete,
     device_shutdown,
@@ -145,6 +208,7 @@ struct DiagnosticJob {
     DiagnosticJobType type = DiagnosticJobType::none;
     ColorReportReason report_reason = ColorReportReason::window_complete;
     ColorReportSnapshot snapshot = {};
+    DrawProofReportSnapshot draw_proof_report = {};
     UINT width = 0;
     UINT height = 0;
     UINT format = 0;
@@ -168,6 +232,7 @@ struct DiagnosticJob {
 
 HMODULE g_module = nullptr;
 ID3D11Device* g_device = nullptr;
+ID3D11DeviceContext* g_immediate_context = nullptr;
 SRWLOCK g_catalog_lock = SRWLOCK_INIT;
 SRWLOCK g_runtime_lock = SRWLOCK_INIT;
 SRWLOCK g_diagnostic_queue_lock = SRWLOCK_INIT;
@@ -180,6 +245,9 @@ std::array<ShaderViewCacheEntry, kViewCacheCapacity> g_shader_view_cache = {};
 std::array<ColorResourceEntry, kResourceCapacity> g_resources = {};
 std::array<BackBufferIdentityEntry, kBackBufferIdentityCapacity>
     g_backbuffer_identities = {};
+std::array<ID3D11ShaderResourceView*, kPixelShaderResourceSlotCount>
+    g_pixel_shader_resource_shadow = {};
+std::atomic<bool> g_pixel_shader_slot_zero_candidate{false};
 std::size_t g_resource_count = 0;
 std::size_t g_backbuffer_identity_count = 0;
 std::uint64_t g_view_cache_entries = 0;
@@ -205,12 +273,19 @@ ID3D11DeviceContext* g_current_output_context = nullptr;
 bool g_current_output_is_backbuffer = false;
 bool g_fsr_execution_notice_pending = false;
 std::uint64_t g_fsr_logged_generation = UINT64_MAX;
+std::uint64_t g_srv_replacement_blocked_generation = UINT64_MAX;
 bool g_fsr_runtime_available = false;
 ULONGLONG g_last_timing_report_at = 0;
 AutomaticSelectionState g_automatic_selection = {};
 AutomaticSelectionNotice g_automatic_selection_notice =
     AutomaticSelectionNotice::none;
 AutomaticSelectionState g_automatic_selection_notice_state = {};
+FinalDrawProofSignature g_final_draw_proof_signature = {};
+DrawProofDiagnostics g_draw_proof_diagnostics = {};
+std::uint64_t g_final_draw_proof_streak = 0;
+std::uint64_t g_final_draw_proof_last_frame = UINT64_MAX;
+bool g_final_draw_proof_locked = false;
+ULONGLONG g_last_draw_proof_report_at = 0;
 
 std::array<DiagnosticJob, kDiagnosticQueueCapacity> g_diagnostic_jobs = {};
 HANDLE g_diagnostic_event = nullptr;
@@ -314,6 +389,40 @@ void log_message(const char* format, ...) {
             : static_cast<int>(sizeof(line) - 1));
     WriteFile(file, line, bytes, &written, nullptr);
     CloseHandle(file);
+}
+
+void write_draw_proof_report(const DrawProofReportSnapshot& snapshot) {
+    const DrawProofDiagnostics& diagnostics = snapshot.diagnostics;
+    log_message(
+        "Draw proof 0.7.0: observed=%llu valid=%llu streak=%llu lock=%s "
+        "source=%p %ux%u output=%ux%u rejects=[shadow=%llu context=%llu "
+        "rtv=%llu multi_rtv=%llu dsv=%llu backbuffer=%llu source=%llu "
+        "candidate=%llu viewport=%llu scissor=%llu shader=%llu topology=%llu "
+        "shape=%llu duplicate=%llu contention=%llu]. replacement=0 dispatch=0.",
+        static_cast<unsigned long long>(diagnostics.observed),
+        static_cast<unsigned long long>(diagnostics.valid),
+        static_cast<unsigned long long>(snapshot.streak),
+        snapshot.locked ? "locked" : "awaiting",
+        snapshot.source_identity,
+        snapshot.source_width,
+        snapshot.source_height,
+        snapshot.output_width,
+        snapshot.output_height,
+        static_cast<unsigned long long>(diagnostics.missing_shadow),
+        static_cast<unsigned long long>(diagnostics.wrong_context),
+        static_cast<unsigned long long>(diagnostics.missing_rtv),
+        static_cast<unsigned long long>(diagnostics.multiple_rtvs),
+        static_cast<unsigned long long>(diagnostics.depth_bound),
+        static_cast<unsigned long long>(diagnostics.wrong_backbuffer),
+        static_cast<unsigned long long>(diagnostics.source_mismatch),
+        static_cast<unsigned long long>(diagnostics.source_ineligible),
+        static_cast<unsigned long long>(diagnostics.viewport),
+        static_cast<unsigned long long>(diagnostics.scissor),
+        static_cast<unsigned long long>(diagnostics.pixel_shader),
+        static_cast<unsigned long long>(diagnostics.topology),
+        static_cast<unsigned long long>(diagnostics.call_shape),
+        static_cast<unsigned long long>(diagnostics.duplicate_frame),
+        static_cast<unsigned long long>(diagnostics.lock_contention));
 }
 
 const char* feature_level_name(D3D_FEATURE_LEVEL level) {
@@ -478,6 +587,32 @@ bool is_backbuffer_identity_locked(void* identity) {
     return false;
 }
 
+bool final_draw_signature_matches(
+    const FinalDrawProofSignature& left,
+    const FinalDrawProofSignature& right) {
+    return left.source_identity == right.source_identity &&
+           left.backbuffer_identity == right.backbuffer_identity &&
+           left.pixel_shader == right.pixel_shader &&
+           left.topology == right.topology && left.kind == right.kind &&
+           left.primitive_count == right.primitive_count &&
+           left.instance_count == right.instance_count &&
+           left.start_location == right.start_location &&
+           left.base_vertex_location == right.base_vertex_location &&
+           left.start_instance_location == right.start_instance_location &&
+           left.source_width == right.source_width &&
+           left.source_height == right.source_height &&
+           left.source_format == right.source_format &&
+           left.output_width == right.output_width &&
+           left.output_height == right.output_height;
+}
+
+void reset_final_draw_proof_locked() {
+    g_final_draw_proof_signature = {};
+    g_final_draw_proof_streak = 0;
+    g_final_draw_proof_last_frame = UINT64_MAX;
+    g_final_draw_proof_locked = false;
+}
+
 void clear_catalog_locked(bool clear_signature) {
     std::memset(g_view_cache.data(), 0, sizeof(g_view_cache));
     std::memset(g_shader_view_cache.data(), 0, sizeof(g_shader_view_cache));
@@ -496,6 +631,11 @@ void clear_catalog_locked(bool clear_signature) {
     g_current_output_identity = nullptr;
     g_current_output_context = nullptr;
     g_current_output_is_backbuffer = false;
+    g_pixel_shader_resource_shadow.fill(nullptr);
+    g_pixel_shader_slot_zero_candidate.store(false, std::memory_order_release);
+    reset_final_draw_proof_locked();
+    g_draw_proof_diagnostics = {};
+    g_last_draw_proof_report_at = GetTickCount64();
     InterlockedExchange64(&g_lock_contention_drops, 0);
     g_window_started_at = GetTickCount64();
     if (clear_signature) {
@@ -773,7 +913,7 @@ void write_color_report(
         });
 
     log_message(
-        "Relatorio color 0.6.0: reason=%s janela=%llums frames=%llu "
+        "Relatorio color 0.7.0: reason=%s janela=%llums frames=%llu "
         "events=%llu uav_events=%llu slot_bindings=%llu resources=%llu "
         "views=%llu cache_replacements=%llu resource_overflow=%llu "
         "unsupported_views=%llu contention_drops=%llu async_job_drops=%llu "
@@ -867,16 +1007,16 @@ void write_color_report(
     }
     if (reported < snapshot->resource_count) {
         log_message(
-            "Relatorio color 0.6.0 limitado aos %llu alvos mais ativos; "
+            "Relatorio color 0.7.0 limitado aos %llu alvos mais ativos; "
             "%llu recursos de baixa atividade omitidos.",
             static_cast<unsigned long long>(reported),
             static_cast<unsigned long long>(
                 snapshot->resource_count - reported));
     }
     log_message(
-        "Rotulos color 0.6.0 sao hipoteses por evidencia observavel; AA "
-        "temporal/RCAS exigem prova repetida scene-SRV -> backbuffer; EASU "
-        "tambem exige gates de escala, proporcao e formato.");
+        "Rotulos color 0.7.0 sao hipoteses por evidencia observavel; "
+        "nenhum bind e prova de draw. Substituicao permanece bloqueada ate "
+        "existir validacao de viewport, scissor e shader no draw final.");
 }
 
 int reserve_diagnostic_job(DiagnosticJobType type) {
@@ -1069,6 +1209,16 @@ void enqueue_fsr_timing(const FsrGpuTimingSummary& summary) {
     publish_diagnostic_job(index);
 }
 
+void enqueue_draw_proof_report(const DrawProofReportSnapshot& snapshot) {
+    const int index = reserve_diagnostic_job(DiagnosticJobType::draw_proof_report);
+    if (index < 0) {
+        return;
+    }
+    g_diagnostic_jobs[static_cast<std::size_t>(index)].draw_proof_report =
+        snapshot;
+    publish_diagnostic_job(index);
+}
+
 bool process_one_diagnostic_job() {
     std::size_t selected = g_diagnostic_jobs.size();
     AcquireSRWLockExclusive(&g_diagnostic_queue_lock);
@@ -1091,7 +1241,7 @@ bool process_one_diagnostic_job() {
             break;
         case DiagnosticJobType::window_notice:
             log_message(
-                "Janela color 0.6.0 %s: backbuffer=%ux%u format=%u(%s) "
+                "Janela color 0.7.0 %s: backbuffer=%ux%u format=%u(%s) "
                 "samples=%u; captura exclusivamente diagnostica.",
                 job.signature_changed ? "reiniciada por assinatura" : "iniciada",
                 job.width,
@@ -1102,7 +1252,7 @@ bool process_one_diagnostic_job() {
             break;
         case DiagnosticJobType::reset_notice:
             log_message(
-                "Janela color 0.6.0 limpa: reason=%s; recursos nao foram "
+                "Janela color 0.7.0 limpa: reason=%s; recursos nao foram "
                 "retidos.",
                 job.reset_reason == PHOTOREALISM_FSR_RESET_RESIZE
                     ? "resize"
@@ -1158,7 +1308,7 @@ bool process_one_diagnostic_job() {
             break;
         case DiagnosticJobType::fsr_timing:
             log_message(
-                "Telemetria GPU AA/FSR 0.6.0: samples=%llu dropped=%llu "
+                "Telemetria GPU AA/FSR 0.7.0: samples=%llu dropped=%llu "
                 "TemporalAA_avg=%.3fms TemporalAA_max=%.3fms "
                 "EASU_avg=%.3fms EASU_max=%.3fms RCAS_avg=%.3fms "
                 "RCAS_max=%.3fms.",
@@ -1176,6 +1326,9 @@ bool process_one_diagnostic_job() {
                     ? job.rcas_sum_ms / job.timing_samples
                     : 0.0,
                 job.rcas_max_ms);
+            break;
+        case DiagnosticJobType::draw_proof_report:
+            write_draw_proof_report(job.draw_proof_report);
             break;
         default:
             break;
@@ -1314,15 +1467,22 @@ HRESULT WINAPI initialize_device(ID3D11Device* device) {
         enqueue_color_report(ColorReportReason::device_replaced);
     }
 
+    ID3D11DeviceContext* immediate_context = nullptr;
+    device->GetImmediateContext(&immediate_context);
     AcquireSRWLockExclusive(&g_catalog_lock);
     ID3D11Device* previous = g_device;
+    ID3D11DeviceContext* previous_immediate_context = g_immediate_context;
     device->AddRef();
     g_device = device;
+    g_immediate_context = immediate_context;
     clear_catalog_locked(true);
     ReleaseSRWLockExclusive(&g_catalog_lock);
     if (previous != nullptr) {
         previous->Release();
         log_message("Dispositivo anterior liberado antes da reinicializacao.");
+    }
+    if (previous_immediate_context != nullptr) {
+        previous_immediate_context->Release();
     }
 
     AcquireSRWLockExclusive(&g_runtime_lock);
@@ -1336,7 +1496,7 @@ HRESULT WINAPI initialize_device(ID3D11Device* device) {
 
     const D3D_FEATURE_LEVEL feature_level = device->GetFeatureLevel();
     log_message(
-        "Photorealism FSR/AA 0.6.0 inicializado: ABI=v1+v2+v3+v4 "
+        "Photorealism FSR/AA 0.7.0 inicializado: ABI=v1+v2+v3+v4+v5 "
         "feature_level=%s(0x%X) device=%p.",
         feature_level_name(feature_level),
         static_cast<unsigned>(feature_level),
@@ -1379,16 +1539,14 @@ HRESULT WINAPI initialize_device(ID3D11Device* device) {
     log_format_support(
         device, DXGI_FORMAT_R8G8B8A8_UNORM, "R8G8B8A8_UNORM");
     log_message(
-        "Observador color 0.6.0 pronto: janela=30000ms resources=256 "
+        "Observador color 0.7.0 pronto: janela=30000ms resources=256 "
         "view_cache=4096 max_report=32 diagnostic_queue=2 worker=%s; "
         "consultas COM apenas em cache miss.",
         diagnostic_worker_ready ? "ativo" : "indisponivel");
     log_message(
-        "AA/FSR 0.6.0 automatico sem tecla: runtime temporal+RCAS=%s; "
-        "scene-SRV R11 nativo exige composicao direta forte, scene-SRV "
-        "menor exige gates FSR 1.05x-2.00x/aspect_error<=1.5%%. Sem alvo "
-        "seguro o plugin registra pass-through; AA nativo nao e reativado.",
-        fsr_runtime_ready ? "disponivel" : "indisponivel");
+        "AA/FSR 0.7.0: PS binds sao somente pistas; o draw final exige "
+        "RTV/backbuffer, viewport, scissor, shader e topologia validos. "
+        "Esta entrega e diagnostica: nenhuma substituicao ou dispatch ocorre.");
     return S_OK;
 }
 
@@ -1490,6 +1648,8 @@ void WINAPI observe_frame(const PhotorealismFsrFrameEventV2* event) {
     AutomaticSelectionState current_selection = {};
     bool fsr_active_notice = false;
     AutomaticSelectionState fsr_active_snapshot = {};
+    bool draw_proof_report_due = false;
+    DrawProofReportSnapshot draw_proof_report = {};
     AcquireSRWLockExclusive(&g_catalog_lock);
     if (g_device == nullptr) {
         ReleaseSRWLockExclusive(&g_catalog_lock);
@@ -1512,6 +1672,12 @@ void WINAPI observe_frame(const PhotorealismFsrFrameEventV2* event) {
     register_backbuffer_locked(event->back_buffer);
     ++g_frame_serial;
     ++g_lifetime_frame_serial;
+    if (g_final_draw_proof_streak != 0u &&
+        g_final_draw_proof_last_frame != UINT64_MAX &&
+        g_lifetime_frame_serial >
+            g_final_draw_proof_last_frame + kFinalDrawProofLostGraceFrames) {
+        reset_final_draw_proof_locked();
+    }
     if (g_automatic_selection_notice != AutomaticSelectionNotice::none) {
         selection_notice = g_automatic_selection_notice;
         selection_snapshot = g_automatic_selection_notice_state;
@@ -1527,6 +1693,25 @@ void WINAPI observe_frame(const PhotorealismFsrFrameEventV2* event) {
     report_due =
         GetTickCount64() - g_window_started_at >=
         kObservationWindowMilliseconds;
+    const ULONGLONG now = GetTickCount64();
+    if (now - g_last_draw_proof_report_at >= kDrawProofReportMilliseconds) {
+        draw_proof_report_due = true;
+        draw_proof_report.diagnostics = g_draw_proof_diagnostics;
+        draw_proof_report.streak = g_final_draw_proof_streak;
+        draw_proof_report.locked = g_final_draw_proof_locked;
+        draw_proof_report.source_identity =
+            g_final_draw_proof_signature.source_identity;
+        draw_proof_report.source_width =
+            g_final_draw_proof_signature.source_width;
+        draw_proof_report.source_height =
+            g_final_draw_proof_signature.source_height;
+        draw_proof_report.output_width =
+            g_final_draw_proof_signature.output_width;
+        draw_proof_report.output_height =
+            g_final_draw_proof_signature.output_height;
+        g_draw_proof_diagnostics = {};
+        g_last_draw_proof_report_at = now;
+    }
     ReleaseSRWLockExclusive(&g_catalog_lock);
 
     if (started) {
@@ -1544,6 +1729,9 @@ void WINAPI observe_frame(const PhotorealismFsrFrameEventV2* event) {
     if (report_due) {
         enqueue_color_report(ColorReportReason::window_complete);
     }
+    if (draw_proof_report_due) {
+        enqueue_draw_proof_report(draw_proof_report);
+    }
     if (selection_notice != AutomaticSelectionNotice::none) {
         enqueue_automatic_selection_notice(
             selection_notice, selection_snapshot);
@@ -1553,7 +1741,7 @@ void WINAPI observe_frame(const PhotorealismFsrFrameEventV2* event) {
         discard_fsr_runtime_output();
         ReleaseSRWLockExclusive(&g_runtime_lock);
     }
-    if (current_selection.ready) {
+    if (kEnableFsrRuntimeAfterDrawProof && current_selection.ready) {
         const auto policy = photorealism::fsr::evaluate_fsr_execution_policy(
             current_selection.source_width,
             current_selection.source_height,
@@ -1572,7 +1760,6 @@ void WINAPI observe_frame(const PhotorealismFsrFrameEventV2* event) {
     if (fsr_active_notice) {
         enqueue_fsr_active_notice(fsr_active_snapshot);
     }
-    const ULONGLONG now = GetTickCount64();
     if (TryAcquireSRWLockExclusive(&g_runtime_lock)) {
         poll_fsr_gpu_timing();
         if (now - g_last_timing_report_at >= 10000u) {
@@ -1781,13 +1968,8 @@ HRESULT WINAPI process_shader_resources(
                 view, &identity, &width, &height, &format)) {
             continue;
         }
-        const int resource_index = find_resource_locked(identity);
-        if (resource_index >= 0) {
-            ColorResourceEntry& resource =
-                g_resources[static_cast<std::size_t>(resource_index)];
-            ++resource.direct_composition_hits;
-            resource.last_composition_frame = g_frame_serial;
-        }
+        // A resource bind is only observation. It is not proof that the
+        // following draw is the final full-screen composition.
         if (g_automatic_selection.ready &&
             identity == g_automatic_selection.identity &&
             width == g_automatic_selection.source_width &&
@@ -1805,6 +1987,22 @@ HRESULT WINAPI process_shader_resources(
     const bool runtime_available = g_fsr_runtime_available;
     ReleaseSRWLockExclusive(&g_catalog_lock);
     if (selected_view < 0 || !runtime_available) {
+        return S_FALSE;
+    }
+    if (kSrvReplacementRequiresDrawProof) {
+        bool log_blocked_replacement = false;
+        AcquireSRWLockExclusive(&g_catalog_lock);
+        if (g_srv_replacement_blocked_generation != selection.generation) {
+            g_srv_replacement_blocked_generation = selection.generation;
+            log_blocked_replacement = true;
+        }
+        ReleaseSRWLockExclusive(&g_catalog_lock);
+        if (log_blocked_replacement) {
+            log_message(
+                "AA/FSR 0.7.0 seguranca: substituicao de scene-SRV "
+                "bloqueada; bind sem prova do draw final (viewport/scissor/"
+                "shader). Observacao continua e o core visual permanece ativo.");
+        }
         return S_FALSE;
     }
     const auto policy = photorealism::fsr::evaluate_fsr_execution_policy(
@@ -1858,6 +2056,401 @@ HRESULT WINAPI process_shader_resources(
     return S_OK;
 }
 
+bool approximately_equal(FLOAT left, FLOAT right) {
+    return std::fabs(left - right) <= 0.01f;
+}
+
+bool is_fullscreen_viewport(
+    const D3D11_VIEWPORT& viewport, UINT width, UINT height) {
+    return approximately_equal(viewport.TopLeftX, 0.0f) &&
+           approximately_equal(viewport.TopLeftY, 0.0f) &&
+           approximately_equal(viewport.Width, static_cast<FLOAT>(width)) &&
+           approximately_equal(viewport.Height, static_cast<FLOAT>(height)) &&
+           approximately_equal(viewport.MinDepth, 0.0f) &&
+           approximately_equal(viewport.MaxDepth, 1.0f);
+}
+
+bool is_fullscreen_scissor(const D3D11_RECT& rectangle, UINT width, UINT height) {
+    return rectangle.left == 0 && rectangle.top == 0 &&
+           rectangle.right == static_cast<LONG>(width) &&
+           rectangle.bottom == static_cast<LONG>(height);
+}
+
+bool is_fullscreen_draw_shape(const PhotorealismFsrDrawEventV5& event) {
+    const bool primitive_count_valid =
+        event.primitive_count == 3u || event.primitive_count == 4u ||
+        event.primitive_count == 6u;
+    if (!primitive_count_valid) {
+        return false;
+    }
+    switch (event.kind) {
+        case PHOTOREALISM_FSR_DRAW:
+        case PHOTOREALISM_FSR_DRAW_INDEXED:
+            return event.instance_count == 1u;
+        case PHOTOREALISM_FSR_DRAW_INSTANCED:
+        case PHOTOREALISM_FSR_DRAW_INDEXED_INSTANCED:
+            return event.instance_count == 1u &&
+                   event.start_instance_location == 0u;
+        default:
+            return false;
+    }
+}
+
+bool is_fullscreen_topology(D3D11_PRIMITIVE_TOPOLOGY topology, UINT count) {
+    return (topology == D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST &&
+            (count == 3u || count == 6u)) ||
+           (topology == D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP && count == 4u);
+}
+
+bool is_base_scene_candidate_locked(
+    void* identity,
+    UINT width,
+    UINT height,
+    UINT format) {
+    const int resource_index = find_resource_locked(identity);
+    if (resource_index < 0 || is_backbuffer_identity_locked(identity) ||
+        width != g_backbuffer_width || height != g_backbuffer_height ||
+        !photorealism::fsr::is_fsr_color_format(format)) {
+        return false;
+    }
+    const ColorResourceEntry& candidate =
+        g_resources[static_cast<std::size_t>(resource_index)];
+    const UINT candidate_format =
+        photorealism::fsr::is_fsr_color_format(candidate.texture_format)
+            ? candidate.texture_format
+            : candidate.primary_view_format;
+    return photorealism::fsr::score_automatic_scene_candidate_base({
+        candidate.width,
+        candidate.height,
+        candidate_format,
+        candidate.sample_count,
+        candidate.bind_flags,
+        candidate.misc_flags,
+        candidate.mip_levels,
+        candidate.array_size,
+        g_backbuffer_width,
+        g_backbuffer_height,
+        0,
+        0,
+        candidate.bindings,
+        candidate.slot_zero_bindings,
+        candidate.last_serial,
+        g_binding_serial,
+        candidate.last_frame,
+        g_frame_serial,
+        candidate.direct_composition_hits,
+        candidate.last_composition_frame,
+        candidate.exact_backbuffer_resource}).eligible;
+}
+
+void WINAPI observe_pixel_shader_resources(
+    const PhotorealismFsrPixelShaderResourcesEventV5* event) {
+    if (event == nullptr || event->struct_size < sizeof(*event) ||
+        event->context == nullptr || event->views == nullptr ||
+        event->view_count == 0 ||
+        event->start_slot >= kPixelShaderResourceSlotCount ||
+        event->view_count > kPixelShaderResourceSlotCount - event->start_slot) {
+        return;
+    }
+    if (!TryAcquireSRWLockExclusive(&g_catalog_lock)) {
+        InterlockedIncrement64(&g_lock_contention_drops);
+        return;
+    }
+    if (g_device == nullptr || event->context != g_immediate_context) {
+        ReleaseSRWLockExclusive(&g_catalog_lock);
+        return;
+    }
+    for (UINT index = 0; index < event->view_count; ++index) {
+        g_pixel_shader_resource_shadow[event->start_slot + index] =
+            event->views[index];
+    }
+    if (event->start_slot == 0u) {
+        ID3D11ShaderResourceView* slot_zero =
+            g_pixel_shader_resource_shadow[0];
+        void* identity = nullptr;
+        UINT width = 0;
+        UINT height = 0;
+        UINT format = 0;
+        g_pixel_shader_slot_zero_candidate.store(
+            slot_zero != nullptr &&
+                resolve_shader_view_locked(
+                    slot_zero, &identity, &width, &height, &format) &&
+                is_base_scene_candidate_locked(identity, width, height, format),
+            std::memory_order_release);
+    }
+    ReleaseSRWLockExclusive(&g_catalog_lock);
+}
+
+void WINAPI observe_final_draw(const PhotorealismFsrDrawEventV5* event) {
+    if (event == nullptr || event->struct_size < sizeof(*event) ||
+        event->context == nullptr) {
+        return;
+    }
+    if (!g_pixel_shader_slot_zero_candidate.load(std::memory_order_acquire)) {
+        return;
+    }
+    if (!TryAcquireSRWLockExclusive(&g_catalog_lock)) {
+        InterlockedIncrement64(&g_lock_contention_drops);
+        return;
+    }
+    ++g_draw_proof_diagnostics.observed;
+    if (g_device == nullptr || !g_window_active ||
+        event->context != g_immediate_context) {
+        ++g_draw_proof_diagnostics.wrong_context;
+        ReleaseSRWLockExclusive(&g_catalog_lock);
+        return;
+    }
+    if (g_pixel_shader_resource_shadow[0] == nullptr) {
+        ++g_draw_proof_diagnostics.missing_shadow;
+        ReleaseSRWLockExclusive(&g_catalog_lock);
+        return;
+    }
+    if (!g_pixel_shader_slot_zero_candidate.load(std::memory_order_acquire)) {
+        ++g_draw_proof_diagnostics.source_ineligible;
+        ReleaseSRWLockExclusive(&g_catalog_lock);
+        return;
+    }
+    if (!is_fullscreen_draw_shape(*event)) {
+        ++g_draw_proof_diagnostics.call_shape;
+        ReleaseSRWLockExclusive(&g_catalog_lock);
+        return;
+    }
+
+    ID3D11RenderTargetView* render_targets[
+        D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT] = {};
+    ID3D11DepthStencilView* depth_target = nullptr;
+    event->context->OMGetRenderTargets(
+        D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, render_targets, &depth_target);
+    auto release_render_targets = [&]() {
+        for (ID3D11RenderTargetView* target : render_targets) {
+            if (target != nullptr) {
+                target->Release();
+            }
+        }
+        if (depth_target != nullptr) {
+            depth_target->Release();
+        }
+    };
+    if (render_targets[0] == nullptr) {
+        ++g_draw_proof_diagnostics.missing_rtv;
+        release_render_targets();
+        ReleaseSRWLockExclusive(&g_catalog_lock);
+        return;
+    }
+    for (UINT index = 1; index < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT;
+         ++index) {
+        if (render_targets[index] != nullptr) {
+            ++g_draw_proof_diagnostics.multiple_rtvs;
+            release_render_targets();
+            ReleaseSRWLockExclusive(&g_catalog_lock);
+            return;
+        }
+    }
+    if (depth_target != nullptr) {
+        ++g_draw_proof_diagnostics.depth_bound;
+        release_render_targets();
+        ReleaseSRWLockExclusive(&g_catalog_lock);
+        return;
+    }
+    const int output_index = resolve_view_locked(render_targets[0]);
+    if (output_index < 0 ||
+        !g_resources[static_cast<std::size_t>(output_index)]
+             .exact_backbuffer_resource) {
+        ++g_draw_proof_diagnostics.wrong_backbuffer;
+        release_render_targets();
+        ReleaseSRWLockExclusive(&g_catalog_lock);
+        return;
+    }
+    const ColorResourceEntry& output =
+        g_resources[static_cast<std::size_t>(output_index)];
+    if (output.width != g_backbuffer_width ||
+        output.height != g_backbuffer_height) {
+        ++g_draw_proof_diagnostics.wrong_backbuffer;
+        release_render_targets();
+        ReleaseSRWLockExclusive(&g_catalog_lock);
+        return;
+    }
+    release_render_targets();
+
+    ID3D11ShaderResourceView* source = nullptr;
+    event->context->PSGetShaderResources(0, 1, &source);
+    if (source == nullptr || source != g_pixel_shader_resource_shadow[0]) {
+        ++g_draw_proof_diagnostics.source_mismatch;
+        if (source != nullptr) {
+            source->Release();
+        }
+        ReleaseSRWLockExclusive(&g_catalog_lock);
+        return;
+    }
+    void* source_identity = nullptr;
+    UINT source_width = 0;
+    UINT source_height = 0;
+    UINT source_format = 0;
+    const bool source_resolved = resolve_shader_view_locked(
+        source, &source_identity, &source_width, &source_height, &source_format);
+    const int source_index = source_resolved
+                                 ? find_resource_locked(source_identity)
+                                 : -1;
+    if (source_index < 0 || is_backbuffer_identity_locked(source_identity) ||
+        source_width != g_backbuffer_width ||
+        source_height != g_backbuffer_height) {
+        ++g_draw_proof_diagnostics.source_ineligible;
+        source->Release();
+        ReleaseSRWLockExclusive(&g_catalog_lock);
+        return;
+    }
+    const ColorResourceEntry& candidate =
+        g_resources[static_cast<std::size_t>(source_index)];
+    const UINT candidate_format =
+        photorealism::fsr::is_fsr_color_format(candidate.texture_format)
+            ? candidate.texture_format
+            : candidate.primary_view_format;
+    const auto candidate_score =
+        photorealism::fsr::score_automatic_scene_candidate_base({
+            candidate.width,
+            candidate.height,
+            candidate_format,
+            candidate.sample_count,
+            candidate.bind_flags,
+            candidate.misc_flags,
+            candidate.mip_levels,
+            candidate.array_size,
+            g_backbuffer_width,
+            g_backbuffer_height,
+            0,
+            0,
+            candidate.bindings,
+            candidate.slot_zero_bindings,
+            candidate.last_serial,
+            g_binding_serial,
+            candidate.last_frame,
+            g_frame_serial,
+            candidate.direct_composition_hits,
+            candidate.last_composition_frame,
+            candidate.exact_backbuffer_resource});
+    if (!candidate_score.eligible ||
+        !photorealism::fsr::is_fsr_color_format(source_format)) {
+        ++g_draw_proof_diagnostics.source_ineligible;
+        source->Release();
+        ReleaseSRWLockExclusive(&g_catalog_lock);
+        return;
+    }
+
+    D3D11_VIEWPORT viewports[
+        D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE] = {};
+    UINT viewport_count =
+        D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
+    event->context->RSGetViewports(&viewport_count, viewports);
+    if (viewport_count != 1u ||
+        !is_fullscreen_viewport(
+            viewports[0], g_backbuffer_width, g_backbuffer_height)) {
+        ++g_draw_proof_diagnostics.viewport;
+        source->Release();
+        ReleaseSRWLockExclusive(&g_catalog_lock);
+        return;
+    }
+    ID3D11RasterizerState* rasterizer_state = nullptr;
+    event->context->RSGetState(&rasterizer_state);
+    D3D11_RASTERIZER_DESC rasterizer_description = {};
+    if (rasterizer_state != nullptr) {
+        rasterizer_state->GetDesc(&rasterizer_description);
+        rasterizer_state->Release();
+    }
+    if (rasterizer_description.ScissorEnable) {
+        D3D11_RECT scissors[
+            D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE] = {};
+        UINT scissor_count =
+            D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
+        event->context->RSGetScissorRects(&scissor_count, scissors);
+        if (scissor_count != 1u ||
+            !is_fullscreen_scissor(
+                scissors[0], g_backbuffer_width, g_backbuffer_height)) {
+            ++g_draw_proof_diagnostics.scissor;
+            source->Release();
+            ReleaseSRWLockExclusive(&g_catalog_lock);
+            return;
+        }
+    }
+
+    ID3D11PixelShader* pixel_shader = nullptr;
+    ID3D11ClassInstance* classes[D3D11_SHADER_MAX_INTERFACES] = {};
+    UINT class_count = D3D11_SHADER_MAX_INTERFACES;
+    event->context->PSGetShader(&pixel_shader, classes, &class_count);
+    for (UINT index = 0; index < class_count; ++index) {
+        if (classes[index] != nullptr) {
+            classes[index]->Release();
+        }
+    }
+    if (pixel_shader == nullptr) {
+        ++g_draw_proof_diagnostics.pixel_shader;
+        source->Release();
+        ReleaseSRWLockExclusive(&g_catalog_lock);
+        return;
+    }
+    D3D11_PRIMITIVE_TOPOLOGY topology = D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
+    event->context->IAGetPrimitiveTopology(&topology);
+    if (!is_fullscreen_topology(topology, event->primitive_count)) {
+        ++g_draw_proof_diagnostics.topology;
+        pixel_shader->Release();
+        source->Release();
+        ReleaseSRWLockExclusive(&g_catalog_lock);
+        return;
+    }
+
+    FinalDrawProofSignature signature = {};
+    signature.source_identity = source_identity;
+    signature.backbuffer_identity = output.identity;
+    signature.pixel_shader = pixel_shader;
+    signature.topology = topology;
+    signature.kind = event->kind;
+    signature.primitive_count = event->primitive_count;
+    signature.instance_count = event->instance_count;
+    signature.start_location = event->start_location;
+    signature.base_vertex_location = event->base_vertex_location;
+    signature.start_instance_location = event->start_instance_location;
+    signature.source_width = source_width;
+    signature.source_height = source_height;
+    signature.source_format = source_format;
+    signature.output_width = g_backbuffer_width;
+    signature.output_height = g_backbuffer_height;
+    pixel_shader->Release();
+    source->Release();
+
+    if (g_final_draw_proof_last_frame == g_lifetime_frame_serial) {
+        ++g_draw_proof_diagnostics.duplicate_frame;
+        ReleaseSRWLockExclusive(&g_catalog_lock);
+        return;
+    }
+    ColorResourceEntry& mutable_candidate =
+        g_resources[static_cast<std::size_t>(source_index)];
+    ++mutable_candidate.direct_composition_hits;
+    mutable_candidate.last_composition_frame = g_frame_serial;
+    ++g_draw_proof_diagnostics.valid;
+    const bool same_signature =
+        g_final_draw_proof_streak != 0u &&
+        final_draw_signature_matches(g_final_draw_proof_signature, signature);
+    g_final_draw_proof_signature = signature;
+    g_final_draw_proof_last_frame = g_lifetime_frame_serial;
+    g_final_draw_proof_streak = same_signature
+                                     ? g_final_draw_proof_streak + 1u
+                                     : 1u;
+    if (!g_final_draw_proof_locked &&
+        g_final_draw_proof_streak >= kFinalDrawProofConfirmFrames) {
+        g_final_draw_proof_locked = true;
+        log_message(
+            "Final draw proof locked 0.7.0: frames=%u source=%p %ux%u "
+            "output=%ux%u. replacement=0 dispatch=0; pronto para a etapa "
+            "Temporal+RCAS segura.",
+            kFinalDrawProofConfirmFrames,
+            signature.source_identity,
+            signature.source_width,
+            signature.source_height,
+            signature.output_width,
+            signature.output_height);
+    }
+    ReleaseSRWLockExclusive(&g_catalog_lock);
+}
+
 void WINAPI reset_color_observation(std::uint32_t reason) {
     AcquireSRWLockExclusive(&g_catalog_lock);
     const bool was_active = g_window_active;
@@ -1875,7 +2468,9 @@ void WINAPI shutdown_device() {
     enqueue_color_report(ColorReportReason::device_shutdown);
     AcquireSRWLockExclusive(&g_catalog_lock);
     ID3D11Device* device = g_device;
+    ID3D11DeviceContext* immediate_context = g_immediate_context;
     g_device = nullptr;
+    g_immediate_context = nullptr;
     g_fsr_runtime_available = false;
     clear_catalog_locked(true);
     ReleaseSRWLockExclusive(&g_catalog_lock);
@@ -1887,10 +2482,13 @@ void WINAPI shutdown_device() {
     if (device != nullptr) {
         device->Release();
     }
+    if (immediate_context != nullptr) {
+        immediate_context->Release();
+    }
     stop_diagnostic_worker();
     if (device != nullptr) {
         log_message(
-            "Photorealism FSR/AA 0.6.0: dispositivo encerrado; worker "
+            "Photorealism FSR/AA 0.7.0: dispositivo encerrado; worker "
             "diagnostico drenado com seguranca.");
     }
 }
@@ -1898,7 +2496,7 @@ void WINAPI shutdown_device() {
 const PhotorealismFsrApiV1 g_api_v1 = {
     sizeof(PhotorealismFsrApiV1),
     PHOTOREALISM_FSR_ABI_V1,
-    PHOTOREALISM_FSR_MODULE_0_6_0,
+    PHOTOREALISM_FSR_MODULE_0_7_0,
     0,
     &initialize_device,
     &shutdown_device,
@@ -1908,7 +2506,7 @@ const PhotorealismFsrApiV2 g_api_v2 = {
     {
         sizeof(PhotorealismFsrApiV2),
         PHOTOREALISM_FSR_ABI_V2,
-        PHOTOREALISM_FSR_MODULE_0_6_0,
+        PHOTOREALISM_FSR_MODULE_0_7_0,
         0,
         &initialize_device,
         &shutdown_device,
@@ -1923,7 +2521,7 @@ const PhotorealismFsrApiV3 g_api_v3 = {
         {
             sizeof(PhotorealismFsrApiV3),
             PHOTOREALISM_FSR_ABI_V3,
-            PHOTOREALISM_FSR_MODULE_0_6_0,
+            PHOTOREALISM_FSR_MODULE_0_7_0,
             0,
             &initialize_device,
             &shutdown_device,
@@ -1941,7 +2539,7 @@ const PhotorealismFsrApiV4 g_api_v4 = {
             {
                 sizeof(PhotorealismFsrApiV4),
                 PHOTOREALISM_FSR_ABI_V4,
-                PHOTOREALISM_FSR_MODULE_0_6_0,
+                PHOTOREALISM_FSR_MODULE_0_7_0,
                 0,
                 &initialize_device,
                 &shutdown_device,
@@ -1955,6 +2553,30 @@ const PhotorealismFsrApiV4 g_api_v4 = {
     &process_shader_resources,
 };
 
+const PhotorealismFsrApiV5 g_api_v5 = {
+    {
+        {
+            {
+                {
+                    sizeof(PhotorealismFsrApiV5),
+                    PHOTOREALISM_FSR_ABI_V5,
+                    PHOTOREALISM_FSR_MODULE_0_7_0,
+                    0,
+                    &initialize_device,
+                    &shutdown_device,
+                },
+                &observe_color_targets,
+                &observe_frame,
+                &reset_color_observation,
+            },
+            &update_automatic_selection,
+        },
+        &process_shader_resources,
+    },
+    &observe_pixel_shader_resources,
+    &observe_final_draw,
+};
+
 }  // namespace
 
 extern "C" HRESULT WINAPI PhotorealismFsrGetApi(
@@ -1964,6 +2586,10 @@ extern "C" HRESULT WINAPI PhotorealismFsrGetApi(
         return E_POINTER;
     }
     *api = nullptr;
+    if (requested_abi == PHOTOREALISM_FSR_ABI_V5) {
+        *api = &g_api_v5.base.base.base.base;
+        return S_OK;
+    }
     if (requested_abi == PHOTOREALISM_FSR_ABI_V4) {
         *api = &g_api_v4.base.base.base;
         return S_OK;

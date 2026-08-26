@@ -16,6 +16,7 @@ const PhotorealismFsrApiV1* g_fsr_api = nullptr;
 const PhotorealismFsrApiV2* g_fsr_api_v2 = nullptr;
 const PhotorealismFsrApiV3* g_fsr_api_v3 = nullptr;
 const PhotorealismFsrApiV4* g_fsr_api_v4 = nullptr;
+const PhotorealismFsrApiV5* g_fsr_api_v5 = nullptr;
 bool g_load_attempted = false;
 std::atomic<bool> g_device_initialized{false};
 std::atomic<bool> g_processing_enabled{true};
@@ -46,7 +47,7 @@ bool load_fsr_module() {
     std::wcsncpy(module_path, module_directory(), MAX_PATH - 1);
     if (!append_path(module_path, MAX_PATH, L"\\photorealism-fsr.dll")) {
         log_message(
-            "Photorealism FSR/AA 0.6.0: caminho do modulo excede MAX_PATH; "
+            "Photorealism FSR/AA 0.7.0: caminho do modulo excede MAX_PATH; "
             "integracao opcional desativada.");
         return false;
     }
@@ -54,7 +55,7 @@ bool load_fsr_module() {
     g_fsr_module = LoadLibraryW(module_path);
     if (g_fsr_module == nullptr) {
         log_message(
-            "Photorealism FSR/AA 0.6.0: modulo auxiliar ausente ou "
+            "Photorealism FSR/AA 0.7.0: modulo auxiliar ausente ou "
             "indisponivel (erro=%lu); nucleo 0.11.0 continua normalmente.",
             GetLastError());
         return false;
@@ -64,7 +65,7 @@ bool load_fsr_module() {
         GetProcAddress(g_fsr_module, "PhotorealismFsrGetApi"));
     if (get_api == nullptr) {
         log_message(
-            "Photorealism FSR/AA 0.6.0: export PhotorealismFsrGetApi ausente; "
+            "Photorealism FSR/AA 0.7.0: export PhotorealismFsrGetApi ausente; "
             "modulo ignorado sem alterar o nucleo.");
         FreeLibrary(g_fsr_module);
         g_fsr_module = nullptr;
@@ -72,8 +73,34 @@ bool load_fsr_module() {
     }
 
     const PhotorealismFsrApiV1* api = nullptr;
-    HRESULT result = get_api(PHOTOREALISM_FSR_ABI_V4, &api);
-    if (SUCCEEDED(result) && valid_v1_api(api, PHOTOREALISM_FSR_ABI_V4) &&
+    HRESULT result = get_api(PHOTOREALISM_FSR_ABI_V5, &api);
+    if (SUCCEEDED(result) && valid_v1_api(api, PHOTOREALISM_FSR_ABI_V5) &&
+        api->struct_size >= sizeof(PhotorealismFsrApiV5)) {
+        const auto* api_v5 = reinterpret_cast<const PhotorealismFsrApiV5*>(api);
+        const auto* api_v4 = &api_v5->base;
+        const auto* api_v3 = &api_v4->base;
+        const auto* api_v2 = &api_v3->base;
+        if (api_v2->observe_color_targets != nullptr &&
+            api_v2->observe_frame != nullptr &&
+            api_v2->reset_color_observation != nullptr &&
+            api_v3->update_automatic_selection != nullptr &&
+            api_v4->process_shader_resources != nullptr &&
+            api_v5->observe_pixel_shader_resources != nullptr &&
+            api_v5->observe_final_draw != nullptr) {
+            g_fsr_api = api;
+            g_fsr_api_v2 = api_v2;
+            g_fsr_api_v3 = api_v3;
+            g_fsr_api_v4 = api_v4;
+            g_fsr_api_v5 = api_v5;
+        }
+    }
+
+    if (g_fsr_api == nullptr) {
+        api = nullptr;
+        result = get_api(PHOTOREALISM_FSR_ABI_V4, &api);
+    }
+    if (g_fsr_api == nullptr && SUCCEEDED(result) &&
+        valid_v1_api(api, PHOTOREALISM_FSR_ABI_V4) &&
         api->struct_size >= sizeof(PhotorealismFsrApiV4)) {
         const auto* api_v4 = reinterpret_cast<const PhotorealismFsrApiV4*>(api);
         const auto* api_v3 = &api_v4->base;
@@ -94,7 +121,8 @@ bool load_fsr_module() {
         api = nullptr;
         result = get_api(PHOTOREALISM_FSR_ABI_V3, &api);
     }
-    if (SUCCEEDED(result) && valid_v1_api(api, PHOTOREALISM_FSR_ABI_V3) &&
+    if (g_fsr_api == nullptr && SUCCEEDED(result) &&
+        valid_v1_api(api, PHOTOREALISM_FSR_ABI_V3) &&
         api->struct_size >= sizeof(PhotorealismFsrApiV3)) {
         const auto* api_v3 = reinterpret_cast<const PhotorealismFsrApiV3*>(api);
         const auto* api_v2 = &api_v3->base;
@@ -112,7 +140,8 @@ bool load_fsr_module() {
         api = nullptr;
         result = get_api(PHOTOREALISM_FSR_ABI_V2, &api);
     }
-    if (SUCCEEDED(result) && valid_v1_api(api, PHOTOREALISM_FSR_ABI_V2) &&
+    if (g_fsr_api == nullptr && SUCCEEDED(result) &&
+        valid_v1_api(api, PHOTOREALISM_FSR_ABI_V2) &&
         api->struct_size >= sizeof(PhotorealismFsrApiV2)) {
         const auto* api_v2 = reinterpret_cast<const PhotorealismFsrApiV2*>(api);
         if (api_v2->observe_color_targets != nullptr &&
@@ -133,7 +162,7 @@ bool load_fsr_module() {
 
     if (g_fsr_api == nullptr) {
         log_message(
-            "Photorealism FSR/AA 0.6.0: ABI incompativel ou incompleta "
+            "Photorealism FSR/AA 0.7.0: ABI incompativel ou incompleta "
             "(result=0x%08X); modulo ignorado.",
             static_cast<unsigned>(result));
         FreeLibrary(g_fsr_module);
@@ -142,14 +171,15 @@ bool load_fsr_module() {
     }
 
     log_message(
-        "Photorealism FSR/AA 0.6.0: modulo auxiliar carregado; "
+        "Photorealism FSR/AA 0.7.0: modulo auxiliar carregado; "
         "abi=0x%08X module=0x%08X color_observer=%s automatic_selection=%s "
-        "aa_easu_rcas=%s.",
+        "aa_easu_rcas=%s draw_proof=%s.",
         g_fsr_api->abi_version,
         g_fsr_api->module_version,
         g_fsr_api_v2 != nullptr ? "v2-ativo" : "indisponivel-v1",
         g_fsr_api_v3 != nullptr ? "v3-ativo" : "indisponivel",
-        g_fsr_api_v4 != nullptr ? "v4-ativo" : "indisponivel");
+        g_fsr_api_v4 != nullptr ? "v4-ativo" : "indisponivel",
+        g_fsr_api_v5 != nullptr ? "v5-ativo" : "indisponivel");
     return true;
 }
 
@@ -165,12 +195,12 @@ void initialize_fsr_module(ID3D11Device* device) {
     if (SUCCEEDED(result)) {
         g_device_initialized.store(true, std::memory_order_release);
         log_message(
-            "Photorealism FSR/AA 0.6.0: dispositivo real do jogo entregue "
+            "Photorealism FSR/AA 0.7.0: dispositivo real do jogo entregue "
             "ao modulo (result=0x%08X).",
             static_cast<unsigned>(result));
     } else {
         log_message(
-            "Photorealism FSR/AA 0.6.0: inicializacao do dispositivo falhou "
+            "Photorealism FSR/AA 0.7.0: inicializacao do dispositivo falhou "
             "(result=0x%08X); nucleo 0.11.0 permanece ativo.",
             static_cast<unsigned>(result));
     }
@@ -183,7 +213,7 @@ void shutdown_fsr_device() {
     }
     g_fsr_api->shutdown_device();
     log_message(
-        "Photorealism FSR/AA 0.6.0: dispositivo encerrado para reinicializacao "
+        "Photorealism FSR/AA 0.7.0: dispositivo encerrado para reinicializacao "
         "segura.");
 }
 
@@ -278,31 +308,47 @@ void report_fsr_automatic_selection_context(
     g_fsr_api_v3->update_automatic_selection(&context, &selection);
 }
 
-bool process_fsr_pixel_shader_resources(
+void observe_fsr_pixel_shader_resources(
     ID3D11DeviceContext* context,
     UINT start_slot,
     UINT view_count,
-    ID3D11ShaderResourceView* const* input_views,
-    ID3D11ShaderResourceView** output_views,
-    UINT output_capacity) {
+    ID3D11ShaderResourceView* const* views) {
     if (!g_device_initialized.load(std::memory_order_acquire) ||
-        g_fsr_api_v4 == nullptr || context == nullptr || view_count == 0 ||
-        input_views == nullptr || output_views == nullptr ||
-        output_capacity < view_count) {
-        return false;
+        g_fsr_api_v5 == nullptr || context == nullptr || view_count == 0 ||
+        views == nullptr) {
+        return;
     }
-    PhotorealismFsrShaderResourcesEventV4 event = {};
+    PhotorealismFsrPixelShaderResourcesEventV5 event = {};
     event.struct_size = sizeof(event);
     event.start_slot = start_slot;
     event.view_count = view_count;
-    event.output_capacity = output_capacity;
     event.context = context;
-    event.input_views = input_views;
-    event.output_views = output_views;
-    const HRESULT result = g_fsr_api_v4->process_shader_resources(&event);
-    return SUCCEEDED(result) &&
-           (event.result_flags &
-            PHOTOREALISM_FSR_SHADER_RESOURCES_REPLACED) != 0;
+    event.views = views;
+    g_fsr_api_v5->observe_pixel_shader_resources(&event);
+}
+
+void observe_fsr_final_draw(
+    ID3D11DeviceContext* context,
+    std::uint32_t kind,
+    UINT primitive_count,
+    UINT instance_count,
+    UINT start_location,
+    INT base_vertex_location,
+    UINT start_instance_location) {
+    if (!g_device_initialized.load(std::memory_order_acquire) ||
+        g_fsr_api_v5 == nullptr || context == nullptr) {
+        return;
+    }
+    PhotorealismFsrDrawEventV5 event = {};
+    event.struct_size = sizeof(event);
+    event.kind = kind;
+    event.primitive_count = primitive_count;
+    event.instance_count = instance_count;
+    event.start_location = start_location;
+    event.base_vertex_location = base_vertex_location;
+    event.start_instance_location = start_instance_location;
+    event.context = context;
+    g_fsr_api_v5->observe_final_draw(&event);
 }
 
 }  // namespace photorealism

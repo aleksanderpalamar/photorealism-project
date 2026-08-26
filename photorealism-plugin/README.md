@@ -9,7 +9,27 @@ Autor: Palamar
 O shader e compilado em tempo de execucao por `d3dcompiler_47.dll`, componente
 normalmente fornecido pelo ambiente Proton.
 
-## Estado da versao 0.11.0 + Photorealism FSR/AA 0.6.0
+## Estado da versao 0.11.3 + Photorealism FSR/AA 0.7.0
+
+A 0.11.3/0.7.0 e a etapa diagnostica segura da integracao de AA/FSR. Ela
+observa `Draw`, `DrawIndexed`, `DrawInstanced` e `DrawIndexedInstanced`, mas
+so conta uma prova quando o estado vivo do D3D11 confirma uma composicao final
+para o backbuffer. A mesma assinatura precisa ocorrer em 24 frames para ser
+bloqueada. Esta entrega nao substitui SRVs e nao executa EASU, Temporal ou
+RCAS: o log deve registrar `replacement=0 dispatch=0`. Assim, a imagem desta
+versao deve permanecer igual a 0.11.2 enquanto coleta a prova que permitira
+ativar Temporal + RCAS automaticamente e com seguranca na etapa seguinte.
+
+## Estado anterior: 0.11.2 + Photorealism FSR/AA 0.6.1
+
+A 0.11.2/0.6.1 corrige uma substituicao insegura de recursos que podia causar
+uma imagem repetida em quadrantes. O modulo FSR/AA agora falha fechado: ele
+mantem a observacao diagnostica, mas nao troca nenhum scene-SRV antes de provar
+o draw final. Assim, EASU, RCAS e AA temporal auxiliares ficam em pass-through
+temporariamente. O pipeline visual principal do `dxgi.dll` continua ativo,
+incluindo as calibracoes de iluminacao, SSAO e resolve temporal ja consolidadas.
+
+## Estado historico: 0.11.0 + Photorealism FSR/AA 0.6.0
 
 Esta versao preserva byte a byte a configuracao e os quatro shaders visuais
 consolidados e acrescenta AA espacial/temporal proprio antes da interface,

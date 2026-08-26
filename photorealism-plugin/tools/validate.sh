@@ -92,12 +92,12 @@ if grep -qi 'snowymoon' \
 fi
 
 for core_fsr_message in \
-  'Photorealism FSR/AA 0.6.0: modulo auxiliar ausente ou indisponivel' \
+  'Photorealism FSR/AA 0.7.0: modulo auxiliar ausente ou indisponivel' \
   'nucleo 0.11.0 continua normalmente' \
   'PhotorealismFsrGetApi' \
   'ABI incompativel ou incompleta' \
   'modulo auxiliar carregado' \
-  'color_observer=%s automatic_selection=%s aa_easu_rcas=%s' \
+  'color_observer=%s automatic_selection=%s aa_easu_rcas=%s draw_proof=%s' \
   'dispositivo real do jogo entregue ao modulo' \
   'inicializacao do dispositivo falhou' \
   'dispositivo encerrado para reinicializacao segura'; do
@@ -108,8 +108,8 @@ for core_fsr_message in \
 done
 
 for module_fsr_message in \
-  'Photorealism FSR/AA 0.6.0 inicializado' \
-  'ABI=v1+v2+v3+v4' \
+  'Photorealism FSR/AA 0.7.0 inicializado' \
+  'ABI=v1+v2+v3+v4+v5' \
   'feature_level=%s' \
   '12_1' \
   'Adapter: name=' \
@@ -117,10 +117,10 @@ for module_fsr_message in \
   'R16G16B16A16_FLOAT' \
   'R11G11B10_FLOAT' \
   'R8G8B8A8_UNORM' \
-  'Observador color 0.6.0 pronto' \
+  'Observador color 0.7.0 pronto' \
   'diagnostic_queue=2 worker=%s' \
-  'Janela color 0.6.0 %s' \
-  'Relatorio color 0.6.0' \
+  'Janela color 0.7.0 %s' \
+  'Relatorio color 0.7.0' \
   'async_job_drops=%llu' \
   'report_queue_drops=%llu' \
   'Color target #%llu' \
@@ -135,7 +135,9 @@ for module_fsr_message in \
   'AA Photorealism ativo antes da UI' \
   'temporal=history-clamp+screenspace-3x3' \
   'engine_motion_vectors=indisponiveis jitter=indisponivel' \
-  'Telemetria GPU AA/FSR 0.6.0' \
+  'Telemetria GPU AA/FSR 0.7.0' \
+  'Draw proof 0.7.0' \
+  'Final draw proof locked 0.7.0' \
   'TemporalAA_avg=%.3fms' \
   '0.4-stops' \
   'worker diagnostico drenado com seguranca'; do
@@ -176,16 +178,24 @@ for forbidden_hot_path_work in \
   fi
 done
 
-shader_resource_source="$(sed -n \
-  '/HRESULT WINAPI process_shader_resources(/,/^}/p' "${fsr_source}")"
-for forbidden_hot_path_work in \
-  'log_message(' \
-  'new ' \
-  'CreateFileW' \
-  'WriteFile' \
-  'CloseHandle'; do
-  if grep -Fq "${forbidden_hot_path_work}" <<<"${shader_resource_source}"; then
-    echo "Trabalho indevido voltou ao hook de composicao: ${forbidden_hot_path_work}" >&2
+if ! grep -Fq 'kSrvReplacementRequiresDrawProof' "${fsr_source}"; then
+  echo "O caminho ABI v4 deixou de falhar fechado sem prova de draw." >&2
+  exit 1
+fi
+
+for draw_proof_marker in \
+  'void WINAPI observe_pixel_shader_resources' \
+  'void WINAPI observe_final_draw' \
+  'OMGetRenderTargets' \
+  'PSGetShaderResources' \
+  'RSGetViewports' \
+  'RSGetScissorRects' \
+  'PSGetShader' \
+  'IAGetPrimitiveTopology' \
+  'kFinalDrawProofConfirmFrames = 24' \
+  'replacement=0 dispatch=0'; do
+  if ! grep -Fq "${draw_proof_marker}" "${fsr_source}"; then
+    echo "Validacao de draw final incompleta: ${draw_proof_marker}" >&2
     exit 1
   fi
 done
@@ -522,4 +532,4 @@ for native_aa_marker in \
   fi
 done
 
-echo "Proxies, core 0.11.0 Steam screenshot unico, AA temporal Photorealism e FSR 0.6.0 automaticos, depth, SSAO, telemetria, perfil e shaders validados."
+echo "Proxies, core Photorealism, captura Steam, draw proof FSR 0.7.0, depth, SSAO, telemetria, perfil e shaders validados."
