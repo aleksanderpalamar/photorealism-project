@@ -40,6 +40,14 @@ cp "${project_dir}/third_party/fidelityfx-fsr/ffx_fsr1.h" \
   "${staging_dir}/${package_name}/photorealism-plugin/third_party/fidelityfx-fsr/ffx_fsr1.h"
 cp "${project_dir}/third_party/fidelityfx-fsr/LICENSE.txt" \
   "${staging_dir}/${package_name}/photorealism-plugin/third_party/fidelityfx-fsr/LICENSE.txt"
+cp "${project_dir}/README.md" "${staging_dir}/${package_name}/README.md"
+cp "${project_dir}/CHANGELOG.md" \
+  "${staging_dir}/${package_name}/CHANGELOG.md"
+cp "${project_dir}/FSR_ROADMAP.md" \
+  "${staging_dir}/${package_name}/FSR_ROADMAP.md"
+cp "${project_dir}/ROADMAP.md" \
+  "${staging_dir}/${package_name}/ROADMAP.md"
+
 if command -v zip >/dev/null 2>&1; then
   (
     cd "${staging_dir}"

@@ -143,7 +143,7 @@ nao e liberada para uso e foi substituida pelo fail-closed 0.6.1.
 - corrigido o flicker/imagem em quadrantes no ETS2;
 - o nucleo `dxgi.dll` segue com iluminacao, SSAO e temporal consolidados.
 
-## Core 0.11.3 + FSR/AA 0.7.0 - prova passiva do draw final (teste atual)
+## Core 0.11.3 + FSR/AA 0.7.0 - prova passiva do draw final
 
 - ABI v5 adiciona observacao de `Draw`, `DrawIndexed`, `DrawInstanced` e
   `DrawIndexedInstanced`;
@@ -160,8 +160,22 @@ nao e liberada para uso e foi substituida pelo fail-closed 0.6.1.
 - os logs agregados a cada dez segundos registram provas e gates rejeitados
   sem I/O por frame.
 
-## Core 0.11.4 + FSR/AA 0.7.1 - Temporal + RCAS por draw comprovado (planejado)
+## Core 0.11.4 + FSR/AA 0.7.1 - revisao passiva dos draws rejeitados (teste atual)
 
+- ABI v6 observa `RSSetState`, `RSSetViewports` e `RSSetScissorRects` e mantem
+  um shadow do estado de rasterizacao por contexto, em vez de consultar o
+  contexto D3D11 a cada draw;
+- a regra de validacao nao muda: `ScissorEnable == FALSE` continua dispensando
+  o retangulo de scissor, exatamente como na 0.7.0;
+- cada draw rejeitado vira uma assinatura estrutural agregada com `hits`,
+  primeiro/ultimo frame e amostras, em vez de milhares de linhas repetidas;
+- `replacement=0` e `dispatch=0`: esta etapa continua puramente diagnostica;
+- objetivo unico: descobrir se os draws rejeitados por `scissor` estao mesmo
+  incorretos ou se a leitura do estado de rasterizacao e que estava errada.
+
+## Core 0.11.5 + FSR/AA 0.7.2 - Temporal + RCAS por draw comprovado (planejado)
+
+- decidir a regra de scissor com base na evidencia coletada pela 0.7.1;
 - reutilizar sem flexibilizacao a assinatura bloqueada pelo 0.7.0;
 - somente source nativo de mesma resolucao do backbuffer;
 - executar Temporal + RCAS automaticamente antes do draw comprovado;

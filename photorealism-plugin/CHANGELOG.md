@@ -1,5 +1,24 @@
 # Changelog
 
+## Pacote 0.11.4 + Photorealism FSR/AA 0.7.1 - 2026-08-27
+
+- a ABI v6 observa `RSSetState`, `RSSetViewports` e `RSSetScissorRects` e mantem
+  um shadow do estado de rasterizacao por contexto; a prova do draw final deixa
+  de consultar `RSGetState`/`RSGetViewports`/`RSGetScissorRects` a cada chamada;
+- quando um contexto ainda nao tem shadow utilizavel, ele e semeado uma unica
+  vez a partir do estado vivo; contexto sem objeto de rasterizer state e o
+  default do D3D11, ou seja `ScissorEnable=FALSE`, e o teste de scissor e
+  pulado -- a regra de validacao permanece a mesma da 0.7.0;
+- draws rejeitados passam a ser agregados por assinatura estrutural, com
+  `hits`, primeiro e ultimo frame e amostras da primeira ocorrencia; offsets de
+  indice e o ponteiro do depth-stencil view ficam fora da chave de agrupamento
+  para nao fragmentar milhares de draws equivalentes em assinaturas distintas;
+- `replacement=0` e `dispatch=0` permanecem: nenhuma substituicao de SRV,
+  nenhum dispatch de FSR e nenhuma alteracao de viewport, scissor, rasterizer
+  state, shader ou render target acontece nesta versao;
+- esta entrega existe apenas para responder, com evidencia, se os draws
+  rejeitados por `scissor` estao mesmo incorretos.
+
 ## Pacote 0.11.3 + Photorealism FSR/AA 0.7.0 - 2026-08-26
 
 - adicionada a prova passiva do draw final via `Draw`, `DrawIndexed`,
