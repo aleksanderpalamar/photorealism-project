@@ -292,6 +292,8 @@ for draw_proof_marker in \
   'PSGetShader' \
   'IAGetPrimitiveTopology' \
   'record_rejected_draw_locked' \
+  'rejected_draw_identity_matches' \
+  'samples=first-occurrence' \
   'Rejected draw signature' \
   'kFinalDrawProofConfirmFrames = 24' \
   'replacement=0 dispatch=0'; do
@@ -582,6 +584,12 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/tests/native_aa_config_test.cpp" \
   -o "${native_aa_config_test}"
 "${native_aa_config_test}"
+
+fsr_rejected_draw_identity_test="/tmp/photorealism-fsr-rejected-draw-identity-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/fsr_rejected_draw_identity_test.cpp" \
+  -o "${fsr_rejected_draw_identity_test}"
+"${fsr_rejected_draw_identity_test}"
 
 screenshot_request_gate_test="/tmp/photorealism-screenshot-request-gate-test"
 g++ -std=c++20 -Wall -Wextra -Werror \

@@ -1,6 +1,7 @@
 #include "photorealism_fsr_api.hpp"
 
 #include "fsr_color_scoring.hpp"
+#include "fsr_rejected_draw_identity.hpp"
 #include "fsr_runtime.hpp"
 
 #include <dxgi.h>
@@ -187,48 +188,24 @@ struct RasterizerShadowState {
     bool scissor_enabled = false;
 };
 
-enum class DrawProofRejectReason : std::uint32_t {
-    missing_rtv,
-    multiple_rtvs,
-    depth_bound,
-    wrong_backbuffer,
-    source_mismatch,
-    source_ineligible,
-    viewport,
-    scissor,
-    pixel_shader,
-    topology,
-    call_shape,
-    raster_shadow,
-};
+using photorealism::fsr::DrawProofRejectReason;
+using photorealism::fsr::RejectedDrawIdentity;
+using photorealism::fsr::RejectedDrawSample;
 
-struct RejectedDrawSignature {
-    DrawProofRejectReason reason = DrawProofRejectReason::missing_rtv;
-    void* source_identity = nullptr;
-    void* rtv_identity = nullptr;
-    void* depth_stencil_view = nullptr;
-    ID3D11PixelShader* pixel_shader = nullptr;
-    D3D11_PRIMITIVE_TOPOLOGY topology = D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
-    std::uint32_t kind = 0;
-    std::uint32_t primitive_count = 0;
-    std::uint32_t instance_count = 0;
-    std::uint32_t start_location = 0;
-    std::int32_t base_vertex_location = 0;
-    std::uint32_t start_instance_location = 0;
-    UINT source_width = 0;
-    UINT source_height = 0;
-    UINT source_format = 0;
-    UINT rtv_width = 0;
-    UINT rtv_height = 0;
-    UINT rtv_format = 0;
-    UINT rtv_count = 0;
-    UINT viewport_count = 0;
-    UINT scissor_count = 0;
-    bool depth_bound = false;
-    bool rasterizer_known = false;
-    bool viewport_known = false;
-    bool scissor_known = false;
-    bool scissor_enabled = false;
+static_assert(
+    photorealism::fsr::kDrawKindDraw == PHOTOREALISM_FSR_DRAW &&
+        photorealism::fsr::kDrawKindDrawIndexed ==
+            PHOTOREALISM_FSR_DRAW_INDEXED &&
+        photorealism::fsr::kDrawKindDrawInstanced ==
+            PHOTOREALISM_FSR_DRAW_INSTANCED &&
+        photorealism::fsr::kDrawKindDrawIndexedInstanced ==
+            PHOTOREALISM_FSR_DRAW_INDEXED_INSTANCED,
+    "Os tipos de draw do header puro divergiram da ABI");
+
+// O estado completo de rasterizacao observado no momento da rejeicao. Fica
+// fora da identidade porque so os slots 0 participam do agrupamento; os demais
+// existem para o log, como amostra da primeira ocorrencia.
+struct RejectedDrawRasterizerSample {
     std::array<D3D11_VIEWPORT,
                D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE>
         viewports = {};
@@ -238,7 +215,9 @@ struct RejectedDrawSignature {
 };
 
 struct RejectedDrawAggregate {
-    RejectedDrawSignature signature = {};
+    RejectedDrawIdentity identity = {};
+    RejectedDrawSample sample = {};
+    RejectedDrawRasterizerSample rasterizer_sample = {};
     std::uint64_t hits = 0;
     std::uint64_t first_frame = 0;
     std::uint64_t last_frame = 0;
@@ -266,7 +245,6 @@ struct DrawProofDiagnostics {
     std::uint64_t duplicate_frame = 0;
     std::uint64_t lock_contention = 0;
     std::uint64_t raster_shadow = 0;
-    std::uint64_t rejected_signature_overflow = 0;
 };
 
 struct DrawProofReportSnapshot {
@@ -486,9 +464,6 @@ void log_message(const char* format, ...) {
     CloseHandle(file);
 }
 
-const char* draw_proof_reject_reason_name(DrawProofRejectReason reason);
-const char* draw_proof_kind_name(std::uint32_t kind);
-
 void write_draw_proof_report(const DrawProofReportSnapshot& snapshot) {
     const DrawProofDiagnostics& diagnostics = snapshot.diagnostics;
     log_message(
@@ -529,50 +504,58 @@ void write_draw_proof_report(const DrawProofReportSnapshot& snapshot) {
         if (!aggregate.occupied) {
             continue;
         }
-        const RejectedDrawSignature& signature = aggregate.signature;
+        const RejectedDrawIdentity& identity = aggregate.identity;
+        const RejectedDrawSample& sample = aggregate.sample;
         log_message(
             "Rejected draw signature #%llu: reason=%s hits=%llu "
             "frames=%llu-%llu draws=%llu-%llu kind=%s count=%u instances=%u "
             "start=%u base_vertex=%d start_instance=%u PS=%p topology=%u "
             "SRV=%p %ux%u format=%u RTV=%p %ux%u format=%u count=%u "
             "DSV=%s(%p) raster_known=%s viewport_known=%s scissor_known=%s "
-            "scissor_enable=%s viewport_count=%u scissor_count=%u.",
+            "scissor_enable=%s viewport_count=%u scissor_count=%u "
+            "samples=first-occurrence.",
             static_cast<unsigned long long>(index),
-            draw_proof_reject_reason_name(signature.reason),
+            photorealism::fsr::draw_proof_reject_reason_name(identity.reason),
             static_cast<unsigned long long>(aggregate.hits),
             static_cast<unsigned long long>(aggregate.first_frame),
             static_cast<unsigned long long>(aggregate.last_frame),
             static_cast<unsigned long long>(aggregate.first_draw),
             static_cast<unsigned long long>(aggregate.last_draw),
-            draw_proof_kind_name(signature.kind),
-            signature.primitive_count,
-            signature.instance_count,
-            signature.start_location,
-            signature.base_vertex_location,
-            signature.start_instance_location,
-            signature.pixel_shader,
-            static_cast<unsigned>(signature.topology),
-            signature.source_identity,
-            signature.source_width,
-            signature.source_height,
-            signature.source_format,
-            signature.rtv_identity,
-            signature.rtv_width,
-            signature.rtv_height,
-            signature.rtv_format,
-            signature.rtv_count,
-            signature.depth_bound ? "bound" : "none",
-            signature.depth_stencil_view,
-            signature.rasterizer_known ? "yes" : "no",
-            signature.viewport_known ? "yes" : "no",
-            signature.scissor_known ? "yes" : "no",
-            signature.scissor_enabled ? "true" : "false",
-            signature.viewport_count,
-            signature.scissor_count);
+            photorealism::fsr::draw_proof_kind_name(identity.kind),
+            identity.primitive_count,
+            identity.instance_count,
+            sample.start_location,
+            sample.base_vertex_location,
+            sample.start_instance_location,
+            reinterpret_cast<void*>(
+                static_cast<std::uintptr_t>(identity.pixel_shader)),
+            identity.topology,
+            reinterpret_cast<void*>(
+                static_cast<std::uintptr_t>(identity.source_identity)),
+            identity.source_width,
+            identity.source_height,
+            identity.source_format,
+            reinterpret_cast<void*>(
+                static_cast<std::uintptr_t>(identity.rtv_identity)),
+            identity.rtv_width,
+            identity.rtv_height,
+            identity.rtv_format,
+            identity.rtv_count,
+            identity.depth_stencil_bound ? "bound" : "none",
+            reinterpret_cast<void*>(
+                static_cast<std::uintptr_t>(sample.depth_stencil_view)),
+            identity.rasterizer_known ? "yes" : "no",
+            identity.viewport_known ? "yes" : "no",
+            identity.scissor_known ? "yes" : "no",
+            identity.scissor_enabled ? "true" : "false",
+            identity.viewport_count,
+            identity.scissor_count);
         const UINT viewport_sample_count = std::min(
-            signature.viewport_count, kRejectedDrawLogArraySampleCapacity);
+            static_cast<UINT>(identity.viewport_count),
+            kRejectedDrawLogArraySampleCapacity);
         for (UINT viewport = 0; viewport < viewport_sample_count; ++viewport) {
-            const D3D11_VIEWPORT& value = signature.viewports[viewport];
+            const D3D11_VIEWPORT& value =
+                aggregate.rasterizer_sample.viewports[viewport];
             log_message(
                 "Rejected draw signature #%llu viewport[%u]=x=%.3f y=%.3f "
                 "width=%.3f height=%.3f min_depth=%.3f max_depth=%.3f.",
@@ -585,18 +568,20 @@ void write_draw_proof_report(const DrawProofReportSnapshot& snapshot) {
                 value.MinDepth,
                 value.MaxDepth);
         }
-        if (signature.viewport_count > viewport_sample_count) {
+        if (identity.viewport_count > viewport_sample_count) {
             log_message(
                 "Rejected draw signature #%llu viewport_samples=%u/%u; "
                 "demais valores retidos somente para agregacao.",
                 static_cast<unsigned long long>(index),
                 viewport_sample_count,
-                signature.viewport_count);
+                identity.viewport_count);
         }
         const UINT scissor_sample_count = std::min(
-            signature.scissor_count, kRejectedDrawLogArraySampleCapacity);
+            static_cast<UINT>(identity.scissor_count),
+            kRejectedDrawLogArraySampleCapacity);
         for (UINT scissor = 0; scissor < scissor_sample_count; ++scissor) {
-            const D3D11_RECT& value = signature.scissors[scissor];
+            const D3D11_RECT& value =
+                aggregate.rasterizer_sample.scissors[scissor];
             log_message(
                 "Rejected draw signature #%llu scissor[%u]=left=%ld top=%ld "
                 "right=%ld bottom=%ld.",
@@ -607,13 +592,13 @@ void write_draw_proof_report(const DrawProofReportSnapshot& snapshot) {
                 static_cast<long>(value.right),
                 static_cast<long>(value.bottom));
         }
-        if (signature.scissor_count > scissor_sample_count) {
+        if (identity.scissor_count > scissor_sample_count) {
             log_message(
                 "Rejected draw signature #%llu scissor_samples=%u/%u; "
                 "demais valores retidos somente para agregacao.",
                 static_cast<unsigned long long>(index),
                 scissor_sample_count,
-                signature.scissor_count);
+                identity.scissor_count);
         }
     }
 }
@@ -748,6 +733,14 @@ void log_adapter(ID3D11Device* device) {
         static_cast<unsigned long>(description.AdapterLuid.LowPart));
 }
 
+// Identidade temporaria de um objeto COM dentro de uma unica execucao. O valor
+// so e comparado e logado, nunca desreferenciado, entao sobreviver ao Release
+// do objeto e aceitavel.
+std::uint64_t address_token(const void* pointer) {
+    return static_cast<std::uint64_t>(
+        reinterpret_cast<std::uintptr_t>(pointer));
+}
+
 std::size_t pointer_hash(const void* pointer, std::size_t capacity) {
     std::uintptr_t value = reinterpret_cast<std::uintptr_t>(pointer);
     value >>= 4;
@@ -799,52 +792,6 @@ bool final_draw_signature_matches(
            left.output_height == right.output_height;
 }
 
-const char* draw_proof_reject_reason_name(DrawProofRejectReason reason) {
-    switch (reason) {
-        case DrawProofRejectReason::missing_rtv:
-            return "missing-rtv";
-        case DrawProofRejectReason::multiple_rtvs:
-            return "multiple-rtvs";
-        case DrawProofRejectReason::depth_bound:
-            return "depth-bound";
-        case DrawProofRejectReason::wrong_backbuffer:
-            return "wrong-backbuffer";
-        case DrawProofRejectReason::source_mismatch:
-            return "source-mismatch";
-        case DrawProofRejectReason::source_ineligible:
-            return "source-ineligible";
-        case DrawProofRejectReason::viewport:
-            return "viewport";
-        case DrawProofRejectReason::scissor:
-            return "scissor";
-        case DrawProofRejectReason::pixel_shader:
-            return "pixel-shader";
-        case DrawProofRejectReason::topology:
-            return "topology";
-        case DrawProofRejectReason::call_shape:
-            return "call-shape";
-        case DrawProofRejectReason::raster_shadow:
-            return "raster-shadow";
-        default:
-            return "unknown";
-    }
-}
-
-const char* draw_proof_kind_name(std::uint32_t kind) {
-    switch (kind) {
-        case PHOTOREALISM_FSR_DRAW:
-            return "Draw";
-        case PHOTOREALISM_FSR_DRAW_INDEXED:
-            return "DrawIndexed";
-        case PHOTOREALISM_FSR_DRAW_INSTANCED:
-            return "DrawInstanced";
-        case PHOTOREALISM_FSR_DRAW_INDEXED_INSTANCED:
-            return "DrawIndexedInstanced";
-        default:
-            return "unknown";
-    }
-}
-
 RasterizerShadowState* find_rasterizer_shadow_locked(
     ID3D11DeviceContext* context, bool create) {
     if (context == nullptr) {
@@ -892,18 +839,18 @@ RasterizerShadowState* prepare_rasterizer_shadow_locked(
     return shadow;
 }
 
-bool rejected_draw_signature_matches(
-    const RejectedDrawSignature& left,
-    const RejectedDrawSignature& right) {
-    return std::memcmp(&left, &right, sizeof(left)) == 0;
-}
-
+// A amostra e o estado de rasterizacao completo so entram na primeira
+// ocorrencia: repetir a mesma identidade apenas incrementa o contador.
 void record_rejected_draw_locked(
-    const RejectedDrawSignature& signature, std::uint64_t draw_serial) {
+    const RejectedDrawIdentity& identity,
+    const RejectedDrawSample& sample,
+    const RejectedDrawRasterizerSample& rasterizer_sample,
+    std::uint64_t draw_serial) {
     for (std::size_t index = 0; index < g_rejected_draw_count; ++index) {
         RejectedDrawAggregate& aggregate = g_rejected_draws[index];
         if (aggregate.occupied &&
-            rejected_draw_signature_matches(aggregate.signature, signature)) {
+            photorealism::fsr::rejected_draw_identity_matches(
+                aggregate.identity, identity)) {
             ++aggregate.hits;
             aggregate.last_frame = g_lifetime_frame_serial;
             aggregate.last_draw = draw_serial;
@@ -912,13 +859,14 @@ void record_rejected_draw_locked(
     }
     if (g_rejected_draw_count >= g_rejected_draws.size()) {
         ++g_rejected_draw_overflow;
-        ++g_draw_proof_diagnostics.rejected_signature_overflow;
         return;
     }
     RejectedDrawAggregate& aggregate =
         g_rejected_draws[g_rejected_draw_count++];
     aggregate = {};
-    aggregate.signature = signature;
+    aggregate.identity = identity;
+    aggregate.sample = sample;
+    aggregate.rasterizer_sample = rasterizer_sample;
     aggregate.hits = 1;
     aggregate.first_frame = g_lifetime_frame_serial;
     aggregate.last_frame = g_lifetime_frame_serial;
@@ -2634,14 +2582,19 @@ void WINAPI observe_final_draw(const PhotorealismFsrDrawEventV5* event) {
     }
 
     const std::uint64_t draw_serial = ++g_draw_proof_draw_serial;
-    RejectedDrawSignature rejected = {};
+    RejectedDrawIdentity rejected = {};
     rejected.kind = event->kind;
     rejected.primitive_count = event->primitive_count;
     rejected.instance_count = event->instance_count;
-    rejected.start_location = event->start_location;
-    rejected.base_vertex_location = event->base_vertex_location;
-    rejected.start_instance_location = event->start_instance_location;
 
+    // Argumentos de chamada ficam fora da identidade: variam a cada draw de um
+    // mesmo passe e fragmentariam a agregacao.
+    RejectedDrawSample rejected_sample = {};
+    rejected_sample.start_location = event->start_location;
+    rejected_sample.base_vertex_location = event->base_vertex_location;
+    rejected_sample.start_instance_location = event->start_instance_location;
+
+    RejectedDrawRasterizerSample rejected_rasterizer_sample = {};
     const RasterizerShadowState* rasterizer_shadow =
         find_rasterizer_shadow_locked(event->context, false);
     const std::uint64_t rasterizer_epoch =
@@ -2654,8 +2607,26 @@ void WINAPI observe_final_draw(const PhotorealismFsrDrawEventV5* event) {
         rejected.scissor_enabled = rasterizer_shadow->scissor_enabled;
         rejected.viewport_count = rasterizer_shadow->viewport_count;
         rejected.scissor_count = rasterizer_shadow->scissor_count;
-        rejected.viewports = rasterizer_shadow->viewports;
-        rejected.scissors = rasterizer_shadow->scissors;
+        rejected_rasterizer_sample.viewports = rasterizer_shadow->viewports;
+        rejected_rasterizer_sample.scissors = rasterizer_shadow->scissors;
+        if (rasterizer_shadow->viewport_count != 0) {
+            const D3D11_VIEWPORT& viewport = rasterizer_shadow->viewports[0];
+            rejected.viewport_x_milli =
+                photorealism::fsr::viewport_to_milli(viewport.TopLeftX);
+            rejected.viewport_y_milli =
+                photorealism::fsr::viewport_to_milli(viewport.TopLeftY);
+            rejected.viewport_width_milli =
+                photorealism::fsr::viewport_to_milli(viewport.Width);
+            rejected.viewport_height_milli =
+                photorealism::fsr::viewport_to_milli(viewport.Height);
+        }
+        if (rasterizer_shadow->scissor_count != 0) {
+            const D3D11_RECT& scissor = rasterizer_shadow->scissors[0];
+            rejected.scissor_left = scissor.left;
+            rejected.scissor_top = scissor.top;
+            rejected.scissor_right = scissor.right;
+            rejected.scissor_bottom = scissor.bottom;
+        }
     }
 
     ID3D11RenderTargetView* render_targets[
@@ -2673,8 +2644,8 @@ void WINAPI observe_final_draw(const PhotorealismFsrDrawEventV5* event) {
             depth_target->Release();
         }
     };
-    rejected.depth_bound = depth_target != nullptr;
-    rejected.depth_stencil_view = depth_target;
+    rejected.depth_stencil_bound = depth_target != nullptr;
+    rejected_sample.depth_stencil_view = address_token(depth_target);
     for (UINT index = 0;
          index < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT;
          ++index) {
@@ -2682,7 +2653,7 @@ void WINAPI observe_final_draw(const PhotorealismFsrDrawEventV5* event) {
             ++rejected.rtv_count;
         }
     }
-    rejected.rtv_identity = render_targets[0];
+    rejected.rtv_identity = address_token(render_targets[0]);
 
     int output_index = -1;
     if (render_targets[0] != nullptr) {
@@ -2690,7 +2661,7 @@ void WINAPI observe_final_draw(const PhotorealismFsrDrawEventV5* event) {
         if (output_index >= 0) {
             const ColorResourceEntry& output =
                 g_resources[static_cast<std::size_t>(output_index)];
-            rejected.rtv_identity = output.identity;
+            rejected.rtv_identity = address_token(output.identity);
             rejected.rtv_width = output.width;
             rejected.rtv_height = output.height;
             rejected.rtv_format = output.primary_view_format;
@@ -2699,7 +2670,7 @@ void WINAPI observe_final_draw(const PhotorealismFsrDrawEventV5* event) {
 
     ID3D11ShaderResourceView* source = nullptr;
     event->context->PSGetShaderResources(0, 1, &source);
-    rejected.source_identity = source;
+    rejected.source_identity = address_token(source);
     void* source_identity = nullptr;
     UINT source_width = 0;
     UINT source_height = 0;
@@ -2713,7 +2684,7 @@ void WINAPI observe_final_draw(const PhotorealismFsrDrawEventV5* event) {
             &source_height,
             &source_format);
     if (source_resolved) {
-        rejected.source_identity = source_identity;
+        rejected.source_identity = address_token(source_identity);
         rejected.source_width = source_width;
         rejected.source_height = source_height;
         rejected.source_format = source_format;
@@ -2728,8 +2699,10 @@ void WINAPI observe_final_draw(const PhotorealismFsrDrawEventV5* event) {
             classes[index]->Release();
         }
     }
-    rejected.pixel_shader = pixel_shader;
-    event->context->IAGetPrimitiveTopology(&rejected.topology);
+    rejected.pixel_shader = address_token(pixel_shader);
+    D3D11_PRIMITIVE_TOPOLOGY topology = D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
+    event->context->IAGetPrimitiveTopology(&topology);
+    rejected.topology = static_cast<std::uint32_t>(topology);
 
     auto release_observation = [&]() {
         if (pixel_shader != nullptr) {
@@ -2744,7 +2717,8 @@ void WINAPI observe_final_draw(const PhotorealismFsrDrawEventV5* event) {
     };
     auto reject = [&](DrawProofRejectReason reason) {
         rejected.reason = reason;
-        record_rejected_draw_locked(rejected, draw_serial);
+        record_rejected_draw_locked(
+            rejected, rejected_sample, rejected_rasterizer_sample, draw_serial);
         release_observation();
         ReleaseSRWLockExclusive(&g_catalog_lock);
     };
@@ -2844,28 +2818,31 @@ void WINAPI observe_final_draw(const PhotorealismFsrDrawEventV5* event) {
     }
     if (!rejected.viewport_known || rejected.viewport_count != 1u ||
         !is_fullscreen_viewport(
-            rejected.viewports[0], g_backbuffer_width, g_backbuffer_height)) {
+            rejected_rasterizer_sample.viewports[0],
+            g_backbuffer_width,
+            g_backbuffer_height)) {
         ++g_draw_proof_diagnostics.viewport;
         reject(DrawProofRejectReason::viewport);
         return;
     }
-    if (rejected.scissor_enabled) {
-        if (!rejected.scissor_known || rejected.scissor_count != 1u ||
-            !is_fullscreen_scissor(
-                rejected.scissors[0],
-                g_backbuffer_width,
-                g_backbuffer_height)) {
-            ++g_draw_proof_diagnostics.scissor;
-            reject(DrawProofRejectReason::scissor);
-            return;
-        }
+    // ScissorEnable == FALSE dispensa o retangulo: o rasterizador nao usa
+    // scissor nesse estado, entao nao ha o que provar.
+    if (rejected.scissor_enabled &&
+        (!rejected.scissor_known || rejected.scissor_count != 1u ||
+         !is_fullscreen_scissor(
+             rejected_rasterizer_sample.scissors[0],
+             g_backbuffer_width,
+             g_backbuffer_height))) {
+        ++g_draw_proof_diagnostics.scissor;
+        reject(DrawProofRejectReason::scissor);
+        return;
     }
     if (pixel_shader == nullptr) {
         ++g_draw_proof_diagnostics.pixel_shader;
         reject(DrawProofRejectReason::pixel_shader);
         return;
     }
-    if (!is_fullscreen_topology(rejected.topology, event->primitive_count)) {
+    if (!is_fullscreen_topology(topology, event->primitive_count)) {
         ++g_draw_proof_diagnostics.topology;
         reject(DrawProofRejectReason::topology);
         return;
@@ -2875,7 +2852,7 @@ void WINAPI observe_final_draw(const PhotorealismFsrDrawEventV5* event) {
     signature.source_identity = source_identity;
     signature.backbuffer_identity = output.identity;
     signature.pixel_shader = pixel_shader;
-    signature.topology = rejected.topology;
+    signature.topology = topology;
     signature.kind = event->kind;
     signature.primitive_count = event->primitive_count;
     signature.instance_count = event->instance_count;
