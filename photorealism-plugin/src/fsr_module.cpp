@@ -1,8 +1,10 @@
 #include "photorealism_fsr_api.hpp"
 
 #include "fsr_color_scoring.hpp"
+#include "fsr_device_capability_log.hpp"
 #include "fsr_draw_shape.hpp"
 #include "fsr_format_names.hpp"
+#include "fsr_logging.hpp"
 #include "fsr_pointer_hash.hpp"
 #include "fsr_rasterizer_shadow.hpp"
 #include "fsr_rejected_draw_identity.hpp"
@@ -14,12 +16,8 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
-#include <cmath>
-#include <cstdarg>
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
-#include <cwchar>
 
 namespace {
 
@@ -291,8 +289,6 @@ SRWLOCK g_catalog_lock = SRWLOCK_INIT;
 SRWLOCK g_runtime_lock = SRWLOCK_INIT;
 SRWLOCK g_diagnostic_queue_lock = SRWLOCK_INIT;
 CONDITION_VARIABLE g_diagnostic_fill_condition = CONDITION_VARIABLE_INIT;
-INIT_ONCE g_log_path_once = INIT_ONCE_STATIC_INIT;
-wchar_t g_log_path[MAX_PATH] = {};
 
 std::array<ViewCacheEntry, kViewCacheCapacity> g_view_cache = {};
 std::array<ShaderViewCacheEntry, kViewCacheCapacity> g_shader_view_cache = {};
@@ -369,85 +365,34 @@ void reset_automatic_selection_locked(bool announce_fallback) {
     g_automatic_selection.generation = next_generation;
 }
 
-bool append_path(wchar_t* destination, size_t capacity, const wchar_t* suffix) {
-    const size_t used = std::wcslen(destination);
-    const size_t extra = std::wcslen(suffix);
-    if (used + extra + 1 > capacity) {
-        return false;
-    }
-    std::wmemcpy(destination + used, suffix, extra + 1);
-    return true;
+static_assert(
+    photorealism::fsr::kFeatureLevel12_1 == D3D_FEATURE_LEVEL_12_1 &&
+        photorealism::fsr::kFeatureLevel11_0 == D3D_FEATURE_LEVEL_11_0 &&
+        photorealism::fsr::kFeatureLevel9_1 == D3D_FEATURE_LEVEL_9_1,
+    "Os feature levels do header puro divergiram do D3D11");
+
+const char* feature_level_name(D3D_FEATURE_LEVEL level) {
+    return photorealism::fsr::feature_level_name(
+        static_cast<std::uint32_t>(level));
 }
 
-BOOL CALLBACK initialize_log_path(PINIT_ONCE, PVOID, PVOID*) {
-    wchar_t module_path[MAX_PATH] = {};
-    if (g_module == nullptr ||
-        GetModuleFileNameW(g_module, module_path, MAX_PATH) == 0) {
-        std::wcsncpy(module_path, L".", MAX_PATH - 1);
-    } else {
-        wchar_t* separator = std::wcsrchr(module_path, L'\\');
-        if (separator != nullptr) {
-            *separator = L'\0';
-        }
-    }
+static_assert(
+    photorealism::fsr::kFormatR16G16B16A16Float ==
+            DXGI_FORMAT_R16G16B16A16_FLOAT &&
+        photorealism::fsr::kFormatR11G11B10Float == DXGI_FORMAT_R11G11B10_FLOAT &&
+        photorealism::fsr::kFormatR10G10B10A2Unorm ==
+            DXGI_FORMAT_R10G10B10A2_UNORM &&
+        photorealism::fsr::kFormatR8G8B8A8Unorm == DXGI_FORMAT_R8G8B8A8_UNORM &&
+        photorealism::fsr::kFormatR8G8B8A8UnormSrgb ==
+            DXGI_FORMAT_R8G8B8A8_UNORM_SRGB &&
+        photorealism::fsr::kFormatB8G8R8A8Unorm == DXGI_FORMAT_B8G8R8A8_UNORM &&
+        photorealism::fsr::kFormatB8G8R8A8UnormSrgb ==
+            DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
+    "Os formatos do header puro divergiram do DXGI");
 
-    if (!append_path(module_path, MAX_PATH, L"\\photorealism-plugin")) {
-        return FALSE;
-    }
-    CreateDirectoryW(module_path, nullptr);
-    std::wcsncpy(g_log_path, module_path, MAX_PATH - 1);
-    return append_path(g_log_path, MAX_PATH, L"\\photorealism-fsr.log")
-               ? TRUE
-               : FALSE;
-}
-
-void log_message(const char* format, ...) {
-    if (!InitOnceExecuteOnce(
-            &g_log_path_once, initialize_log_path, nullptr, nullptr)) {
-        return;
-    }
-
-    char message[2048] = {};
-    va_list arguments;
-    va_start(arguments, format);
-    std::vsnprintf(message, sizeof(message), format, arguments);
-    va_end(arguments);
-
-    SYSTEMTIME time = {};
-    GetLocalTime(&time);
-    char line[2304] = {};
-    const int length = std::snprintf(
-        line,
-        sizeof(line),
-        "[%02u:%02u:%02u.%03u] %s\r\n",
-        static_cast<unsigned>(time.wHour),
-        static_cast<unsigned>(time.wMinute),
-        static_cast<unsigned>(time.wSecond),
-        static_cast<unsigned>(time.wMilliseconds),
-        message);
-    if (length <= 0) {
-        return;
-    }
-
-    OutputDebugStringA(line);
-    HANDLE file = CreateFileW(
-        g_log_path,
-        FILE_APPEND_DATA,
-        FILE_SHARE_READ | FILE_SHARE_WRITE,
-        nullptr,
-        OPEN_ALWAYS,
-        FILE_ATTRIBUTE_NORMAL,
-        nullptr);
-    if (file == INVALID_HANDLE_VALUE) {
-        return;
-    }
-    DWORD written = 0;
-    const DWORD bytes = static_cast<DWORD>(
-        length < static_cast<int>(sizeof(line))
-            ? length
-            : static_cast<int>(sizeof(line) - 1));
-    WriteFile(file, line, bytes, &written, nullptr);
-    CloseHandle(file);
+const char* format_name(UINT format) {
+    return photorealism::fsr::dxgi_format_name(
+        static_cast<std::uint32_t>(format));
 }
 
 void write_draw_proof_report(const DrawProofReportSnapshot& snapshot) {
@@ -590,123 +535,6 @@ void write_draw_proof_report(const DrawProofReportSnapshot& snapshot) {
     }
 }
 
-static_assert(
-    photorealism::fsr::kFeatureLevel12_1 == D3D_FEATURE_LEVEL_12_1 &&
-        photorealism::fsr::kFeatureLevel11_0 == D3D_FEATURE_LEVEL_11_0 &&
-        photorealism::fsr::kFeatureLevel9_1 == D3D_FEATURE_LEVEL_9_1,
-    "Os feature levels do header puro divergiram do D3D11");
-
-const char* feature_level_name(D3D_FEATURE_LEVEL level) {
-    return photorealism::fsr::feature_level_name(
-        static_cast<std::uint32_t>(level));
-}
-
-static_assert(
-    photorealism::fsr::kFormatR16G16B16A16Float ==
-            DXGI_FORMAT_R16G16B16A16_FLOAT &&
-        photorealism::fsr::kFormatR11G11B10Float == DXGI_FORMAT_R11G11B10_FLOAT &&
-        photorealism::fsr::kFormatR10G10B10A2Unorm ==
-            DXGI_FORMAT_R10G10B10A2_UNORM &&
-        photorealism::fsr::kFormatR8G8B8A8Unorm == DXGI_FORMAT_R8G8B8A8_UNORM &&
-        photorealism::fsr::kFormatR8G8B8A8UnormSrgb ==
-            DXGI_FORMAT_R8G8B8A8_UNORM_SRGB &&
-        photorealism::fsr::kFormatB8G8R8A8Unorm == DXGI_FORMAT_B8G8R8A8_UNORM &&
-        photorealism::fsr::kFormatB8G8R8A8UnormSrgb ==
-            DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
-    "Os formatos do header puro divergiram do DXGI");
-
-const char* format_name(UINT format) {
-    return photorealism::fsr::dxgi_format_name(
-        static_cast<std::uint32_t>(format));
-}
-
-void log_format_support(
-    ID3D11Device* device, DXGI_FORMAT format, const char* name) {
-    UINT support = 0;
-    const HRESULT result = device->CheckFormatSupport(format, &support);
-    if (FAILED(result)) {
-        log_message(
-            "Formato %s: consulta falhou result=0x%08X.",
-            name,
-            static_cast<unsigned>(result));
-        return;
-    }
-    log_message(
-        "Formato %s: texture2d=%s sample=%s render_target=%s typed_uav=%s "
-        "flags=0x%08X.",
-        name,
-        (support & D3D11_FORMAT_SUPPORT_TEXTURE2D) != 0 ? "sim" : "nao",
-        (support & D3D11_FORMAT_SUPPORT_SHADER_SAMPLE) != 0 ? "sim" : "nao",
-        (support & D3D11_FORMAT_SUPPORT_RENDER_TARGET) != 0 ? "sim" : "nao",
-        (support & D3D11_FORMAT_SUPPORT_TYPED_UNORDERED_ACCESS_VIEW) != 0
-            ? "sim"
-            : "nao",
-        support);
-}
-
-void log_adapter(ID3D11Device* device) {
-    IDXGIDevice* dxgi_device = nullptr;
-    HRESULT result = device->QueryInterface(
-        IID_IDXGIDevice, reinterpret_cast<void**>(&dxgi_device));
-    if (FAILED(result) || dxgi_device == nullptr) {
-        log_message(
-            "Adaptador DXGI indisponivel: result=0x%08X.",
-            static_cast<unsigned>(result));
-        return;
-    }
-
-    IDXGIAdapter* adapter = nullptr;
-    result = dxgi_device->GetAdapter(&adapter);
-    dxgi_device->Release();
-    if (FAILED(result) || adapter == nullptr) {
-        log_message(
-            "GetAdapter falhou: result=0x%08X.",
-            static_cast<unsigned>(result));
-        return;
-    }
-
-    DXGI_ADAPTER_DESC description = {};
-    result = adapter->GetDesc(&description);
-    adapter->Release();
-    if (FAILED(result)) {
-        log_message(
-            "GetDesc do adaptador falhou: result=0x%08X.",
-            static_cast<unsigned>(result));
-        return;
-    }
-
-    char adapter_name[256] = {};
-    if (WideCharToMultiByte(
-            CP_UTF8,
-            0,
-            description.Description,
-            -1,
-            adapter_name,
-            static_cast<int>(sizeof(adapter_name)),
-            nullptr,
-            nullptr) == 0) {
-        std::snprintf(adapter_name, sizeof(adapter_name), "indisponivel");
-    }
-    log_message(
-        "Adapter: name=%s vendor=0x%04X device=0x%04X subsystem=0x%08X "
-        "revision=0x%X dedicated_vram=%lluMiB shared_memory=%lluMiB "
-        "luid=%08lX:%08lX.",
-        adapter_name,
-        description.VendorId,
-        description.DeviceId,
-        description.SubSysId,
-        description.Revision,
-        static_cast<unsigned long long>(
-            description.DedicatedVideoMemory / (1024ull * 1024ull)),
-        static_cast<unsigned long long>(
-            description.SharedSystemMemory / (1024ull * 1024ull)),
-        static_cast<unsigned long>(description.AdapterLuid.HighPart),
-        static_cast<unsigned long>(description.AdapterLuid.LowPart));
-}
-
-// Identidade temporaria de um objeto COM dentro de uma unica execucao. O valor
-// so e comparado e logado, nunca desreferenciado, entao sobreviver ao Release
-// do objeto e aceitavel.
 std::uint64_t address_token(const void* pointer) {
     return static_cast<std::uint64_t>(
         reinterpret_cast<std::uintptr_t>(pointer));
@@ -1696,43 +1524,8 @@ HRESULT WINAPI initialize_device(ID3D11Device* device) {
         feature_level_name(feature_level),
         static_cast<unsigned>(feature_level),
         static_cast<void*>(device));
-    log_adapter(device);
+    log_device_capabilities(device);
 
-    D3D11_FEATURE_DATA_THREADING threading = {};
-    HRESULT result = device->CheckFeatureSupport(
-        D3D11_FEATURE_THREADING, &threading, sizeof(threading));
-    if (SUCCEEDED(result)) {
-        log_message(
-            "Capacidades D3D11: concurrent_creates=%s command_lists=%s.",
-            threading.DriverConcurrentCreates ? "sim" : "nao",
-            threading.DriverCommandLists ? "sim" : "nao");
-    } else {
-        log_message(
-            "Capacidades de threading indisponiveis: result=0x%08X.",
-            static_cast<unsigned>(result));
-    }
-
-    D3D11_FEATURE_DATA_D3D10_X_HARDWARE_OPTIONS compute_options = {};
-    result = device->CheckFeatureSupport(
-        D3D11_FEATURE_D3D10_X_HARDWARE_OPTIONS,
-        &compute_options,
-        sizeof(compute_options));
-    log_message(
-        "Compute shader 4.x raw/structured=%s (query=0x%08X); "
-        "feature level 11.x ou superior habilita compute SM5 planejado.",
-        SUCCEEDED(result) &&
-                compute_options
-                    .ComputeShaders_Plus_RawAndStructuredBuffers_Via_Shader_4_x
-            ? "sim"
-            : "nao",
-        static_cast<unsigned>(result));
-
-    log_format_support(
-        device, DXGI_FORMAT_R16G16B16A16_FLOAT, "R16G16B16A16_FLOAT");
-    log_format_support(
-        device, DXGI_FORMAT_R11G11B10_FLOAT, "R11G11B10_FLOAT");
-    log_format_support(
-        device, DXGI_FORMAT_R8G8B8A8_UNORM, "R8G8B8A8_UNORM");
     log_message(
         "Observador color 0.7.1 pronto: janela=30000ms resources=256 "
         "view_cache=4096 max_report=32 diagnostic_queue=2 worker=%s; "
@@ -2988,6 +2781,7 @@ extern "C" HRESULT WINAPI PhotorealismFsrGetApi(
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         g_module = instance;
+        fsr_log_set_module(instance);
         DisableThreadLibraryCalls(instance);
     }
     return TRUE;
