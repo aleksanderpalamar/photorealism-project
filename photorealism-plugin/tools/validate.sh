@@ -92,12 +92,12 @@ if grep -qi 'snowymoon' \
 fi
 
 for core_fsr_message in \
-  'Photorealism FSR/AA 0.7.0: modulo auxiliar ausente ou indisponivel' \
+  'Photorealism FSR/AA 0.7.1: modulo auxiliar ausente ou indisponivel' \
   'nucleo 0.11.0 continua normalmente' \
   'PhotorealismFsrGetApi' \
   'ABI incompativel ou incompleta' \
   'modulo auxiliar carregado' \
-  'color_observer=%s automatic_selection=%s aa_easu_rcas=%s draw_proof=%s' \
+  'color_observer=%s automatic_selection=%s aa_easu_rcas=%s draw_proof=%s raster_shadow=%s' \
   'dispositivo real do jogo entregue ao modulo' \
   'inicializacao do dispositivo falhou' \
   'dispositivo encerrado para reinicializacao segura'; do
@@ -108,8 +108,8 @@ for core_fsr_message in \
 done
 
 for module_fsr_message in \
-  'Photorealism FSR/AA 0.7.0 inicializado' \
-  'ABI=v1+v2+v3+v4+v5' \
+  'Photorealism FSR/AA 0.7.1 inicializado' \
+  'ABI=v1+v2+v3+v4+v5+v6' \
   'feature_level=%s' \
   '12_1' \
   'Adapter: name=' \
@@ -136,8 +136,9 @@ for module_fsr_message in \
   'temporal=history-clamp+screenspace-3x3' \
   'engine_motion_vectors=indisponiveis jitter=indisponivel' \
   'Telemetria GPU AA/FSR 0.7.0' \
-  'Draw proof 0.7.0' \
-  'Final draw proof locked 0.7.0' \
+  'Draw proof 0.7.1' \
+  'Final draw proof locked 0.7.1' \
+  'Rejected draw signature' \
   'TemporalAA_avg=%.3fms' \
   '0.4-stops' \
   'worker diagnostico drenado com seguranca'; do
@@ -185,17 +186,46 @@ fi
 
 for draw_proof_marker in \
   'void WINAPI observe_pixel_shader_resources' \
+  'void WINAPI observe_rasterizer_state' \
+  'void WINAPI observe_viewports' \
+  'void WINAPI observe_scissor_rects' \
   'void WINAPI observe_final_draw' \
   'OMGetRenderTargets' \
   'PSGetShaderResources' \
-  'RSGetViewports' \
-  'RSGetScissorRects' \
   'PSGetShader' \
   'IAGetPrimitiveTopology' \
+  'record_rejected_draw_locked' \
+  'Rejected draw signature' \
   'kFinalDrawProofConfirmFrames = 24' \
   'replacement=0 dispatch=0'; do
   if ! grep -Fq "${draw_proof_marker}" "${fsr_source}"; then
     echo "Validacao de draw final incompleta: ${draw_proof_marker}" >&2
+    exit 1
+  fi
+done
+
+observe_final_draw_source="$(sed -n \
+  '/void WINAPI observe_final_draw(/,/^}/p' "${fsr_source}")"
+for forbidden_raster_query in \
+  'RSGetState' \
+  'RSGetViewports' \
+  'RSGetScissorRects'; do
+  if grep -Fq "${forbidden_raster_query}" <<<"${observe_final_draw_source}"; then
+    echo "Consulta rasterizadora ao vivo indevida na prova passiva: ${forbidden_raster_query}" >&2
+    exit 1
+  fi
+done
+
+hook_source="${project_dir}/src/hook.cpp"
+for raster_shadow_hook in \
+  '&context_vtable[43]' \
+  '&context_vtable[44]' \
+  '&context_vtable[45]' \
+  'hooked_rs_set_state' \
+  'hooked_rs_set_viewports' \
+  'hooked_rs_set_scissor_rects'; do
+  if ! grep -Fq "${raster_shadow_hook}" "${hook_source}"; then
+    echo "Hook de shadow rasterizador ausente: ${raster_shadow_hook}" >&2
     exit 1
   fi
 done

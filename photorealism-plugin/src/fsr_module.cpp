@@ -24,6 +24,9 @@ constexpr std::size_t kResourceCapacity = 256;
 constexpr std::size_t kBackBufferIdentityCapacity = 8;
 constexpr std::size_t kMaximumReportedTargets = 32;
 constexpr std::size_t kDiagnosticQueueCapacity = 2;
+constexpr std::size_t kRasterizerShadowContextCapacity = 16;
+constexpr std::size_t kRejectedDrawSignatureCapacity = 64;
+constexpr UINT kRejectedDrawLogArraySampleCapacity = 4;
 constexpr ULONGLONG kObservationWindowMilliseconds = 30000;
 constexpr ULONGLONG kDrawProofReportMilliseconds = 10000;
 constexpr std::uint32_t kAutomaticSelectionConfirmFrames = 12;
@@ -36,8 +39,8 @@ constexpr std::size_t kPixelShaderResourceSlotCount =
 // full-screen composition. Do not replace the game's SRV until that proof is
 // available; replacing it here caused invalid UI/garage compositions.
 constexpr bool kSrvReplacementRequiresDrawProof = true;
-// 0.7.0 records proof only. Runtime textures and compute dispatch are held for
-// the separately tested activation release.
+// 0.7.1 records proof only. Runtime textures and compute dispatch remain held
+// for a separately tested activation release.
 constexpr bool kEnableFsrRuntimeAfterDrawProof = false;
 
 struct ViewCacheEntry {
@@ -166,6 +169,84 @@ struct FinalDrawProofSignature {
     UINT output_height = 0;
 };
 
+struct RasterizerShadowState {
+    ID3D11DeviceContext* context = nullptr;
+    std::array<D3D11_VIEWPORT,
+               D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE>
+        viewports = {};
+    std::array<D3D11_RECT,
+               D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE>
+        scissors = {};
+    UINT viewport_count = 0;
+    UINT scissor_count = 0;
+    std::uint64_t epoch = 0;
+    bool occupied = false;
+    bool rasterizer_known = false;
+    bool viewport_known = false;
+    bool scissor_known = false;
+    bool scissor_enabled = false;
+};
+
+enum class DrawProofRejectReason : std::uint32_t {
+    missing_rtv,
+    multiple_rtvs,
+    depth_bound,
+    wrong_backbuffer,
+    source_mismatch,
+    source_ineligible,
+    viewport,
+    scissor,
+    pixel_shader,
+    topology,
+    call_shape,
+    raster_shadow,
+};
+
+struct RejectedDrawSignature {
+    DrawProofRejectReason reason = DrawProofRejectReason::missing_rtv;
+    void* source_identity = nullptr;
+    void* rtv_identity = nullptr;
+    void* depth_stencil_view = nullptr;
+    ID3D11PixelShader* pixel_shader = nullptr;
+    D3D11_PRIMITIVE_TOPOLOGY topology = D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
+    std::uint32_t kind = 0;
+    std::uint32_t primitive_count = 0;
+    std::uint32_t instance_count = 0;
+    std::uint32_t start_location = 0;
+    std::int32_t base_vertex_location = 0;
+    std::uint32_t start_instance_location = 0;
+    UINT source_width = 0;
+    UINT source_height = 0;
+    UINT source_format = 0;
+    UINT rtv_width = 0;
+    UINT rtv_height = 0;
+    UINT rtv_format = 0;
+    UINT rtv_count = 0;
+    UINT viewport_count = 0;
+    UINT scissor_count = 0;
+    bool depth_bound = false;
+    bool rasterizer_known = false;
+    bool viewport_known = false;
+    bool scissor_known = false;
+    bool scissor_enabled = false;
+    std::array<D3D11_VIEWPORT,
+               D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE>
+        viewports = {};
+    std::array<D3D11_RECT,
+               D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE>
+        scissors = {};
+};
+
+struct RejectedDrawAggregate {
+    RejectedDrawSignature signature = {};
+    std::uint64_t hits = 0;
+    std::uint64_t first_frame = 0;
+    std::uint64_t last_frame = 0;
+    std::uint64_t first_draw = 0;
+    std::uint64_t last_draw = 0;
+    bool occupied = false;
+};
+
 struct DrawProofDiagnostics {
     std::uint64_t observed = 0;
     std::uint64_t valid = 0;
@@ -184,6 +265,8 @@ struct DrawProofDiagnostics {
     std::uint64_t call_shape = 0;
     std::uint64_t duplicate_frame = 0;
     std::uint64_t lock_contention = 0;
+    std::uint64_t raster_shadow = 0;
+    std::uint64_t rejected_signature_overflow = 0;
 };
 
 struct DrawProofReportSnapshot {
@@ -195,6 +278,10 @@ struct DrawProofReportSnapshot {
     UINT source_height = 0;
     UINT output_width = 0;
     UINT output_height = 0;
+    std::array<RejectedDrawAggregate, kRejectedDrawSignatureCapacity>
+        rejected_draws = {};
+    std::size_t rejected_draw_count = 0;
+    std::uint64_t rejected_draw_overflow = 0;
 };
 
 enum class ColorReportReason : std::uint8_t {
@@ -247,7 +334,12 @@ std::array<BackBufferIdentityEntry, kBackBufferIdentityCapacity>
     g_backbuffer_identities = {};
 std::array<ID3D11ShaderResourceView*, kPixelShaderResourceSlotCount>
     g_pixel_shader_resource_shadow = {};
+std::array<RasterizerShadowState, kRasterizerShadowContextCapacity>
+    g_rasterizer_shadows = {};
+std::array<RejectedDrawAggregate, kRejectedDrawSignatureCapacity>
+    g_rejected_draws = {};
 std::atomic<bool> g_pixel_shader_slot_zero_candidate{false};
+std::atomic<std::uint64_t> g_rasterizer_shadow_epoch{1};
 std::size_t g_resource_count = 0;
 std::size_t g_backbuffer_identity_count = 0;
 std::uint64_t g_view_cache_entries = 0;
@@ -257,6 +349,7 @@ std::uint64_t g_unsupported_views = 0;
 std::uint64_t g_frame_serial = 0;
 std::uint64_t g_lifetime_frame_serial = 0;
 std::uint64_t g_binding_serial = 0;
+std::uint64_t g_draw_proof_draw_serial = 0;
 std::uint64_t g_event_count = 0;
 std::uint64_t g_uav_event_count = 0;
 std::uint64_t g_slot_bindings = 0;
@@ -286,6 +379,8 @@ std::uint64_t g_final_draw_proof_streak = 0;
 std::uint64_t g_final_draw_proof_last_frame = UINT64_MAX;
 bool g_final_draw_proof_locked = false;
 ULONGLONG g_last_draw_proof_report_at = 0;
+std::size_t g_rejected_draw_count = 0;
+std::uint64_t g_rejected_draw_overflow = 0;
 
 std::array<DiagnosticJob, kDiagnosticQueueCapacity> g_diagnostic_jobs = {};
 HANDLE g_diagnostic_event = nullptr;
@@ -391,14 +486,18 @@ void log_message(const char* format, ...) {
     CloseHandle(file);
 }
 
+const char* draw_proof_reject_reason_name(DrawProofRejectReason reason);
+const char* draw_proof_kind_name(std::uint32_t kind);
+
 void write_draw_proof_report(const DrawProofReportSnapshot& snapshot) {
     const DrawProofDiagnostics& diagnostics = snapshot.diagnostics;
     log_message(
-        "Draw proof 0.7.0: observed=%llu valid=%llu streak=%llu lock=%s "
+        "Draw proof 0.7.1: observed=%llu valid=%llu streak=%llu lock=%s "
         "source=%p %ux%u output=%ux%u rejects=[shadow=%llu context=%llu "
         "rtv=%llu multi_rtv=%llu dsv=%llu backbuffer=%llu source=%llu "
         "candidate=%llu viewport=%llu scissor=%llu shader=%llu topology=%llu "
-        "shape=%llu duplicate=%llu contention=%llu]. replacement=0 dispatch=0.",
+        "shape=%llu raster_shadow=%llu duplicate=%llu contention=%llu "
+        "signature_overflow=%llu]. replacement=0 dispatch=0.",
         static_cast<unsigned long long>(diagnostics.observed),
         static_cast<unsigned long long>(diagnostics.valid),
         static_cast<unsigned long long>(snapshot.streak),
@@ -421,8 +520,102 @@ void write_draw_proof_report(const DrawProofReportSnapshot& snapshot) {
         static_cast<unsigned long long>(diagnostics.pixel_shader),
         static_cast<unsigned long long>(diagnostics.topology),
         static_cast<unsigned long long>(diagnostics.call_shape),
+        static_cast<unsigned long long>(diagnostics.raster_shadow),
         static_cast<unsigned long long>(diagnostics.duplicate_frame),
-        static_cast<unsigned long long>(diagnostics.lock_contention));
+        static_cast<unsigned long long>(diagnostics.lock_contention),
+        static_cast<unsigned long long>(snapshot.rejected_draw_overflow));
+    for (std::size_t index = 0; index < snapshot.rejected_draw_count; ++index) {
+        const RejectedDrawAggregate& aggregate = snapshot.rejected_draws[index];
+        if (!aggregate.occupied) {
+            continue;
+        }
+        const RejectedDrawSignature& signature = aggregate.signature;
+        log_message(
+            "Rejected draw signature #%llu: reason=%s hits=%llu "
+            "frames=%llu-%llu draws=%llu-%llu kind=%s count=%u instances=%u "
+            "start=%u base_vertex=%d start_instance=%u PS=%p topology=%u "
+            "SRV=%p %ux%u format=%u RTV=%p %ux%u format=%u count=%u "
+            "DSV=%s(%p) raster_known=%s viewport_known=%s scissor_known=%s "
+            "scissor_enable=%s viewport_count=%u scissor_count=%u.",
+            static_cast<unsigned long long>(index),
+            draw_proof_reject_reason_name(signature.reason),
+            static_cast<unsigned long long>(aggregate.hits),
+            static_cast<unsigned long long>(aggregate.first_frame),
+            static_cast<unsigned long long>(aggregate.last_frame),
+            static_cast<unsigned long long>(aggregate.first_draw),
+            static_cast<unsigned long long>(aggregate.last_draw),
+            draw_proof_kind_name(signature.kind),
+            signature.primitive_count,
+            signature.instance_count,
+            signature.start_location,
+            signature.base_vertex_location,
+            signature.start_instance_location,
+            signature.pixel_shader,
+            static_cast<unsigned>(signature.topology),
+            signature.source_identity,
+            signature.source_width,
+            signature.source_height,
+            signature.source_format,
+            signature.rtv_identity,
+            signature.rtv_width,
+            signature.rtv_height,
+            signature.rtv_format,
+            signature.rtv_count,
+            signature.depth_bound ? "bound" : "none",
+            signature.depth_stencil_view,
+            signature.rasterizer_known ? "yes" : "no",
+            signature.viewport_known ? "yes" : "no",
+            signature.scissor_known ? "yes" : "no",
+            signature.scissor_enabled ? "true" : "false",
+            signature.viewport_count,
+            signature.scissor_count);
+        const UINT viewport_sample_count = std::min(
+            signature.viewport_count, kRejectedDrawLogArraySampleCapacity);
+        for (UINT viewport = 0; viewport < viewport_sample_count; ++viewport) {
+            const D3D11_VIEWPORT& value = signature.viewports[viewport];
+            log_message(
+                "Rejected draw signature #%llu viewport[%u]=x=%.3f y=%.3f "
+                "width=%.3f height=%.3f min_depth=%.3f max_depth=%.3f.",
+                static_cast<unsigned long long>(index),
+                viewport,
+                value.TopLeftX,
+                value.TopLeftY,
+                value.Width,
+                value.Height,
+                value.MinDepth,
+                value.MaxDepth);
+        }
+        if (signature.viewport_count > viewport_sample_count) {
+            log_message(
+                "Rejected draw signature #%llu viewport_samples=%u/%u; "
+                "demais valores retidos somente para agregacao.",
+                static_cast<unsigned long long>(index),
+                viewport_sample_count,
+                signature.viewport_count);
+        }
+        const UINT scissor_sample_count = std::min(
+            signature.scissor_count, kRejectedDrawLogArraySampleCapacity);
+        for (UINT scissor = 0; scissor < scissor_sample_count; ++scissor) {
+            const D3D11_RECT& value = signature.scissors[scissor];
+            log_message(
+                "Rejected draw signature #%llu scissor[%u]=left=%ld top=%ld "
+                "right=%ld bottom=%ld.",
+                static_cast<unsigned long long>(index),
+                scissor,
+                static_cast<long>(value.left),
+                static_cast<long>(value.top),
+                static_cast<long>(value.right),
+                static_cast<long>(value.bottom));
+        }
+        if (signature.scissor_count > scissor_sample_count) {
+            log_message(
+                "Rejected draw signature #%llu scissor_samples=%u/%u; "
+                "demais valores retidos somente para agregacao.",
+                static_cast<unsigned long long>(index),
+                scissor_sample_count,
+                signature.scissor_count);
+        }
+    }
 }
 
 const char* feature_level_name(D3D_FEATURE_LEVEL level) {
@@ -606,6 +799,134 @@ bool final_draw_signature_matches(
            left.output_height == right.output_height;
 }
 
+const char* draw_proof_reject_reason_name(DrawProofRejectReason reason) {
+    switch (reason) {
+        case DrawProofRejectReason::missing_rtv:
+            return "missing-rtv";
+        case DrawProofRejectReason::multiple_rtvs:
+            return "multiple-rtvs";
+        case DrawProofRejectReason::depth_bound:
+            return "depth-bound";
+        case DrawProofRejectReason::wrong_backbuffer:
+            return "wrong-backbuffer";
+        case DrawProofRejectReason::source_mismatch:
+            return "source-mismatch";
+        case DrawProofRejectReason::source_ineligible:
+            return "source-ineligible";
+        case DrawProofRejectReason::viewport:
+            return "viewport";
+        case DrawProofRejectReason::scissor:
+            return "scissor";
+        case DrawProofRejectReason::pixel_shader:
+            return "pixel-shader";
+        case DrawProofRejectReason::topology:
+            return "topology";
+        case DrawProofRejectReason::call_shape:
+            return "call-shape";
+        case DrawProofRejectReason::raster_shadow:
+            return "raster-shadow";
+        default:
+            return "unknown";
+    }
+}
+
+const char* draw_proof_kind_name(std::uint32_t kind) {
+    switch (kind) {
+        case PHOTOREALISM_FSR_DRAW:
+            return "Draw";
+        case PHOTOREALISM_FSR_DRAW_INDEXED:
+            return "DrawIndexed";
+        case PHOTOREALISM_FSR_DRAW_INSTANCED:
+            return "DrawInstanced";
+        case PHOTOREALISM_FSR_DRAW_INDEXED_INSTANCED:
+            return "DrawIndexedInstanced";
+        default:
+            return "unknown";
+    }
+}
+
+RasterizerShadowState* find_rasterizer_shadow_locked(
+    ID3D11DeviceContext* context, bool create) {
+    if (context == nullptr) {
+        return nullptr;
+    }
+    const std::size_t base =
+        pointer_hash(context, kRasterizerShadowContextCapacity);
+    RasterizerShadowState* empty = nullptr;
+    for (std::size_t probe = 0; probe < kRasterizerShadowContextCapacity;
+         ++probe) {
+        RasterizerShadowState& entry =
+            g_rasterizer_shadows[(base + probe) &
+                                 (kRasterizerShadowContextCapacity - 1)];
+        if (entry.occupied && entry.context == context) {
+            return &entry;
+        }
+        if (!entry.occupied && empty == nullptr) {
+            empty = &entry;
+        }
+    }
+    if (empty != nullptr && create) {
+        *empty = {};
+        empty->context = context;
+        empty->occupied = true;
+        return empty;
+    }
+    return nullptr;
+}
+
+RasterizerShadowState* prepare_rasterizer_shadow_locked(
+    ID3D11DeviceContext* context) {
+    RasterizerShadowState* shadow =
+        find_rasterizer_shadow_locked(context, true);
+    if (shadow == nullptr) {
+        return nullptr;
+    }
+    const std::uint64_t epoch =
+        g_rasterizer_shadow_epoch.load(std::memory_order_acquire);
+    if (shadow->epoch != epoch) {
+        *shadow = {};
+        shadow->context = context;
+        shadow->occupied = true;
+        shadow->epoch = epoch;
+    }
+    return shadow;
+}
+
+bool rejected_draw_signature_matches(
+    const RejectedDrawSignature& left,
+    const RejectedDrawSignature& right) {
+    return std::memcmp(&left, &right, sizeof(left)) == 0;
+}
+
+void record_rejected_draw_locked(
+    const RejectedDrawSignature& signature, std::uint64_t draw_serial) {
+    for (std::size_t index = 0; index < g_rejected_draw_count; ++index) {
+        RejectedDrawAggregate& aggregate = g_rejected_draws[index];
+        if (aggregate.occupied &&
+            rejected_draw_signature_matches(aggregate.signature, signature)) {
+            ++aggregate.hits;
+            aggregate.last_frame = g_lifetime_frame_serial;
+            aggregate.last_draw = draw_serial;
+            return;
+        }
+    }
+    if (g_rejected_draw_count >= g_rejected_draws.size()) {
+        ++g_rejected_draw_overflow;
+        ++g_draw_proof_diagnostics.rejected_signature_overflow;
+        return;
+    }
+    RejectedDrawAggregate& aggregate =
+        g_rejected_draws[g_rejected_draw_count++];
+    aggregate = {};
+    aggregate.signature = signature;
+    aggregate.hits = 1;
+    aggregate.first_frame = g_lifetime_frame_serial;
+    aggregate.last_frame = g_lifetime_frame_serial;
+    aggregate.first_draw = draw_serial;
+    aggregate.last_draw = draw_serial;
+    aggregate.occupied = true;
+}
+
 void reset_final_draw_proof_locked() {
     g_final_draw_proof_signature = {};
     g_final_draw_proof_streak = 0;
@@ -624,6 +945,7 @@ void clear_catalog_locked(bool clear_signature) {
     g_unsupported_views = 0;
     g_frame_serial = 0;
     g_binding_serial = 0;
+    g_draw_proof_draw_serial = 0;
     g_event_count = 0;
     g_uav_event_count = 0;
     g_slot_bindings = 0;
@@ -632,6 +954,11 @@ void clear_catalog_locked(bool clear_signature) {
     g_current_output_context = nullptr;
     g_current_output_is_backbuffer = false;
     g_pixel_shader_resource_shadow.fill(nullptr);
+    g_rasterizer_shadows = {};
+    g_rasterizer_shadow_epoch.fetch_add(1u, std::memory_order_acq_rel);
+    g_rejected_draws = {};
+    g_rejected_draw_count = 0;
+    g_rejected_draw_overflow = 0;
     g_pixel_shader_slot_zero_candidate.store(false, std::memory_order_release);
     reset_final_draw_proof_locked();
     g_draw_proof_diagnostics = {};
@@ -1496,7 +1823,7 @@ HRESULT WINAPI initialize_device(ID3D11Device* device) {
 
     const D3D_FEATURE_LEVEL feature_level = device->GetFeatureLevel();
     log_message(
-        "Photorealism FSR/AA 0.7.0 inicializado: ABI=v1+v2+v3+v4+v5 "
+        "Photorealism FSR/AA 0.7.1 inicializado: ABI=v1+v2+v3+v4+v5+v6 "
         "feature_level=%s(0x%X) device=%p.",
         feature_level_name(feature_level),
         static_cast<unsigned>(feature_level),
@@ -1539,12 +1866,12 @@ HRESULT WINAPI initialize_device(ID3D11Device* device) {
     log_format_support(
         device, DXGI_FORMAT_R8G8B8A8_UNORM, "R8G8B8A8_UNORM");
     log_message(
-        "Observador color 0.7.0 pronto: janela=30000ms resources=256 "
+        "Observador color 0.7.1 pronto: janela=30000ms resources=256 "
         "view_cache=4096 max_report=32 diagnostic_queue=2 worker=%s; "
         "consultas COM apenas em cache miss.",
         diagnostic_worker_ready ? "ativo" : "indisponivel");
     log_message(
-        "AA/FSR 0.7.0: PS binds sao somente pistas; o draw final exige "
+        "AA/FSR 0.7.1: PS binds sao somente pistas; o draw final exige "
         "RTV/backbuffer, viewport, scissor, shader e topologia validos. "
         "Esta entrega e diagnostica: nenhuma substituicao ou dispatch ocorre.");
     return S_OK;
@@ -1709,7 +2036,13 @@ void WINAPI observe_frame(const PhotorealismFsrFrameEventV2* event) {
             g_final_draw_proof_signature.output_width;
         draw_proof_report.output_height =
             g_final_draw_proof_signature.output_height;
+        draw_proof_report.rejected_draws = g_rejected_draws;
+        draw_proof_report.rejected_draw_count = g_rejected_draw_count;
+        draw_proof_report.rejected_draw_overflow = g_rejected_draw_overflow;
         g_draw_proof_diagnostics = {};
+        g_rejected_draws = {};
+        g_rejected_draw_count = 0;
+        g_rejected_draw_overflow = 0;
         g_last_draw_proof_report_at = now;
     }
     ReleaseSRWLockExclusive(&g_catalog_lock);
@@ -1999,7 +2332,7 @@ HRESULT WINAPI process_shader_resources(
         ReleaseSRWLockExclusive(&g_catalog_lock);
         if (log_blocked_replacement) {
             log_message(
-                "AA/FSR 0.7.0 seguranca: substituicao de scene-SRV "
+                "AA/FSR 0.7.1 seguranca: substituicao de scene-SRV "
                 "bloqueada; bind sem prova do draw final (viewport/scissor/"
                 "shader). Observacao continua e o core visual permanece ativo.");
         }
@@ -2181,6 +2514,95 @@ void WINAPI observe_pixel_shader_resources(
     ReleaseSRWLockExclusive(&g_catalog_lock);
 }
 
+void WINAPI observe_rasterizer_state(
+    const PhotorealismFsrRasterizerStateEventV6* event) {
+    if (event == nullptr || event->struct_size < sizeof(*event) ||
+        event->context == nullptr) {
+        return;
+    }
+    if (!TryAcquireSRWLockExclusive(&g_catalog_lock)) {
+        InterlockedIncrement64(&g_lock_contention_drops);
+        g_rasterizer_shadow_epoch.fetch_add(1u, std::memory_order_acq_rel);
+        return;
+    }
+    if (g_device != nullptr) {
+        RasterizerShadowState* shadow =
+            prepare_rasterizer_shadow_locked(event->context);
+        if (shadow != nullptr) {
+            D3D11_RASTERIZER_DESC description = {};
+            if (event->state != nullptr) {
+                event->state->GetDesc(&description);
+            }
+            shadow->rasterizer_known = true;
+            shadow->scissor_enabled = description.ScissorEnable != FALSE;
+        }
+    }
+    ReleaseSRWLockExclusive(&g_catalog_lock);
+}
+
+void WINAPI observe_viewports(const PhotorealismFsrViewportsEventV6* event) {
+    if (event == nullptr || event->struct_size < sizeof(*event) ||
+        event->context == nullptr ||
+        event->viewport_count >
+            D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE ||
+        (event->viewport_count != 0 && event->viewports == nullptr)) {
+        return;
+    }
+    if (!TryAcquireSRWLockExclusive(&g_catalog_lock)) {
+        InterlockedIncrement64(&g_lock_contention_drops);
+        g_rasterizer_shadow_epoch.fetch_add(1u, std::memory_order_acq_rel);
+        return;
+    }
+    if (g_device != nullptr) {
+        RasterizerShadowState* shadow =
+            prepare_rasterizer_shadow_locked(event->context);
+        if (shadow != nullptr) {
+            shadow->viewports = {};
+            shadow->viewport_count = event->viewport_count;
+            shadow->viewport_known = true;
+            if (event->viewport_count != 0) {
+                std::memcpy(
+                    shadow->viewports.data(),
+                    event->viewports,
+                    sizeof(D3D11_VIEWPORT) * event->viewport_count);
+            }
+        }
+    }
+    ReleaseSRWLockExclusive(&g_catalog_lock);
+}
+
+void WINAPI observe_scissor_rects(
+    const PhotorealismFsrScissorRectsEventV6* event) {
+    if (event == nullptr || event->struct_size < sizeof(*event) ||
+        event->context == nullptr ||
+        event->scissor_count >
+            D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE ||
+        (event->scissor_count != 0 && event->scissors == nullptr)) {
+        return;
+    }
+    if (!TryAcquireSRWLockExclusive(&g_catalog_lock)) {
+        InterlockedIncrement64(&g_lock_contention_drops);
+        g_rasterizer_shadow_epoch.fetch_add(1u, std::memory_order_acq_rel);
+        return;
+    }
+    if (g_device != nullptr) {
+        RasterizerShadowState* shadow =
+            prepare_rasterizer_shadow_locked(event->context);
+        if (shadow != nullptr) {
+            shadow->scissors = {};
+            shadow->scissor_count = event->scissor_count;
+            shadow->scissor_known = true;
+            if (event->scissor_count != 0) {
+                std::memcpy(
+                    shadow->scissors.data(),
+                    event->scissors,
+                    sizeof(D3D11_RECT) * event->scissor_count);
+            }
+        }
+    }
+    ReleaseSRWLockExclusive(&g_catalog_lock);
+}
+
 void WINAPI observe_final_draw(const PhotorealismFsrDrawEventV5* event) {
     if (event == nullptr || event->struct_size < sizeof(*event) ||
         event->context == nullptr) {
@@ -2210,10 +2632,30 @@ void WINAPI observe_final_draw(const PhotorealismFsrDrawEventV5* event) {
         ReleaseSRWLockExclusive(&g_catalog_lock);
         return;
     }
-    if (!is_fullscreen_draw_shape(*event)) {
-        ++g_draw_proof_diagnostics.call_shape;
-        ReleaseSRWLockExclusive(&g_catalog_lock);
-        return;
+
+    const std::uint64_t draw_serial = ++g_draw_proof_draw_serial;
+    RejectedDrawSignature rejected = {};
+    rejected.kind = event->kind;
+    rejected.primitive_count = event->primitive_count;
+    rejected.instance_count = event->instance_count;
+    rejected.start_location = event->start_location;
+    rejected.base_vertex_location = event->base_vertex_location;
+    rejected.start_instance_location = event->start_instance_location;
+
+    const RasterizerShadowState* rasterizer_shadow =
+        find_rasterizer_shadow_locked(event->context, false);
+    const std::uint64_t rasterizer_epoch =
+        g_rasterizer_shadow_epoch.load(std::memory_order_acquire);
+    if (rasterizer_shadow != nullptr &&
+        rasterizer_shadow->epoch == rasterizer_epoch) {
+        rejected.rasterizer_known = rasterizer_shadow->rasterizer_known;
+        rejected.viewport_known = rasterizer_shadow->viewport_known;
+        rejected.scissor_known = rasterizer_shadow->scissor_known;
+        rejected.scissor_enabled = rasterizer_shadow->scissor_enabled;
+        rejected.viewport_count = rasterizer_shadow->viewport_count;
+        rejected.scissor_count = rasterizer_shadow->scissor_count;
+        rejected.viewports = rasterizer_shadow->viewports;
+        rejected.scissors = rasterizer_shadow->scissors;
     }
 
     ID3D11RenderTargetView* render_targets[
@@ -2231,34 +2673,110 @@ void WINAPI observe_final_draw(const PhotorealismFsrDrawEventV5* event) {
             depth_target->Release();
         }
     };
+    rejected.depth_bound = depth_target != nullptr;
+    rejected.depth_stencil_view = depth_target;
+    for (UINT index = 0;
+         index < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT;
+         ++index) {
+        if (render_targets[index] != nullptr) {
+            ++rejected.rtv_count;
+        }
+    }
+    rejected.rtv_identity = render_targets[0];
+
+    int output_index = -1;
+    if (render_targets[0] != nullptr) {
+        output_index = resolve_view_locked(render_targets[0]);
+        if (output_index >= 0) {
+            const ColorResourceEntry& output =
+                g_resources[static_cast<std::size_t>(output_index)];
+            rejected.rtv_identity = output.identity;
+            rejected.rtv_width = output.width;
+            rejected.rtv_height = output.height;
+            rejected.rtv_format = output.primary_view_format;
+        }
+    }
+
+    ID3D11ShaderResourceView* source = nullptr;
+    event->context->PSGetShaderResources(0, 1, &source);
+    rejected.source_identity = source;
+    void* source_identity = nullptr;
+    UINT source_width = 0;
+    UINT source_height = 0;
+    UINT source_format = 0;
+    const bool source_resolved =
+        source != nullptr &&
+        resolve_shader_view_locked(
+            source,
+            &source_identity,
+            &source_width,
+            &source_height,
+            &source_format);
+    if (source_resolved) {
+        rejected.source_identity = source_identity;
+        rejected.source_width = source_width;
+        rejected.source_height = source_height;
+        rejected.source_format = source_format;
+    }
+
+    ID3D11PixelShader* pixel_shader = nullptr;
+    ID3D11ClassInstance* classes[D3D11_SHADER_MAX_INTERFACES] = {};
+    UINT class_count = D3D11_SHADER_MAX_INTERFACES;
+    event->context->PSGetShader(&pixel_shader, classes, &class_count);
+    for (UINT index = 0; index < class_count; ++index) {
+        if (classes[index] != nullptr) {
+            classes[index]->Release();
+        }
+    }
+    rejected.pixel_shader = pixel_shader;
+    event->context->IAGetPrimitiveTopology(&rejected.topology);
+
+    auto release_observation = [&]() {
+        if (pixel_shader != nullptr) {
+            pixel_shader->Release();
+            pixel_shader = nullptr;
+        }
+        if (source != nullptr) {
+            source->Release();
+            source = nullptr;
+        }
+        release_render_targets();
+    };
+    auto reject = [&](DrawProofRejectReason reason) {
+        rejected.reason = reason;
+        record_rejected_draw_locked(rejected, draw_serial);
+        release_observation();
+        ReleaseSRWLockExclusive(&g_catalog_lock);
+    };
+
+    if (!is_fullscreen_draw_shape(*event)) {
+        ++g_draw_proof_diagnostics.call_shape;
+        reject(DrawProofRejectReason::call_shape);
+        return;
+    }
     if (render_targets[0] == nullptr) {
         ++g_draw_proof_diagnostics.missing_rtv;
-        release_render_targets();
-        ReleaseSRWLockExclusive(&g_catalog_lock);
+        reject(DrawProofRejectReason::missing_rtv);
         return;
     }
     for (UINT index = 1; index < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT;
          ++index) {
         if (render_targets[index] != nullptr) {
             ++g_draw_proof_diagnostics.multiple_rtvs;
-            release_render_targets();
-            ReleaseSRWLockExclusive(&g_catalog_lock);
+            reject(DrawProofRejectReason::multiple_rtvs);
             return;
         }
     }
     if (depth_target != nullptr) {
         ++g_draw_proof_diagnostics.depth_bound;
-        release_render_targets();
-        ReleaseSRWLockExclusive(&g_catalog_lock);
+        reject(DrawProofRejectReason::depth_bound);
         return;
     }
-    const int output_index = resolve_view_locked(render_targets[0]);
     if (output_index < 0 ||
         !g_resources[static_cast<std::size_t>(output_index)]
              .exact_backbuffer_resource) {
         ++g_draw_proof_diagnostics.wrong_backbuffer;
-        release_render_targets();
-        ReleaseSRWLockExclusive(&g_catalog_lock);
+        reject(DrawProofRejectReason::wrong_backbuffer);
         return;
     }
     const ColorResourceEntry& output =
@@ -2266,28 +2784,14 @@ void WINAPI observe_final_draw(const PhotorealismFsrDrawEventV5* event) {
     if (output.width != g_backbuffer_width ||
         output.height != g_backbuffer_height) {
         ++g_draw_proof_diagnostics.wrong_backbuffer;
-        release_render_targets();
-        ReleaseSRWLockExclusive(&g_catalog_lock);
+        reject(DrawProofRejectReason::wrong_backbuffer);
         return;
     }
-    release_render_targets();
-
-    ID3D11ShaderResourceView* source = nullptr;
-    event->context->PSGetShaderResources(0, 1, &source);
     if (source == nullptr || source != g_pixel_shader_resource_shadow[0]) {
         ++g_draw_proof_diagnostics.source_mismatch;
-        if (source != nullptr) {
-            source->Release();
-        }
-        ReleaseSRWLockExclusive(&g_catalog_lock);
+        reject(DrawProofRejectReason::source_mismatch);
         return;
     }
-    void* source_identity = nullptr;
-    UINT source_width = 0;
-    UINT source_height = 0;
-    UINT source_format = 0;
-    const bool source_resolved = resolve_shader_view_locked(
-        source, &source_identity, &source_width, &source_height, &source_format);
     const int source_index = source_resolved
                                  ? find_resource_locked(source_identity)
                                  : -1;
@@ -2295,8 +2799,7 @@ void WINAPI observe_final_draw(const PhotorealismFsrDrawEventV5* event) {
         source_width != g_backbuffer_width ||
         source_height != g_backbuffer_height) {
         ++g_draw_proof_diagnostics.source_ineligible;
-        source->Release();
-        ReleaseSRWLockExclusive(&g_catalog_lock);
+        reject(DrawProofRejectReason::source_ineligible);
         return;
     }
     const ColorResourceEntry& candidate =
@@ -2331,69 +2834,40 @@ void WINAPI observe_final_draw(const PhotorealismFsrDrawEventV5* event) {
     if (!candidate_score.eligible ||
         !photorealism::fsr::is_fsr_color_format(source_format)) {
         ++g_draw_proof_diagnostics.source_ineligible;
-        source->Release();
-        ReleaseSRWLockExclusive(&g_catalog_lock);
+        reject(DrawProofRejectReason::source_ineligible);
         return;
     }
-
-    D3D11_VIEWPORT viewports[
-        D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE] = {};
-    UINT viewport_count =
-        D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
-    event->context->RSGetViewports(&viewport_count, viewports);
-    if (viewport_count != 1u ||
+    if (!rejected.rasterizer_known) {
+        ++g_draw_proof_diagnostics.raster_shadow;
+        reject(DrawProofRejectReason::raster_shadow);
+        return;
+    }
+    if (!rejected.viewport_known || rejected.viewport_count != 1u ||
         !is_fullscreen_viewport(
-            viewports[0], g_backbuffer_width, g_backbuffer_height)) {
+            rejected.viewports[0], g_backbuffer_width, g_backbuffer_height)) {
         ++g_draw_proof_diagnostics.viewport;
-        source->Release();
-        ReleaseSRWLockExclusive(&g_catalog_lock);
+        reject(DrawProofRejectReason::viewport);
         return;
     }
-    ID3D11RasterizerState* rasterizer_state = nullptr;
-    event->context->RSGetState(&rasterizer_state);
-    D3D11_RASTERIZER_DESC rasterizer_description = {};
-    if (rasterizer_state != nullptr) {
-        rasterizer_state->GetDesc(&rasterizer_description);
-        rasterizer_state->Release();
-    }
-    if (rasterizer_description.ScissorEnable) {
-        D3D11_RECT scissors[
-            D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE] = {};
-        UINT scissor_count =
-            D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
-        event->context->RSGetScissorRects(&scissor_count, scissors);
-        if (scissor_count != 1u ||
+    if (rejected.scissor_enabled) {
+        if (!rejected.scissor_known || rejected.scissor_count != 1u ||
             !is_fullscreen_scissor(
-                scissors[0], g_backbuffer_width, g_backbuffer_height)) {
+                rejected.scissors[0],
+                g_backbuffer_width,
+                g_backbuffer_height)) {
             ++g_draw_proof_diagnostics.scissor;
-            source->Release();
-            ReleaseSRWLockExclusive(&g_catalog_lock);
+            reject(DrawProofRejectReason::scissor);
             return;
-        }
-    }
-
-    ID3D11PixelShader* pixel_shader = nullptr;
-    ID3D11ClassInstance* classes[D3D11_SHADER_MAX_INTERFACES] = {};
-    UINT class_count = D3D11_SHADER_MAX_INTERFACES;
-    event->context->PSGetShader(&pixel_shader, classes, &class_count);
-    for (UINT index = 0; index < class_count; ++index) {
-        if (classes[index] != nullptr) {
-            classes[index]->Release();
         }
     }
     if (pixel_shader == nullptr) {
         ++g_draw_proof_diagnostics.pixel_shader;
-        source->Release();
-        ReleaseSRWLockExclusive(&g_catalog_lock);
+        reject(DrawProofRejectReason::pixel_shader);
         return;
     }
-    D3D11_PRIMITIVE_TOPOLOGY topology = D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
-    event->context->IAGetPrimitiveTopology(&topology);
-    if (!is_fullscreen_topology(topology, event->primitive_count)) {
+    if (!is_fullscreen_topology(rejected.topology, event->primitive_count)) {
         ++g_draw_proof_diagnostics.topology;
-        pixel_shader->Release();
-        source->Release();
-        ReleaseSRWLockExclusive(&g_catalog_lock);
+        reject(DrawProofRejectReason::topology);
         return;
     }
 
@@ -2401,7 +2875,7 @@ void WINAPI observe_final_draw(const PhotorealismFsrDrawEventV5* event) {
     signature.source_identity = source_identity;
     signature.backbuffer_identity = output.identity;
     signature.pixel_shader = pixel_shader;
-    signature.topology = topology;
+    signature.topology = rejected.topology;
     signature.kind = event->kind;
     signature.primitive_count = event->primitive_count;
     signature.instance_count = event->instance_count;
@@ -2413,8 +2887,7 @@ void WINAPI observe_final_draw(const PhotorealismFsrDrawEventV5* event) {
     signature.source_format = source_format;
     signature.output_width = g_backbuffer_width;
     signature.output_height = g_backbuffer_height;
-    pixel_shader->Release();
-    source->Release();
+    release_observation();
 
     if (g_final_draw_proof_last_frame == g_lifetime_frame_serial) {
         ++g_draw_proof_diagnostics.duplicate_frame;
@@ -2438,9 +2911,9 @@ void WINAPI observe_final_draw(const PhotorealismFsrDrawEventV5* event) {
         g_final_draw_proof_streak >= kFinalDrawProofConfirmFrames) {
         g_final_draw_proof_locked = true;
         log_message(
-            "Final draw proof locked 0.7.0: frames=%u source=%p %ux%u "
-            "output=%ux%u. replacement=0 dispatch=0; pronto para a etapa "
-            "Temporal+RCAS segura.",
+            "Final draw proof locked 0.7.1: frames=%u source=%p %ux%u "
+            "output=%ux%u. replacement=0 dispatch=0; revisao passiva de "
+            "draws rejeitados permanece ativa.",
             kFinalDrawProofConfirmFrames,
             signature.source_identity,
             signature.source_width,
@@ -2488,7 +2961,7 @@ void WINAPI shutdown_device() {
     stop_diagnostic_worker();
     if (device != nullptr) {
         log_message(
-            "Photorealism FSR/AA 0.7.0: dispositivo encerrado; worker "
+            "Photorealism FSR/AA 0.7.1: dispositivo encerrado; worker "
             "diagnostico drenado com seguranca.");
     }
 }
@@ -2496,7 +2969,7 @@ void WINAPI shutdown_device() {
 const PhotorealismFsrApiV1 g_api_v1 = {
     sizeof(PhotorealismFsrApiV1),
     PHOTOREALISM_FSR_ABI_V1,
-    PHOTOREALISM_FSR_MODULE_0_7_0,
+    PHOTOREALISM_FSR_MODULE_0_7_1,
     0,
     &initialize_device,
     &shutdown_device,
@@ -2506,7 +2979,7 @@ const PhotorealismFsrApiV2 g_api_v2 = {
     {
         sizeof(PhotorealismFsrApiV2),
         PHOTOREALISM_FSR_ABI_V2,
-        PHOTOREALISM_FSR_MODULE_0_7_0,
+        PHOTOREALISM_FSR_MODULE_0_7_1,
         0,
         &initialize_device,
         &shutdown_device,
@@ -2521,7 +2994,7 @@ const PhotorealismFsrApiV3 g_api_v3 = {
         {
             sizeof(PhotorealismFsrApiV3),
             PHOTOREALISM_FSR_ABI_V3,
-            PHOTOREALISM_FSR_MODULE_0_7_0,
+            PHOTOREALISM_FSR_MODULE_0_7_1,
             0,
             &initialize_device,
             &shutdown_device,
@@ -2539,7 +3012,7 @@ const PhotorealismFsrApiV4 g_api_v4 = {
             {
                 sizeof(PhotorealismFsrApiV4),
                 PHOTOREALISM_FSR_ABI_V4,
-                PHOTOREALISM_FSR_MODULE_0_7_0,
+                PHOTOREALISM_FSR_MODULE_0_7_1,
                 0,
                 &initialize_device,
                 &shutdown_device,
@@ -2560,7 +3033,7 @@ const PhotorealismFsrApiV5 g_api_v5 = {
                 {
                     sizeof(PhotorealismFsrApiV5),
                     PHOTOREALISM_FSR_ABI_V5,
-                    PHOTOREALISM_FSR_MODULE_0_7_0,
+                    PHOTOREALISM_FSR_MODULE_0_7_1,
                     0,
                     &initialize_device,
                     &shutdown_device,
@@ -2577,6 +3050,35 @@ const PhotorealismFsrApiV5 g_api_v5 = {
     &observe_final_draw,
 };
 
+const PhotorealismFsrApiV6 g_api_v6 = {
+    {
+        {
+            {
+                {
+                    {
+                        sizeof(PhotorealismFsrApiV6),
+                        PHOTOREALISM_FSR_ABI_V6,
+                        PHOTOREALISM_FSR_MODULE_0_7_1,
+                        0,
+                        &initialize_device,
+                        &shutdown_device,
+                    },
+                    &observe_color_targets,
+                    &observe_frame,
+                    &reset_color_observation,
+                },
+                &update_automatic_selection,
+            },
+            &process_shader_resources,
+        },
+        &observe_pixel_shader_resources,
+        &observe_final_draw,
+    },
+    &observe_rasterizer_state,
+    &observe_viewports,
+    &observe_scissor_rects,
+};
+
 }  // namespace
 
 extern "C" HRESULT WINAPI PhotorealismFsrGetApi(
@@ -2586,6 +3088,10 @@ extern "C" HRESULT WINAPI PhotorealismFsrGetApi(
         return E_POINTER;
     }
     *api = nullptr;
+    if (requested_abi == PHOTOREALISM_FSR_ABI_V6) {
+        *api = &g_api_v6.base.base.base.base.base;
+        return S_OK;
+    }
     if (requested_abi == PHOTOREALISM_FSR_ABI_V5) {
         *api = &g_api_v5.base.base.base.base;
         return S_OK;

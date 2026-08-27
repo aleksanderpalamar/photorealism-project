@@ -2,8 +2,8 @@
 set -euo pipefail
 
 project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-version="0.11.3"
-fsr_version="0.7.0"
+version="0.11.4"
+fsr_version="0.7.1"
 package_name="photorealism-plugin-${version}-fsr-${fsr_version}-ets2-ats-1.60-proton"
 output_dir="${project_dir}/dist"
 staging_dir="$(mktemp -d)"
@@ -40,14 +40,6 @@ cp "${project_dir}/third_party/fidelityfx-fsr/ffx_fsr1.h" \
   "${staging_dir}/${package_name}/photorealism-plugin/third_party/fidelityfx-fsr/ffx_fsr1.h"
 cp "${project_dir}/third_party/fidelityfx-fsr/LICENSE.txt" \
   "${staging_dir}/${package_name}/photorealism-plugin/third_party/fidelityfx-fsr/LICENSE.txt"
-cp "${project_dir}/README.md" "${staging_dir}/${package_name}/README.md"
-cp "${project_dir}/CHANGELOG.md" \
-  "${staging_dir}/${package_name}/CHANGELOG.md"
-cp "${project_dir}/FSR_ROADMAP.md" \
-  "${staging_dir}/${package_name}/FSR_ROADMAP.md"
-cp "${project_dir}/ROADMAP.md" \
-  "${staging_dir}/${package_name}/ROADMAP.md"
-
 if command -v zip >/dev/null 2>&1; then
   (
     cd "${staging_dir}"

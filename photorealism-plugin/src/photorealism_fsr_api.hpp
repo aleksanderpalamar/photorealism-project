@@ -12,12 +12,14 @@ constexpr std::uint32_t PHOTOREALISM_FSR_ABI_V2 = 0x00020000u;
 constexpr std::uint32_t PHOTOREALISM_FSR_ABI_V3 = 0x00030000u;
 constexpr std::uint32_t PHOTOREALISM_FSR_ABI_V4 = 0x00040000u;
 constexpr std::uint32_t PHOTOREALISM_FSR_ABI_V5 = 0x00050000u;
+constexpr std::uint32_t PHOTOREALISM_FSR_ABI_V6 = 0x00060000u;
 constexpr std::uint32_t PHOTOREALISM_FSR_MODULE_0_2_0 = 0x00000200u;
 constexpr std::uint32_t PHOTOREALISM_FSR_MODULE_0_3_0 = 0x00000300u;
 constexpr std::uint32_t PHOTOREALISM_FSR_MODULE_0_5_0 = 0x00000500u;
 constexpr std::uint32_t PHOTOREALISM_FSR_MODULE_0_6_0 = 0x00000600u;
 constexpr std::uint32_t PHOTOREALISM_FSR_MODULE_0_6_1 = 0x00000601u;
 constexpr std::uint32_t PHOTOREALISM_FSR_MODULE_0_7_0 = 0x00000700u;
+constexpr std::uint32_t PHOTOREALISM_FSR_MODULE_0_7_1 = 0x00000701u;
 
 struct PhotorealismFsrApiV1 {
     std::uint32_t struct_size;
@@ -214,6 +216,54 @@ static_assert(
 static_assert(
     sizeof(PhotorealismFsrApiV5) == 88,
     "Photorealism FSR ABI v5 layout changed unexpectedly");
+
+// ABI v6 adds a passive rasterizer-state shadow. The three events are emitted
+// only from their matching D3D11 setters; the module copies their values and
+// never retains COM interfaces or changes pipeline state.
+struct PhotorealismFsrRasterizerStateEventV6 {
+    std::uint32_t struct_size;
+    std::uint32_t reserved;
+    ID3D11DeviceContext* context;
+    ID3D11RasterizerState* state;
+};
+
+struct PhotorealismFsrViewportsEventV6 {
+    std::uint32_t struct_size;
+    std::uint32_t viewport_count;
+    ID3D11DeviceContext* context;
+    const D3D11_VIEWPORT* viewports;
+};
+
+struct PhotorealismFsrScissorRectsEventV6 {
+    std::uint32_t struct_size;
+    std::uint32_t scissor_count;
+    ID3D11DeviceContext* context;
+    const D3D11_RECT* scissors;
+};
+
+struct PhotorealismFsrApiV6 {
+    // v1 through v5 remain an exact prefix.
+    PhotorealismFsrApiV5 base;
+    void(WINAPI* observe_rasterizer_state)(
+        const PhotorealismFsrRasterizerStateEventV6* event);
+    void(WINAPI* observe_viewports)(
+        const PhotorealismFsrViewportsEventV6* event);
+    void(WINAPI* observe_scissor_rects)(
+        const PhotorealismFsrScissorRectsEventV6* event);
+};
+
+static_assert(
+    sizeof(PhotorealismFsrRasterizerStateEventV6) == 24,
+    "Photorealism FSR ABI v6 rasterizer-state event layout changed unexpectedly");
+static_assert(
+    sizeof(PhotorealismFsrViewportsEventV6) == 24,
+    "Photorealism FSR ABI v6 viewport event layout changed unexpectedly");
+static_assert(
+    sizeof(PhotorealismFsrScissorRectsEventV6) == 24,
+    "Photorealism FSR ABI v6 scissor event layout changed unexpectedly");
+static_assert(
+    sizeof(PhotorealismFsrApiV6) == 112,
+    "Photorealism FSR ABI v6 layout changed unexpectedly");
 
 using PhotorealismFsrGetApiFunction = HRESULT(WINAPI*)(
     std::uint32_t requested_abi,
