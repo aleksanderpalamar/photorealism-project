@@ -602,6 +602,12 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   -o "${native_aa_config_test}"
 "${native_aa_config_test}"
 
+fsr_draw_shape_test="/tmp/photorealism-fsr-draw-shape-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/fsr_draw_shape_test.cpp" \
+  -o "${fsr_draw_shape_test}"
+"${fsr_draw_shape_test}"
+
 fsr_rejected_draw_identity_test="/tmp/photorealism-fsr-rejected-draw-identity-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/tests/fsr_rejected_draw_identity_test.cpp" \

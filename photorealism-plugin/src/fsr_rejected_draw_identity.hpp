@@ -1,5 +1,7 @@
 #pragma once
 
+#include "fsr_draw_shape.hpp"
+
 #include <cstdint>
 
 // Chave de agrupamento dos draws rejeitados pela prova passiva do draw final.
@@ -156,13 +158,6 @@ constexpr const char* draw_proof_reject_reason_name(
     }
     return "unknown";
 }
-
-// Espelha PHOTOREALISM_FSR_DRAW*; fsr_module.cpp prende esses valores aos da
-// ABI com static_assert, para que uma divergencia vire erro de compilacao.
-constexpr std::uint32_t kDrawKindDraw = 1;
-constexpr std::uint32_t kDrawKindDrawIndexed = 2;
-constexpr std::uint32_t kDrawKindDrawInstanced = 3;
-constexpr std::uint32_t kDrawKindDrawIndexedInstanced = 4;
 
 constexpr const char* draw_proof_kind_name(std::uint32_t kind) {
     switch (kind) {

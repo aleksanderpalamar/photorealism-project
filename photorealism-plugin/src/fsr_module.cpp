@@ -1,6 +1,8 @@
 #include "photorealism_fsr_api.hpp"
 
 #include "fsr_color_scoring.hpp"
+#include "fsr_draw_shape.hpp"
+#include "fsr_format_names.hpp"
 #include "fsr_pointer_hash.hpp"
 #include "fsr_rasterizer_shadow.hpp"
 #include "fsr_rejected_draw_identity.hpp"
@@ -588,50 +590,34 @@ void write_draw_proof_report(const DrawProofReportSnapshot& snapshot) {
     }
 }
 
+static_assert(
+    photorealism::fsr::kFeatureLevel12_1 == D3D_FEATURE_LEVEL_12_1 &&
+        photorealism::fsr::kFeatureLevel11_0 == D3D_FEATURE_LEVEL_11_0 &&
+        photorealism::fsr::kFeatureLevel9_1 == D3D_FEATURE_LEVEL_9_1,
+    "Os feature levels do header puro divergiram do D3D11");
+
 const char* feature_level_name(D3D_FEATURE_LEVEL level) {
-    switch (level) {
-        case D3D_FEATURE_LEVEL_12_1:
-            return "12_1";
-        case D3D_FEATURE_LEVEL_12_0:
-            return "12_0";
-        case D3D_FEATURE_LEVEL_11_1:
-            return "11_1";
-        case D3D_FEATURE_LEVEL_11_0:
-            return "11_0";
-        case D3D_FEATURE_LEVEL_10_1:
-            return "10_1";
-        case D3D_FEATURE_LEVEL_10_0:
-            return "10_0";
-        case D3D_FEATURE_LEVEL_9_3:
-            return "9_3";
-        case D3D_FEATURE_LEVEL_9_2:
-            return "9_2";
-        case D3D_FEATURE_LEVEL_9_1:
-            return "9_1";
-        default:
-            return "unknown";
-    }
+    return photorealism::fsr::feature_level_name(
+        static_cast<std::uint32_t>(level));
 }
 
+static_assert(
+    photorealism::fsr::kFormatR16G16B16A16Float ==
+            DXGI_FORMAT_R16G16B16A16_FLOAT &&
+        photorealism::fsr::kFormatR11G11B10Float == DXGI_FORMAT_R11G11B10_FLOAT &&
+        photorealism::fsr::kFormatR10G10B10A2Unorm ==
+            DXGI_FORMAT_R10G10B10A2_UNORM &&
+        photorealism::fsr::kFormatR8G8B8A8Unorm == DXGI_FORMAT_R8G8B8A8_UNORM &&
+        photorealism::fsr::kFormatR8G8B8A8UnormSrgb ==
+            DXGI_FORMAT_R8G8B8A8_UNORM_SRGB &&
+        photorealism::fsr::kFormatB8G8R8A8Unorm == DXGI_FORMAT_B8G8R8A8_UNORM &&
+        photorealism::fsr::kFormatB8G8R8A8UnormSrgb ==
+            DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
+    "Os formatos do header puro divergiram do DXGI");
+
 const char* format_name(UINT format) {
-    switch (static_cast<DXGI_FORMAT>(format)) {
-        case DXGI_FORMAT_R16G16B16A16_FLOAT:
-            return "R16G16B16A16_FLOAT";
-        case DXGI_FORMAT_R11G11B10_FLOAT:
-            return "R11G11B10_FLOAT";
-        case DXGI_FORMAT_R10G10B10A2_UNORM:
-            return "R10G10B10A2_UNORM";
-        case DXGI_FORMAT_R8G8B8A8_UNORM:
-            return "R8G8B8A8_UNORM";
-        case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
-            return "R8G8B8A8_UNORM_SRGB";
-        case DXGI_FORMAT_B8G8R8A8_UNORM:
-            return "B8G8R8A8_UNORM";
-        case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
-            return "B8G8R8A8_UNORM_SRGB";
-        default:
-            return "other";
-    }
+    return photorealism::fsr::dxgi_format_name(
+        static_cast<std::uint32_t>(format));
 }
 
 void log_format_support(
@@ -2271,50 +2257,49 @@ HRESULT WINAPI process_shader_resources(
     return S_OK;
 }
 
-bool approximately_equal(FLOAT left, FLOAT right) {
-    return std::fabs(left - right) <= 0.01f;
-}
+static_assert(
+    photorealism::fsr::kTopologyTriangleList ==
+            D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST &&
+        photorealism::fsr::kTopologyTriangleStrip ==
+            D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP,
+    "As topologias do header puro divergiram do D3D11");
 
 bool is_fullscreen_viewport(
     const D3D11_VIEWPORT& viewport, UINT width, UINT height) {
-    return approximately_equal(viewport.TopLeftX, 0.0f) &&
-           approximately_equal(viewport.TopLeftY, 0.0f) &&
-           approximately_equal(viewport.Width, static_cast<FLOAT>(width)) &&
-           approximately_equal(viewport.Height, static_cast<FLOAT>(height)) &&
-           approximately_equal(viewport.MinDepth, 0.0f) &&
-           approximately_equal(viewport.MaxDepth, 1.0f);
+    return photorealism::fsr::is_fullscreen_viewport(
+        viewport.TopLeftX,
+        viewport.TopLeftY,
+        viewport.Width,
+        viewport.Height,
+        viewport.MinDepth,
+        viewport.MaxDepth,
+        width,
+        height);
 }
 
-bool is_fullscreen_scissor(const D3D11_RECT& rectangle, UINT width, UINT height) {
-    return rectangle.left == 0 && rectangle.top == 0 &&
-           rectangle.right == static_cast<LONG>(width) &&
-           rectangle.bottom == static_cast<LONG>(height);
+
+bool is_fullscreen_scissor(
+    const D3D11_RECT& rectangle, UINT width, UINT height) {
+    return photorealism::fsr::is_fullscreen_scissor(
+        rectangle.left,
+        rectangle.top,
+        rectangle.right,
+        rectangle.bottom,
+        width,
+        height);
 }
 
 bool is_fullscreen_draw_shape(const PhotorealismFsrDrawEventV5& event) {
-    const bool primitive_count_valid =
-        event.primitive_count == 3u || event.primitive_count == 4u ||
-        event.primitive_count == 6u;
-    if (!primitive_count_valid) {
-        return false;
-    }
-    switch (event.kind) {
-        case PHOTOREALISM_FSR_DRAW:
-        case PHOTOREALISM_FSR_DRAW_INDEXED:
-            return event.instance_count == 1u;
-        case PHOTOREALISM_FSR_DRAW_INSTANCED:
-        case PHOTOREALISM_FSR_DRAW_INDEXED_INSTANCED:
-            return event.instance_count == 1u &&
-                   event.start_instance_location == 0u;
-        default:
-            return false;
-    }
+    return photorealism::fsr::is_fullscreen_draw_shape(
+        event.kind,
+        event.primitive_count,
+        event.instance_count,
+        event.start_instance_location);
 }
 
 bool is_fullscreen_topology(D3D11_PRIMITIVE_TOPOLOGY topology, UINT count) {
-    return (topology == D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST &&
-            (count == 3u || count == 6u)) ||
-           (topology == D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP && count == 4u);
+    return photorealism::fsr::is_fullscreen_topology(
+        static_cast<std::uint32_t>(topology), count);
 }
 
 bool is_base_scene_candidate_locked(
