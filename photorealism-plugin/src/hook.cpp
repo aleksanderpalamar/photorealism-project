@@ -48,6 +48,12 @@ using PSSetShaderResourcesFunction = void(STDMETHODCALLTYPE*)(
     UINT,
     UINT,
     ID3D11ShaderResourceView* const*);
+using RSSetStateFunction = void(STDMETHODCALLTYPE*)(
+    ID3D11DeviceContext*, ID3D11RasterizerState*);
+using RSSetViewportsFunction = void(STDMETHODCALLTYPE*)(
+    ID3D11DeviceContext*, UINT, const D3D11_VIEWPORT*);
+using RSSetScissorRectsFunction = void(STDMETHODCALLTYPE*)(
+    ID3D11DeviceContext*, UINT, const D3D11_RECT*);
 using DrawIndexedFunction = void(STDMETHODCALLTYPE*)(
     ID3D11DeviceContext*, UINT, UINT, INT);
 using DrawFunction = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*, UINT, UINT);
@@ -68,6 +74,9 @@ std::atomic<ClearDepthStencilViewFunction>
     g_original_clear_depth_stencil_view{nullptr};
 std::atomic<PSSetShaderResourcesFunction>
     g_original_ps_set_shader_resources{nullptr};
+std::atomic<RSSetStateFunction> g_original_rs_set_state{nullptr};
+std::atomic<RSSetViewportsFunction> g_original_rs_set_viewports{nullptr};
+std::atomic<RSSetScissorRectsFunction> g_original_rs_set_scissor_rects{nullptr};
 std::atomic<DrawIndexedFunction> g_original_draw_indexed{nullptr};
 std::atomic<DrawFunction> g_original_draw{nullptr};
 std::atomic<DrawIndexedInstancedFunction>
@@ -317,6 +326,46 @@ void STDMETHODCALLTYPE hooked_ps_set_shader_resources(
     }
 }
 
+void STDMETHODCALLTYPE hooked_rs_set_state(
+    ID3D11DeviceContext* context, ID3D11RasterizerState* state) {
+    if (!is_processing_frame() && fsr_processing_enabled()) {
+        observe_fsr_rasterizer_state(context, state);
+    }
+    const RSSetStateFunction original =
+        g_original_rs_set_state.load(std::memory_order_acquire);
+    if (original != nullptr) {
+        original(context, state);
+    }
+}
+
+void STDMETHODCALLTYPE hooked_rs_set_viewports(
+    ID3D11DeviceContext* context,
+    UINT viewport_count,
+    const D3D11_VIEWPORT* viewports) {
+    if (!is_processing_frame() && fsr_processing_enabled()) {
+        observe_fsr_viewports(context, viewport_count, viewports);
+    }
+    const RSSetViewportsFunction original =
+        g_original_rs_set_viewports.load(std::memory_order_acquire);
+    if (original != nullptr) {
+        original(context, viewport_count, viewports);
+    }
+}
+
+void STDMETHODCALLTYPE hooked_rs_set_scissor_rects(
+    ID3D11DeviceContext* context,
+    UINT scissor_count,
+    const D3D11_RECT* scissors) {
+    if (!is_processing_frame() && fsr_processing_enabled()) {
+        observe_fsr_scissor_rects(context, scissor_count, scissors);
+    }
+    const RSSetScissorRectsFunction original =
+        g_original_rs_set_scissor_rects.load(std::memory_order_acquire);
+    if (original != nullptr) {
+        original(context, scissor_count, scissors);
+    }
+}
+
 void STDMETHODCALLTYPE hooked_draw_indexed(
     ID3D11DeviceContext* context,
     UINT index_count,
@@ -464,6 +513,9 @@ bool install_swap_chain_hooks() {
             std::memory_order_acquire) != nullptr &&
         g_original_ps_set_shader_resources.load(
             std::memory_order_acquire) != nullptr &&
+        g_original_rs_set_state.load(std::memory_order_acquire) != nullptr &&
+        g_original_rs_set_viewports.load(std::memory_order_acquire) != nullptr &&
+        g_original_rs_set_scissor_rects.load(std::memory_order_acquire) != nullptr &&
         g_original_draw_indexed.load(std::memory_order_acquire) != nullptr &&
         g_original_draw.load(std::memory_order_acquire) != nullptr &&
         g_original_draw_indexed_instanced.load(
@@ -583,6 +635,9 @@ bool install_swap_chain_hooks() {
         bool draw_observer_installed = false;
         bool draw_indexed_instanced_observer_installed = false;
         bool draw_instanced_observer_installed = false;
+        bool rasterizer_state_observer_installed = false;
+        bool viewport_observer_installed = false;
+        bool scissor_observer_installed = false;
         if (probe_context != nullptr) {
             void** context_vtable = *reinterpret_cast<void***>(probe_context);
             depth_observer_installed = replace_vtable_entry(
@@ -601,6 +656,18 @@ bool install_swap_chain_hooks() {
                 &context_vtable[8],
                 reinterpret_cast<void*>(&hooked_ps_set_shader_resources),
                 &g_original_ps_set_shader_resources);
+            rasterizer_state_observer_installed = replace_vtable_entry(
+                &context_vtable[43],
+                reinterpret_cast<void*>(&hooked_rs_set_state),
+                &g_original_rs_set_state);
+            viewport_observer_installed = replace_vtable_entry(
+                &context_vtable[44],
+                reinterpret_cast<void*>(&hooked_rs_set_viewports),
+                &g_original_rs_set_viewports);
+            scissor_observer_installed = replace_vtable_entry(
+                &context_vtable[45],
+                reinterpret_cast<void*>(&hooked_rs_set_scissor_rects),
+                &g_original_rs_set_scissor_rects);
             draw_indexed_observer_installed = replace_vtable_entry(
                 &context_vtable[12],
                 reinterpret_cast<void*>(&hooked_draw_indexed),
@@ -628,6 +695,7 @@ bool install_swap_chain_hooks() {
                 "Hooks Present/Present1/ResizeBuffers/OMSetRenderTargets*/"
                 "ClearDepthStencilView instalados; PSSetShaderResources=%s; "
                 "DrawProof=[indexed=%s draw=%s indexed_instanced=%s instanced=%s]; "
+                "RasterShadow=[state=%s viewport=%s scissor=%s]; "
                 "feature level=0x%X "
                 "Present1=%s.",
                 composition_observer_installed ? "ativo-slot8" : "pass-through",
@@ -637,6 +705,9 @@ bool install_swap_chain_hooks() {
                     ? "ativo-slot20"
                     : "pass-through",
                 draw_instanced_observer_installed ? "ativo-slot21" : "pass-through",
+                rasterizer_state_observer_installed ? "ativo-slot43" : "pass-through",
+                viewport_observer_installed ? "ativo-slot44" : "pass-through",
+                scissor_observer_installed ? "ativo-slot45" : "pass-through",
                 static_cast<unsigned>(selected_level),
                 present1_available
                     ? (present1_installed ? "ativo-slot22" : "falha-slot22")
@@ -680,7 +751,7 @@ bool install_swap_chain_hooks() {
                 !draw_indexed_instanced_observer_installed ||
                 !draw_instanced_observer_installed) {
                 log_message(
-                    "Draw proof parcial: FSR 0.7.0 permanece em observacao "
+                    "Draw proof parcial: FSR 0.7.1 permanece em observacao "
                     "segura sem substituicao de SRV.");
             }
         }

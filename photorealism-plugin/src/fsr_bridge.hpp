@@ -44,5 +44,15 @@ void observe_fsr_final_draw(
     UINT start_location,
     INT base_vertex_location,
     UINT start_instance_location);
+void observe_fsr_rasterizer_state(
+    ID3D11DeviceContext* context, ID3D11RasterizerState* state);
+void observe_fsr_viewports(
+    ID3D11DeviceContext* context,
+    UINT viewport_count,
+    const D3D11_VIEWPORT* viewports);
+void observe_fsr_scissor_rects(
+    ID3D11DeviceContext* context,
+    UINT scissor_count,
+    const D3D11_RECT* scissors);
 
 }  // namespace photorealism

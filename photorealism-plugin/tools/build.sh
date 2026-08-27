@@ -39,6 +39,9 @@ common_flags=(
   -Werror \
   -Wno-cast-function-type-mismatch \
   "${project_dir}/src/fsr_module.cpp" \
+  "${project_dir}/src/fsr_device_capability_log.cpp" \
+  "${project_dir}/src/fsr_logging.cpp" \
+  "${project_dir}/src/fsr_rasterizer_shadow.cpp" \
   "${project_dir}/src/fsr_runtime.cpp" \
   "${project_dir}/src/photorealism-fsr.def" \
   -o "${build_dir}/photorealism-fsr.dll"
@@ -64,4 +67,4 @@ common_flags=(
 
 echo "Gerado: ${build_dir}/dinput8.dll"
 echo "Gerado: ${build_dir}/dxgi.dll"
-echo "Gerado: ${build_dir}/photorealism-fsr.dll (AA/FSR 0.7.0 ABI v1-v5 prova passiva de draw final; replacement=0 dispatch=0)"
+echo "Gerado: ${build_dir}/photorealism-fsr.dll (AA/FSR 0.7.1 ABI v1-v6 revisao passiva de draws rejeitados; replacement=0 dispatch=0)"
