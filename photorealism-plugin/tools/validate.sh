@@ -149,6 +149,7 @@ for module_fsr_message in \
   'engine_motion_vectors=indisponiveis jitter=indisponivel' \
   'Telemetria GPU AA/FSR 0.7.0' \
   'Draw proof 0.7.1' \
+  'raster_seed=%llu' \
   'Final draw proof locked 0.7.1' \
   'Rejected draw signature' \
   'TemporalAA_avg=%.3fms' \
@@ -312,6 +313,22 @@ for forbidden_raster_query in \
   'RSGetScissorRects'; do
   if grep -Fq "${forbidden_raster_query}" <<<"${observe_final_draw_source}"; then
     echo "Consulta rasterizadora ao vivo indevida na prova passiva: ${forbidden_raster_query}" >&2
+    exit 1
+  fi
+done
+
+# Espelho positivo do bloco acima: proibir os RSGet* na prova nao pode virar
+# desculpa para nao te-los em lugar nenhum. Sem a semeadura sob demanda, um
+# contexto que nunca chamou RSSetState ficaria eternamente desconhecido.
+raster_shadow_source="${project_dir}/src/fsr_rasterizer_shadow.cpp"
+for lazy_seed_marker in \
+  'RSGetState' \
+  'RSGetViewports' \
+  'RSGetScissorRects' \
+  'rasterizer_shadow_mark_stale' \
+  'seeded_from_live_state'; do
+  if ! grep -Fq "${lazy_seed_marker}" "${raster_shadow_source}"; then
+    echo "Semeadura preguicosa do shadow rasterizador ausente: ${lazy_seed_marker}" >&2
     exit 1
   fi
 done

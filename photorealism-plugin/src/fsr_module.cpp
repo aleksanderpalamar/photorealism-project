@@ -1,6 +1,8 @@
 #include "photorealism_fsr_api.hpp"
 
 #include "fsr_color_scoring.hpp"
+#include "fsr_pointer_hash.hpp"
+#include "fsr_rasterizer_shadow.hpp"
 #include "fsr_rejected_draw_identity.hpp"
 #include "fsr_runtime.hpp"
 
@@ -25,7 +27,6 @@ constexpr std::size_t kResourceCapacity = 256;
 constexpr std::size_t kBackBufferIdentityCapacity = 8;
 constexpr std::size_t kMaximumReportedTargets = 32;
 constexpr std::size_t kDiagnosticQueueCapacity = 2;
-constexpr std::size_t kRasterizerShadowContextCapacity = 16;
 constexpr std::size_t kRejectedDrawSignatureCapacity = 64;
 constexpr UINT kRejectedDrawLogArraySampleCapacity = 4;
 constexpr ULONGLONG kObservationWindowMilliseconds = 30000;
@@ -170,24 +171,6 @@ struct FinalDrawProofSignature {
     UINT output_height = 0;
 };
 
-struct RasterizerShadowState {
-    ID3D11DeviceContext* context = nullptr;
-    std::array<D3D11_VIEWPORT,
-               D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE>
-        viewports = {};
-    std::array<D3D11_RECT,
-               D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE>
-        scissors = {};
-    UINT viewport_count = 0;
-    UINT scissor_count = 0;
-    std::uint64_t epoch = 0;
-    bool occupied = false;
-    bool rasterizer_known = false;
-    bool viewport_known = false;
-    bool scissor_known = false;
-    bool scissor_enabled = false;
-};
-
 using photorealism::fsr::DrawProofRejectReason;
 using photorealism::fsr::RejectedDrawIdentity;
 using photorealism::fsr::RejectedDrawSample;
@@ -245,6 +228,10 @@ struct DrawProofDiagnostics {
     std::uint64_t duplicate_frame = 0;
     std::uint64_t lock_contention = 0;
     std::uint64_t raster_shadow = 0;
+    // Quantos draws precisaram consultar o estado vivo por falta de shadow.
+    // Depois dos primeiros frames de cada contexto isso deve ficar perto de
+    // zero; se nao ficar, algo esta invalidando o shadow continuamente.
+    std::uint64_t raster_seed = 0;
 };
 
 struct DrawProofReportSnapshot {
@@ -312,12 +299,9 @@ std::array<BackBufferIdentityEntry, kBackBufferIdentityCapacity>
     g_backbuffer_identities = {};
 std::array<ID3D11ShaderResourceView*, kPixelShaderResourceSlotCount>
     g_pixel_shader_resource_shadow = {};
-std::array<RasterizerShadowState, kRasterizerShadowContextCapacity>
-    g_rasterizer_shadows = {};
 std::array<RejectedDrawAggregate, kRejectedDrawSignatureCapacity>
     g_rejected_draws = {};
 std::atomic<bool> g_pixel_shader_slot_zero_candidate{false};
-std::atomic<std::uint64_t> g_rasterizer_shadow_epoch{1};
 std::size_t g_resource_count = 0;
 std::size_t g_backbuffer_identity_count = 0;
 std::uint64_t g_view_cache_entries = 0;
@@ -472,7 +456,7 @@ void write_draw_proof_report(const DrawProofReportSnapshot& snapshot) {
         "rtv=%llu multi_rtv=%llu dsv=%llu backbuffer=%llu source=%llu "
         "candidate=%llu viewport=%llu scissor=%llu shader=%llu topology=%llu "
         "shape=%llu raster_shadow=%llu duplicate=%llu contention=%llu "
-        "signature_overflow=%llu]. replacement=0 dispatch=0.",
+        "signature_overflow=%llu] raster_seed=%llu. replacement=0 dispatch=0.",
         static_cast<unsigned long long>(diagnostics.observed),
         static_cast<unsigned long long>(diagnostics.valid),
         static_cast<unsigned long long>(snapshot.streak),
@@ -498,7 +482,8 @@ void write_draw_proof_report(const DrawProofReportSnapshot& snapshot) {
         static_cast<unsigned long long>(diagnostics.raster_shadow),
         static_cast<unsigned long long>(diagnostics.duplicate_frame),
         static_cast<unsigned long long>(diagnostics.lock_contention),
-        static_cast<unsigned long long>(snapshot.rejected_draw_overflow));
+        static_cast<unsigned long long>(snapshot.rejected_draw_overflow),
+        static_cast<unsigned long long>(diagnostics.raster_seed));
     for (std::size_t index = 0; index < snapshot.rejected_draw_count; ++index) {
         const RejectedDrawAggregate& aggregate = snapshot.rejected_draws[index];
         if (!aggregate.occupied) {
@@ -742,11 +727,8 @@ std::uint64_t address_token(const void* pointer) {
 }
 
 std::size_t pointer_hash(const void* pointer, std::size_t capacity) {
-    std::uintptr_t value = reinterpret_cast<std::uintptr_t>(pointer);
-    value >>= 4;
-    value ^= value >> 17;
-    value *= static_cast<std::uintptr_t>(0x9E3779B185EBCA87ull);
-    return static_cast<std::size_t>(value) & (capacity - 1);
+    return photorealism::fsr::pointer_bucket(
+        reinterpret_cast<std::uintptr_t>(pointer), capacity);
 }
 
 void* normalized_identity(IUnknown* object) {
@@ -790,53 +772,6 @@ bool final_draw_signature_matches(
            left.source_format == right.source_format &&
            left.output_width == right.output_width &&
            left.output_height == right.output_height;
-}
-
-RasterizerShadowState* find_rasterizer_shadow_locked(
-    ID3D11DeviceContext* context, bool create) {
-    if (context == nullptr) {
-        return nullptr;
-    }
-    const std::size_t base =
-        pointer_hash(context, kRasterizerShadowContextCapacity);
-    RasterizerShadowState* empty = nullptr;
-    for (std::size_t probe = 0; probe < kRasterizerShadowContextCapacity;
-         ++probe) {
-        RasterizerShadowState& entry =
-            g_rasterizer_shadows[(base + probe) &
-                                 (kRasterizerShadowContextCapacity - 1)];
-        if (entry.occupied && entry.context == context) {
-            return &entry;
-        }
-        if (!entry.occupied && empty == nullptr) {
-            empty = &entry;
-        }
-    }
-    if (empty != nullptr && create) {
-        *empty = {};
-        empty->context = context;
-        empty->occupied = true;
-        return empty;
-    }
-    return nullptr;
-}
-
-RasterizerShadowState* prepare_rasterizer_shadow_locked(
-    ID3D11DeviceContext* context) {
-    RasterizerShadowState* shadow =
-        find_rasterizer_shadow_locked(context, true);
-    if (shadow == nullptr) {
-        return nullptr;
-    }
-    const std::uint64_t epoch =
-        g_rasterizer_shadow_epoch.load(std::memory_order_acquire);
-    if (shadow->epoch != epoch) {
-        *shadow = {};
-        shadow->context = context;
-        shadow->occupied = true;
-        shadow->epoch = epoch;
-    }
-    return shadow;
 }
 
 // A amostra e o estado de rasterizacao completo so entram na primeira
@@ -902,8 +837,7 @@ void clear_catalog_locked(bool clear_signature) {
     g_current_output_context = nullptr;
     g_current_output_is_backbuffer = false;
     g_pixel_shader_resource_shadow.fill(nullptr);
-    g_rasterizer_shadows = {};
-    g_rasterizer_shadow_epoch.fetch_add(1u, std::memory_order_acq_rel);
+    rasterizer_shadow_reset_all_locked();
     g_rejected_draws = {};
     g_rejected_draw_count = 0;
     g_rejected_draw_overflow = 0;
@@ -2462,28 +2396,29 @@ void WINAPI observe_pixel_shader_resources(
     ReleaseSRWLockExclusive(&g_catalog_lock);
 }
 
+// Perder o lock significa perder a atualizacao, e um shadow que perdeu uma
+// atualizacao mente. Marcar o bucket como obsoleto faz a proxima captura
+// ressemear a partir do estado vivo em vez de acreditar no valor antigo.
+bool begin_rasterizer_observation(ID3D11DeviceContext* context) {
+    if (TryAcquireSRWLockExclusive(&g_catalog_lock)) {
+        return true;
+    }
+    InterlockedIncrement64(&g_lock_contention_drops);
+    rasterizer_shadow_mark_stale(context);
+    return false;
+}
+
 void WINAPI observe_rasterizer_state(
     const PhotorealismFsrRasterizerStateEventV6* event) {
     if (event == nullptr || event->struct_size < sizeof(*event) ||
         event->context == nullptr) {
         return;
     }
-    if (!TryAcquireSRWLockExclusive(&g_catalog_lock)) {
-        InterlockedIncrement64(&g_lock_contention_drops);
-        g_rasterizer_shadow_epoch.fetch_add(1u, std::memory_order_acq_rel);
+    if (!begin_rasterizer_observation(event->context)) {
         return;
     }
     if (g_device != nullptr) {
-        RasterizerShadowState* shadow =
-            prepare_rasterizer_shadow_locked(event->context);
-        if (shadow != nullptr) {
-            D3D11_RASTERIZER_DESC description = {};
-            if (event->state != nullptr) {
-                event->state->GetDesc(&description);
-            }
-            shadow->rasterizer_known = true;
-            shadow->scissor_enabled = description.ScissorEnable != FALSE;
-        }
+        rasterizer_shadow_record_state_locked(event->context, event->state);
     }
     ReleaseSRWLockExclusive(&g_catalog_lock);
 }
@@ -2491,30 +2426,16 @@ void WINAPI observe_rasterizer_state(
 void WINAPI observe_viewports(const PhotorealismFsrViewportsEventV6* event) {
     if (event == nullptr || event->struct_size < sizeof(*event) ||
         event->context == nullptr ||
-        event->viewport_count >
-            D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE ||
+        event->viewport_count > kFsrRasterizerSlotCount ||
         (event->viewport_count != 0 && event->viewports == nullptr)) {
         return;
     }
-    if (!TryAcquireSRWLockExclusive(&g_catalog_lock)) {
-        InterlockedIncrement64(&g_lock_contention_drops);
-        g_rasterizer_shadow_epoch.fetch_add(1u, std::memory_order_acq_rel);
+    if (!begin_rasterizer_observation(event->context)) {
         return;
     }
     if (g_device != nullptr) {
-        RasterizerShadowState* shadow =
-            prepare_rasterizer_shadow_locked(event->context);
-        if (shadow != nullptr) {
-            shadow->viewports = {};
-            shadow->viewport_count = event->viewport_count;
-            shadow->viewport_known = true;
-            if (event->viewport_count != 0) {
-                std::memcpy(
-                    shadow->viewports.data(),
-                    event->viewports,
-                    sizeof(D3D11_VIEWPORT) * event->viewport_count);
-            }
-        }
+        rasterizer_shadow_record_viewports_locked(
+            event->context, event->viewport_count, event->viewports);
     }
     ReleaseSRWLockExclusive(&g_catalog_lock);
 }
@@ -2523,30 +2444,16 @@ void WINAPI observe_scissor_rects(
     const PhotorealismFsrScissorRectsEventV6* event) {
     if (event == nullptr || event->struct_size < sizeof(*event) ||
         event->context == nullptr ||
-        event->scissor_count >
-            D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE ||
+        event->scissor_count > kFsrRasterizerSlotCount ||
         (event->scissor_count != 0 && event->scissors == nullptr)) {
         return;
     }
-    if (!TryAcquireSRWLockExclusive(&g_catalog_lock)) {
-        InterlockedIncrement64(&g_lock_contention_drops);
-        g_rasterizer_shadow_epoch.fetch_add(1u, std::memory_order_acq_rel);
+    if (!begin_rasterizer_observation(event->context)) {
         return;
     }
     if (g_device != nullptr) {
-        RasterizerShadowState* shadow =
-            prepare_rasterizer_shadow_locked(event->context);
-        if (shadow != nullptr) {
-            shadow->scissors = {};
-            shadow->scissor_count = event->scissor_count;
-            shadow->scissor_known = true;
-            if (event->scissor_count != 0) {
-                std::memcpy(
-                    shadow->scissors.data(),
-                    event->scissors,
-                    sizeof(D3D11_RECT) * event->scissor_count);
-            }
-        }
+        rasterizer_shadow_record_scissors_locked(
+            event->context, event->scissor_count, event->scissors);
     }
     ReleaseSRWLockExclusive(&g_catalog_lock);
 }
@@ -2595,38 +2502,36 @@ void WINAPI observe_final_draw(const PhotorealismFsrDrawEventV5* event) {
     rejected_sample.start_instance_location = event->start_instance_location;
 
     RejectedDrawRasterizerSample rejected_rasterizer_sample = {};
-    const RasterizerShadowState* rasterizer_shadow =
-        find_rasterizer_shadow_locked(event->context, false);
-    const std::uint64_t rasterizer_epoch =
-        g_rasterizer_shadow_epoch.load(std::memory_order_acquire);
-    if (rasterizer_shadow != nullptr &&
-        rasterizer_shadow->epoch == rasterizer_epoch) {
-        rejected.rasterizer_known = rasterizer_shadow->rasterizer_known;
-        rejected.viewport_known = rasterizer_shadow->viewport_known;
-        rejected.scissor_known = rasterizer_shadow->scissor_known;
-        rejected.scissor_enabled = rasterizer_shadow->scissor_enabled;
-        rejected.viewport_count = rasterizer_shadow->viewport_count;
-        rejected.scissor_count = rasterizer_shadow->scissor_count;
-        rejected_rasterizer_sample.viewports = rasterizer_shadow->viewports;
-        rejected_rasterizer_sample.scissors = rasterizer_shadow->scissors;
-        if (rasterizer_shadow->viewport_count != 0) {
-            const D3D11_VIEWPORT& viewport = rasterizer_shadow->viewports[0];
-            rejected.viewport_x_milli =
-                photorealism::fsr::viewport_to_milli(viewport.TopLeftX);
-            rejected.viewport_y_milli =
-                photorealism::fsr::viewport_to_milli(viewport.TopLeftY);
-            rejected.viewport_width_milli =
-                photorealism::fsr::viewport_to_milli(viewport.Width);
-            rejected.viewport_height_milli =
-                photorealism::fsr::viewport_to_milli(viewport.Height);
-        }
-        if (rasterizer_shadow->scissor_count != 0) {
-            const D3D11_RECT& scissor = rasterizer_shadow->scissors[0];
-            rejected.scissor_left = scissor.left;
-            rejected.scissor_top = scissor.top;
-            rejected.scissor_right = scissor.right;
-            rejected.scissor_bottom = scissor.bottom;
-        }
+    FsrRasterizerSnapshot rasterizer = {};
+    rasterizer_shadow_capture_locked(event->context, &rasterizer);
+    if (rasterizer.seeded_from_live_state) {
+        ++g_draw_proof_diagnostics.raster_seed;
+    }
+    rejected.rasterizer_known = rasterizer.rasterizer_known;
+    rejected.viewport_known = rasterizer.viewport_known;
+    rejected.scissor_known = rasterizer.scissor_known;
+    rejected.scissor_enabled = rasterizer.scissor_enabled;
+    rejected.viewport_count = rasterizer.viewport_count;
+    rejected.scissor_count = rasterizer.scissor_count;
+    rejected_rasterizer_sample.viewports = rasterizer.viewports;
+    rejected_rasterizer_sample.scissors = rasterizer.scissors;
+    if (rasterizer.viewport_count != 0) {
+        const D3D11_VIEWPORT& viewport = rasterizer.viewports[0];
+        rejected.viewport_x_milli =
+            photorealism::fsr::viewport_to_milli(viewport.TopLeftX);
+        rejected.viewport_y_milli =
+            photorealism::fsr::viewport_to_milli(viewport.TopLeftY);
+        rejected.viewport_width_milli =
+            photorealism::fsr::viewport_to_milli(viewport.Width);
+        rejected.viewport_height_milli =
+            photorealism::fsr::viewport_to_milli(viewport.Height);
+    }
+    if (rasterizer.scissor_count != 0) {
+        const D3D11_RECT& scissor = rasterizer.scissors[0];
+        rejected.scissor_left = scissor.left;
+        rejected.scissor_top = scissor.top;
+        rejected.scissor_right = scissor.right;
+        rejected.scissor_bottom = scissor.bottom;
     }
 
     ID3D11RenderTargetView* render_targets[
@@ -2811,6 +2716,9 @@ void WINAPI observe_final_draw(const PhotorealismFsrDrawEventV5* event) {
         reject(DrawProofRejectReason::source_ineligible);
         return;
     }
+    // Canario. Com a semeadura sob demanda o estado sempre e conhecido, entao
+    // este contador deve permanecer zero; sair de zero significa que a captura
+    // parou de funcionar, e nao que o draw e invalido.
     if (!rejected.rasterizer_known) {
         ++g_draw_proof_diagnostics.raster_shadow;
         reject(DrawProofRejectReason::raster_shadow);

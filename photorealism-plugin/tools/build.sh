@@ -39,6 +39,7 @@ common_flags=(
   -Werror \
   -Wno-cast-function-type-mismatch \
   "${project_dir}/src/fsr_module.cpp" \
+  "${project_dir}/src/fsr_rasterizer_shadow.cpp" \
   "${project_dir}/src/fsr_runtime.cpp" \
   "${project_dir}/src/photorealism-fsr.def" \
   -o "${build_dir}/photorealism-fsr.dll"
