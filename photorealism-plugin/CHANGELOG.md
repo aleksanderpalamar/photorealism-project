@@ -17,7 +17,12 @@
   nenhum dispatch de FSR e nenhuma alteracao de viewport, scissor, rasterizer
   state, shader ou render target acontece nesta versao;
 - esta entrega existe apenas para responder, com evidencia, se os draws
-  rejeitados por `scissor` estao mesmo incorretos.
+  rejeitados por `scissor` estao mesmo incorretos;
+- resposta obtida em ETS2 1.60/Proton: o passe final e fullscreen mas esta
+  dividido em quatro draws scissorados de 960x540 que ladrilham 1920x1080. A
+  leitura do estado de rasterizacao estava certa; errada era a conclusao de que
+  draws assim nao sao a composicao final. Detalhes em
+  `references/draw-proof-tiles-0.7.1.md`.
 
 ## Pacote 0.11.3 + Photorealism FSR/AA 0.7.0 - 2026-08-26
 

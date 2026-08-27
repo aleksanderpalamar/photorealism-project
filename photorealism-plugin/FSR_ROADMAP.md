@@ -160,7 +160,7 @@ nao e liberada para uso e foi substituida pelo fail-closed 0.6.1.
 - os logs agregados a cada dez segundos registram provas e gates rejeitados
   sem I/O por frame.
 
-## Core 0.11.4 + FSR/AA 0.7.1 - revisao passiva dos draws rejeitados (teste atual)
+## Core 0.11.4 + FSR/AA 0.7.1 - revisao passiva dos draws rejeitados (concluida)
 
 - ABI v6 observa `RSSetState`, `RSSetViewports` e `RSSetScissorRects` e mantem
   um shadow do estado de rasterizacao por contexto, em vez de consultar o
@@ -173,16 +173,48 @@ nao e liberada para uso e foi substituida pelo fail-closed 0.6.1.
 - objetivo unico: descobrir se os draws rejeitados por `scissor` estao mesmo
   incorretos ou se a leitura do estado de rasterizacao e que estava errada.
 
-## Core 0.11.5 + FSR/AA 0.7.2 - Temporal + RCAS por draw comprovado (planejado)
+Resultado, detalhado em `references/draw-proof-tiles-0.7.1.md`: nenhuma das duas
+hipoteses. O passe final do Prism3D e fullscreen mas esta dividido em quatro
+draws scissorados de 960x540 que ladrilham 1920x1080, todos com viewport
+fullscreen, mesmo pixel shader, scene color R11G11B10_FLOAT no slot 0,
+backbuffer exato como RTV e sem depth. A regra de scissor le o estado
+corretamente; o que estava errado era concluir que draws assim nao sao a
+composicao final.
 
-- decidir a regra de scissor com base na evidencia coletada pela 0.7.1;
-- reutilizar sem flexibilizacao a assinatura bloqueada pelo 0.7.0;
+## Core 0.11.5 + FSR/AA 0.7.2 - composicao por tiles comprovada (planejado)
+
+Prova, ainda diagnostica:
+
+- aceitar scissor que seja sub-retangulo de um viewport fullscreen, e somente
+  quando todos os outros criterios da 0.7.0 ja tiverem passado; scissor parcial
+  com viewport parcial continua rejeitado, porque e HUD, interface, espelho ou
+  reflexo;
+- nao assumir quatro tiles nem 960x540: descobrir a particao acumulando os
+  retangulos observados dentro do frame e exigir que a uniao cubra a render
+  target sem sobreposicao;
+- exigir que todos os tiles do frame compartilhem source, RTV, pixel shader,
+  topologia e viewport, e que o conjunto se repita identico por 24 frames
+  apresentados, como a 0.7.0 ja exige da assinatura unica;
+- `direct_composition_hits` saindo de zero e o primeiro sinal de que a regra
+  funcionou.
+
+Ativacao, so depois da prova estavel:
+
+- executar Temporal + RCAS uma unica vez por frame, antes do primeiro tile,
+  para uma textura processada; EASU continua desativado nesta etapa;
+- substituir o SRV em todos os tiles daquele frame e restaurar o original
+  depois do ultimo; substituir tile a tile reproduz o artefato de quadrantes
+  corrigido na 0.11.2;
+- se qualquer tile do frame divergir da assinatura, abandonar a substituicao do
+  frame inteiro e voltar ao draw nativo, nunca a meio caminho;
 - somente source nativo de mesma resolucao do backbuffer;
-- executar Temporal + RCAS automaticamente antes do draw comprovado;
-- EASU continua desativado nesta etapa;
-- substituir o SRV apenas durante aquela chamada Draw e restaurar o original
-  imediatamente depois; falhas retornam ao draw nativo;
 - nenhuma tecla adicional e nenhuma alteracao no fluxo de F12 nesta etapa.
+
+Infraestrutura necessaria antes:
+
+- a tabela de assinaturas rejeitadas precisa de mais de 64 entradas, ou de
+  particao por motivo: a classe de draws com depth ligado saturou e perdeu
+  entre 30 e 107 assinaturas por janela na captura da 0.7.1.
 
 ## Consolidacao
 
