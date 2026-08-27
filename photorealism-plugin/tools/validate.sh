@@ -11,8 +11,20 @@ for dll in "${dinput_dll}" "${dxgi_dll}" "${fsr_dll}"; do
     echo "DLL ausente: execute tools/build.sh primeiro: ${dll}" >&2
     exit 1
   fi
-  file "${dll}" | grep -q 'PE32+.*DLL.*x86-64'
+  grep -q 'PE32+.*DLL.*x86-64' <<<"$(file "${dll}")"
 done
+
+# As tabelas de literais abaixo sao consultadas dezenas de vezes por DLL. Um
+# "strings ... | grep -Fq" encerra o grep no primeiro acerto, o strings recebe
+# SIGPIPE e o pipeline sai 141: sob "set -o pipefail" isso reprova a checagem
+# justamente quando ela passa. Extrair uma vez para arquivo elimina o SIGPIPE
+# e evita reexecutar o strings a cada literal.
+strings_cache="$(mktemp -d)"
+trap 'rm -rf -- "${strings_cache}"' EXIT
+dxgi_strings="${strings_cache}/dxgi.txt"
+fsr_strings="${strings_cache}/photorealism-fsr.txt"
+strings "${dxgi_dll}" >"${dxgi_strings}"
+strings "${fsr_dll}" >"${fsr_strings}"
 
 dinput_metadata="$(objdump -p "${dinput_dll}")"
 expected_dinput_exports=(
@@ -101,7 +113,7 @@ for core_fsr_message in \
   'dispositivo real do jogo entregue ao modulo' \
   'inicializacao do dispositivo falhou' \
   'dispositivo encerrado para reinicializacao segura'; do
-  if ! strings "${dxgi_dll}" | grep -Fq "${core_fsr_message}"; then
+  if ! grep -Fq "${core_fsr_message}" "${dxgi_strings}"; then
     echo "Integracao FSR ausente no nucleo DXGI: ${core_fsr_message}" >&2
     exit 1
   fi
@@ -117,7 +129,7 @@ for module_fsr_message in \
   'R16G16B16A16_FLOAT' \
   'R11G11B10_FLOAT' \
   'R8G8B8A8_UNORM' \
-  'Observador color 0.7.0 pronto' \
+  'Observador color 0.7.1 pronto' \
   'diagnostic_queue=2 worker=%s' \
   'Janela color 0.7.0 %s' \
   'Relatorio color 0.7.0' \
@@ -142,15 +154,98 @@ for module_fsr_message in \
   'TemporalAA_avg=%.3fms' \
   '0.4-stops' \
   'worker diagnostico drenado com seguranca'; do
-  if ! strings "${fsr_dll}" | grep -Fq "${module_fsr_message}"; then
+  if ! grep -Fq "${module_fsr_message}" "${fsr_strings}"; then
     echo "Diagnostico ausente no modulo FSR: ${module_fsr_message}" >&2
     exit 1
   fi
 done
 
-fsr_source="${project_dir}/src/fsr_module.cpp"
-observe_frame_source="$(sed -n \
-  '/void WINAPI observe_frame(/,/^}/p' "${fsr_source}")"
+build_script="${project_dir}/tools/build.sh"
+
+# A lista de TUs do photorealism-fsr.dll sai do proprio build.sh, que e a fonte
+# autoritativa: dividir o modulo em mais arquivos passa a estender as checagens
+# de fonte abaixo automaticamente, sem manutencao paralela aqui.
+mapfile -t fsr_relative_sources < <(awk '
+  /^"\$\{zig_bin\}" c\+\+/ { count = 0; next }
+  match($0, /src\/[A-Za-z0-9_.-]+\.cpp/) {
+    pending[++count] = substr($0, RSTART, RLENGTH)
+  }
+  /-o "\$\{build_dir\}\/photorealism-fsr\.dll"/ {
+    for (index_ = 1; index_ <= count; ++index_) {
+      print pending[index_]
+    }
+    exit
+  }
+' "${build_script}")
+
+if [[ "${#fsr_relative_sources[@]}" -lt 2 ]] ||
+    [[ ! " ${fsr_relative_sources[*]} " == *" src/fsr_module.cpp "* ]]; then
+  echo "Nao foi possivel extrair as fontes do photorealism-fsr.dll do build.sh." >&2
+  exit 1
+fi
+
+fsr_sources=()
+for relative in "${fsr_relative_sources[@]}"; do
+  if [[ ! -f "${project_dir}/${relative}" ]]; then
+    echo "Fonte declarada em build.sh nao existe: ${relative}" >&2
+    exit 1
+  fi
+  fsr_sources+=("${project_dir}/${relative}")
+done
+
+# Um .cpp novo que nunca foi registrado em build.sh nao seria compilado nem
+# validado; a ausencia silenciosa e exatamente o que esta checagem impede.
+for candidate in "${project_dir}"/src/fsr_*.cpp; do
+  if ! grep -Fq "src/$(basename "${candidate}")" "${build_script}"; then
+    echo "Fonte FSR ausente em build.sh: ${candidate}" >&2
+    exit 1
+  fi
+done
+
+fsr_grep() {
+  grep -Fq "$1" "${fsr_sources[@]}"
+}
+
+# Extrai o corpo de uma funcao a partir de sua assinatura. Tres defesas contra o
+# falso verde que o "sed -n /assinatura/,/^}/p" original permitia:
+#   - ancora em coluna 1, para um call site indentado nao abrir o intervalo;
+#   - rejeita declaracao forward, que abriria o intervalo e correria ate o "}"
+#     da proxima funcao, devolvendo um corpo completamente errado;
+#   - conta os acertos e reprova se != 1, para que "mudou de arquivo" ou
+#     "sumiu" viraem falha em vez de corpo vazio com checagem negativa passando.
+extract_function() {
+  local signature="$1"
+  local hits=0 body="" source found
+  for source in "${fsr_sources[@]}"; do
+    found="$(awk -v sig="${signature}" '
+      index($0, sig) == 1 && $0 !~ /;[[:space:]]*$/ { inside = 1 }
+      inside { print }
+      inside && /^}/ { exit }
+    ' "${source}")"
+    if [[ -n "${found}" ]]; then
+      hits=$((hits + 1))
+      body="${found}"
+    fi
+  done
+  if [[ "${hits}" -ne 1 ]]; then
+    echo "Assinatura FSR nao definida exatamente uma vez: ${signature} (${hits})" >&2
+    exit 1
+  fi
+  printf '%s\n' "${body}"
+}
+
+# Sentinela obrigatoria: prova que o corpo extraido e mesmo o corpo esperado,
+# para que uma extracao vazia ou mal ancorada nao passe nas checagens negativas.
+assert_body_sentinel() {
+  if ! grep -Fq "$3" <<<"$2"; then
+    echo "Sentinela ausente no corpo de ${1}: $3" >&2
+    exit 1
+  fi
+}
+
+observe_frame_source="$(extract_function 'void WINAPI observe_frame(')"
+assert_body_sentinel 'observe_frame' "${observe_frame_source}" \
+  'register_backbuffer_locked('
 for forbidden_present_work in \
   'log_message(' \
   'std::sort' \
@@ -163,8 +258,10 @@ for forbidden_present_work in \
   fi
 done
 
-automatic_selection_source="$(sed -n \
-  '/HRESULT WINAPI update_automatic_selection(/,/^}/p' "${fsr_source}")"
+automatic_selection_source="$(extract_function \
+  'HRESULT WINAPI update_automatic_selection(')"
+assert_body_sentinel 'update_automatic_selection' \
+  "${automatic_selection_source}" 'score_automatic_scene_candidate('
 for forbidden_hot_path_work in \
   'log_message(' \
   'new ' \
@@ -179,7 +276,7 @@ for forbidden_hot_path_work in \
   fi
 done
 
-if ! grep -Fq 'kSrvReplacementRequiresDrawProof' "${fsr_source}"; then
+if ! fsr_grep 'kSrvReplacementRequiresDrawProof'; then
   echo "O caminho ABI v4 deixou de falhar fechado sem prova de draw." >&2
   exit 1
 fi
@@ -198,14 +295,15 @@ for draw_proof_marker in \
   'Rejected draw signature' \
   'kFinalDrawProofConfirmFrames = 24' \
   'replacement=0 dispatch=0'; do
-  if ! grep -Fq "${draw_proof_marker}" "${fsr_source}"; then
+  if ! fsr_grep "${draw_proof_marker}"; then
     echo "Validacao de draw final incompleta: ${draw_proof_marker}" >&2
     exit 1
   fi
 done
 
-observe_final_draw_source="$(sed -n \
-  '/void WINAPI observe_final_draw(/,/^}/p' "${fsr_source}")"
+observe_final_draw_source="$(extract_function 'void WINAPI observe_final_draw(')"
+assert_body_sentinel 'observe_final_draw' "${observe_final_draw_source}" \
+  'record_rejected_draw_locked('
 for forbidden_raster_query in \
   'RSGetState' \
   'RSGetViewports' \
@@ -230,7 +328,9 @@ for raster_shadow_hook in \
   fi
 done
 
-if [[ "$(grep -Fc '++g_uav_event_count;' "${fsr_source}")" -ne 1 ]]; then
+# "grep -Fc" conta por arquivo; com varios fontes a soma correta exige -Foh.
+uav_increments="$(grep -Foh '++g_uav_event_count;' "${fsr_sources[@]}" | wc -l)"
+if [[ "${uav_increments}" -ne 1 ]]; then
   echo "uav_event_count deve ser incrementado exatamente uma vez por evento UAV." >&2
   exit 1
 fi
@@ -242,14 +342,15 @@ for async_architecture_marker in \
   'write_color_report(&job.snapshot' \
   'SleepConditionVariableSRW' \
   'take_report_snapshot(&job.snapshot)'; do
-  if ! grep -Fq "${async_architecture_marker}" "${fsr_source}"; then
+  if ! fsr_grep "${async_architecture_marker}"; then
     echo "Arquitetura assincrona FSR ausente: ${async_architecture_marker}" >&2
     exit 1
   fi
 done
 
-if ! strings "${dxgi_dll}" | grep -Fq \
-    'Hooks Present/Present1/ResizeBuffers/OMSetRenderTargets*/ClearDepthStencilView instalados; PSSetShaderResources=%s'; then
+if ! grep -Fq \
+    'Hooks Present/Present1/ResizeBuffers/OMSetRenderTargets*/ClearDepthStencilView instalados; PSSetShaderResources=%s' \
+    "${dxgi_strings}"; then
   echo "Conjunto de hooks DXGI/D3D11 incompleto no nucleo." >&2
   exit 1
 fi
@@ -266,7 +367,7 @@ for core_0110_message in \
   'nosso-hook-externo' \
   'substituido-ou-encadeado' \
   'post-install-5000ms'; do
-  if ! strings "${dxgi_dll}" | grep -Fq "${core_0110_message}"; then
+  if ! grep -Fq "${core_0110_message}" "${dxgi_strings}"; then
     echo "Core overlay-aware 0.11.0 incompleto: ${core_0110_message}" >&2
     exit 1
   fi
@@ -308,7 +409,7 @@ for steam_screenshot_message in \
   'accepted=%llu coalesced=%llu' \
   'result=ok' \
   'F12 nativo preservado'; do
-  if ! strings "${dxgi_dll}" | grep -Fq "${steam_screenshot_message}"; then
+  if ! grep -Fq "${steam_screenshot_message}" "${dxgi_strings}"; then
     echo "Integracao Steam screenshot incompleta: ${steam_screenshot_message}" >&2
     exit 1
   fi
@@ -364,7 +465,7 @@ for observer_message in \
   'Resolve temporal 0.10.0 ativo' \
   'Historico temporal 0.10.0 inicializado' \
   'temporal_0.10.0'; do
-  if ! strings "${dxgi_dll}" | grep -Fq "${observer_message}"; then
+  if ! grep -Fq "${observer_message}" "${dxgi_strings}"; then
     echo "Observador de profundidade ausente: ${observer_message}" >&2
     exit 1
   fi
@@ -373,7 +474,7 @@ done
 for telemetry_message in \
   'Telemetria GPU inicializada' \
   'Custo GPU do passe'; do
-  if ! strings "${dxgi_dll}" | grep -Fq "${telemetry_message}"; then
+  if ! grep -Fq "${telemetry_message}" "${dxgi_strings}"; then
     echo "Telemetria ausente no nucleo DXGI: ${telemetry_message}" >&2
     exit 1
   fi
@@ -562,4 +663,4 @@ for native_aa_marker in \
   fi
 done
 
-echo "Proxies, core Photorealism, captura Steam, draw proof FSR 0.7.0, depth, SSAO, telemetria, perfil e shaders validados."
+echo "Proxies, core Photorealism, captura Steam, draw proof FSR 0.7.1, depth, SSAO, telemetria, perfil e shaders validados."
