@@ -24,6 +24,8 @@ cp "${project_dir}/build/photorealism-fsr.dll" \
   "${staging_dir}/${package_name}/photorealism-fsr.dll"
 cp "${project_dir}/config/photorealism-plugin.cfg" \
   "${staging_dir}/${package_name}/photorealism-plugin/photorealism-plugin.cfg"
+cp "${project_dir}/shaders/depth_view_space.hlsli" \
+  "${staging_dir}/${package_name}/photorealism-plugin/shaders/depth_view_space.hlsli"
 cp "${project_dir}/shaders/photorealism.hlsl" \
   "${staging_dir}/${package_name}/photorealism-plugin/shaders/photorealism.hlsl"
 cp "${project_dir}/shaders/depth-preview.hlsl" \

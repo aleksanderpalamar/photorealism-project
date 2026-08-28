@@ -1,3 +1,5 @@
+#include "depth_view_space.hlsli"
+
 Texture2D<float4> CurrentTexture : register(t0);
 Texture2D<float4> HistoryTexture : register(t1);
 Texture2D<float> CurrentDepthTexture : register(t2);
@@ -24,20 +26,6 @@ struct VertexOutput
     float2 uv : TEXCOORD0;
 };
 
-float3 linear_to_srgb(float3 color)
-{
-    color = max(color, 0.0);
-    float3 low = color * 12.92;
-    float3 high = 1.055 * pow(color, 1.0 / 2.4) - 0.055;
-    float3 use_low = step(color, 0.0031308.xxx);
-    return lerp(high, low, use_low);
-}
-
-float linearize_reversed_depth(float raw_depth)
-{
-    return max(NearPlane, 0.000001) / max(raw_depth, 0.0000001);
-}
-
 float depth_history_confidence(float current_raw, float history_raw)
 {
     bool current_sky = current_raw <= 0.0000001;
@@ -47,8 +35,10 @@ float depth_history_confidence(float current_raw, float history_raw)
         return current_sky && history_sky ? 1.0 : 0.0;
     }
 
-    float current_distance = linearize_reversed_depth(current_raw);
-    float history_distance = linearize_reversed_depth(history_raw);
+    float current_distance = linearize_reversed_depth(
+        current_raw, NearPlane);
+    float history_distance = linearize_reversed_depth(
+        history_raw, NearPlane);
     float relative_difference =
         abs(current_distance - history_distance) /
         max(min(current_distance, history_distance), 0.1);

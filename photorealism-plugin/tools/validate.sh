@@ -539,6 +539,23 @@ grep -Fqx 'history_weight=0.65' "${cfg}"
 grep -Fqx 'depth_rejection=0.02' "${cfg}"
 grep -Fqx 'color_rejection=0.08' "${cfg}"
 
+# Os hashes de depth-preview, ssao e temporal mudaram: os tres perderam suas
+# copias de linearize_reversed_depth/reconstruct_view_* para o header
+# compartilhado depth_view_space.hlsli. A igualdade foi provada em bytecode com
+# tools/shader_check.sh: ssao e temporal ficaram byte-identicos, e depth-preview
+# mudou apenas por +1 max (guarda do rsqrt) e +2 lt/+2 movc (validade da
+# normal, que antes nao existia).
+#
+# O header entra no pino porque agora e a unica fonte da matematica usada pelos
+# tres shaders aprovados: alterar so ele mudaria os tres em silencio.
+depth_view_space_header="${project_dir}/shaders/depth_view_space.hlsli"
+expected_depth_view_space_sha256="413d5157abd8feda28e5198e312d327428097d00c88ed2a707a0ab1fdac4f2ac"
+actual_depth_view_space_sha256="$(sha256sum "${depth_view_space_header}" | awk '{print $1}')"
+if [[ "${actual_depth_view_space_sha256}" != "${expected_depth_view_space_sha256}" ]]; then
+  echo "Header depth/view-space aprovado foi alterado: ${actual_depth_view_space_sha256}" >&2
+  exit 1
+fi
+
 visual_shader="${project_dir}/shaders/photorealism.hlsl"
 expected_visual_shader_sha256="d748d8b92645f847ce2a8431f97187b089e5aad34e349f31d6a4c87bfc2c5c95"
 actual_visual_shader_sha256="$(sha256sum "${visual_shader}" | awk '{print $1}')"
@@ -548,7 +565,7 @@ if [[ "${actual_visual_shader_sha256}" != "${expected_visual_shader_sha256}" ]];
 fi
 
 depth_preview_shader="${project_dir}/shaders/depth-preview.hlsl"
-expected_depth_preview_shader_sha256="253a95e876cd8564ed4260ff461cf9deef0d25bcac2fbd1373d43fefbf9d4679"
+expected_depth_preview_shader_sha256="e12de14a45ce2781507963c8834ca53a1503aa25ed58a5e90b51ffd02c7b0f61"
 actual_depth_preview_shader_sha256="$(sha256sum "${depth_preview_shader}" | awk '{print $1}')"
 if [[ "${actual_depth_preview_shader_sha256}" != "${expected_depth_preview_shader_sha256}" ]]; then
   echo "Shader depth preview aprovado foi alterado: ${actual_depth_preview_shader_sha256}" >&2
@@ -556,7 +573,7 @@ if [[ "${actual_depth_preview_shader_sha256}" != "${expected_depth_preview_shade
 fi
 
 ssao_shader="${project_dir}/shaders/ssao.hlsl"
-expected_ssao_shader_sha256="8416e7a2338c3a945eaf3b27dd4b9414e87558611bfbd1913b9171da9f2ce96c"
+expected_ssao_shader_sha256="97e0434b739789210eb4e77896b21d55301f331309f3c89779a6bf74fe050314"
 actual_ssao_shader_sha256="$(sha256sum "${ssao_shader}" | awk '{print $1}')"
 if [[ "${actual_ssao_shader_sha256}" != "${expected_ssao_shader_sha256}" ]]; then
   echo "Shader SSAO aprovado foi alterado: ${actual_ssao_shader_sha256}" >&2
@@ -564,7 +581,7 @@ if [[ "${actual_ssao_shader_sha256}" != "${expected_ssao_shader_sha256}" ]]; the
 fi
 
 temporal_shader="${project_dir}/shaders/temporal.hlsl"
-expected_temporal_shader_sha256="437e2b68b222b2fa5d98c10e67c8f3c0054be48a77eb30ff36e29a445578b89e"
+expected_temporal_shader_sha256="999b9766bd3f391a121e70421c204ba4a3a5a8dea14f4792f81d9d71d81b7181"
 actual_temporal_shader_sha256="$(sha256sum "${temporal_shader}" | awk '{print $1}')"
 if [[ "${actual_temporal_shader_sha256}" != "${expected_temporal_shader_sha256}" ]]; then
   echo "Shader temporal aprovado foi alterado: ${actual_temporal_shader_sha256}" >&2
