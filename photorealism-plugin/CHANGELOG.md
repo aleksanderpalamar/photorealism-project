@@ -1,5 +1,32 @@
 # Changelog
 
+## Pacote 0.12.2 + Photorealism FSR/AA 0.7.1 - 2026-08-28
+
+- **o plugin deixa de desligar o AA/TAA nativo do jogo.** Ate agora ele forcava
+  `r_aa=0`, `r_taa_tuning=0`, `r_taa_luma_sharpen=0.0` e
+  `r_taa_modulated_drr_strength=0.0` no `config.cfg` do ETS2/ATS, para assumir
+  o AA integralmente. O efeito colateral so apareceu com o RTGI: **com o TAA
+  nativo desligado, o Prism3D nao precisa ler o depth num shader e o cria sem
+  `D3D11_BIND_SHADER_RESOURCE`**. Sem depth legivel, SSAO, resolve temporal e
+  RTGI ficam todos sem fonte;
+- foi isso que travou a validacao da 0.12.1: o log mostra o depth de camera
+  1920x1080 com `bind_flags=0x00000040 shader_readable=nao`, e o plugin caindo
+  num shadow map 2048x2048 -- score 800 vezes menor e proporcao 43,75% fora --
+  como unica fonte legivel. Cascata de sombra deixa de ser vinculada quando
+  nada projeta sombra em vista, e ai `Depth sem atividade confirmada por 3
+  frames` derruba os tres modulos juntos;
+- a politica passa a vir da secao `[native_aa.0.12.2]` do
+  `photorealism-plugin.cfg`, com `r_aa=6`, `r_taa_luma_sharpen=1.5`,
+  `r_taa_tuning=0` e `r_taa_modulated_drr_strength=0.0` como padrao. Da para
+  ajustar sem recompilar, e `manage=false` faz o plugin nao tocar no
+  `config.cfg` do jogo;
+- o dinput8 roda no bootstrap, antes do dxgi, e nao pode usar o `config.cpp`
+  da outra DLL. `plugin_config_value` e um leitor minimo do formato
+  `[secao]`/`chave=valor`, puro e testado, incluindo secao inexistente, chave
+  comentada, contaminacao entre secoes e casamento por prefixo;
+- o backup `config.photorealism-native-aa.backup.cfg` continua sendo feito
+  antes de qualquer escrita, e a escrita continua atomica.
+
 ## Pacote 0.12.1 + Photorealism FSR/AA 0.7.1 - 2026-08-28
 
 - o SSRTGI traca raios pela primeira vez: um raio por pixel, marchado em

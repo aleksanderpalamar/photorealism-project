@@ -529,7 +529,7 @@ for telemetry_message in \
 done
 
 cfg="${project_dir}/config/photorealism-plugin.cfg"
-expected_cfg_sha256="27ca79103bc2baef134f52ba20687079a7161817a4605702d738dcf2730061ba"
+expected_cfg_sha256="18d782fb6faf9d90d4670632db603d7fcbfedea1b6dd61fb260606290be0bcf6"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
@@ -580,6 +580,12 @@ grep -Fqx 'gi_intensity=0.15' "${cfg}"
 grep -Fqx 'max_indirect_luma=4.0' "${cfg}"
 grep -Fqx 'history_weight=0.90' "${cfg}"
 grep -Fqx 'normal_rejection=0.85' "${cfg}"
+# Politica de AA nativa: o TAA ligado e o que expoe o depth ao shader.
+grep -Fqx '[native_aa.0.12.2]' "${cfg}"
+grep -Fqx 'manage=true' "${cfg}"
+grep -Fqx 'r_aa=6' "${cfg}"
+grep -Fqx 'r_taa_luma_sharpen=1.5' "${cfg}"
+
 grep -Fqx 'hit_thickness=0.5' "${cfg}"
 grep -Fqx 'normal_bias=0.05' "${cfg}"
 grep -Fqx 'debug=final' "${cfg}"
@@ -767,11 +773,14 @@ for native_aa_marker in \
   'amtrucks.exe' \
   'config.photorealism-native-aa.backup.cfg' \
   'MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH' \
-  '"r_aa", "0"' \
-  '"r_taa_tuning", "0"' \
-  '"r_taa_luma_sharpen", "0.0"' \
-  '"r_taa_modulated_drr_strength", "0.0"' \
-  'native_fallback=disabled'; do
+  'kNativeAaSection = "native_aa.0.12.2"' \
+  'read_native_aa_policy' \
+  'policy.manage' \
+  'policy.aa.c_str()' \
+  'policy.taa_sharpen.c_str()' \
+  'plugin_config_value' \
+  'nenhuma alteracao no ' \
+  'politica=photorealism-plugin.cfg'; do
   if ! grep -Fq "${native_aa_marker}" "${native_aa_source}"; then
     echo "Gestao automatica AA nativo incompleta: ${native_aa_marker}" >&2
     exit 1
