@@ -2,7 +2,7 @@
 set -euo pipefail
 
 project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-version="0.11.4"
+version="0.12.0"
 fsr_version="0.7.1"
 package_name="photorealism-plugin-${version}-fsr-${fsr_version}-ets2-ats-1.60-proton"
 output_dir="${project_dir}/dist"
@@ -36,6 +36,8 @@ cp "${project_dir}/shaders/temporal.hlsl" \
   "${staging_dir}/${package_name}/photorealism-plugin/shaders/temporal.hlsl"
 cp "${project_dir}/shaders/fsr1.hlsl" \
   "${staging_dir}/${package_name}/photorealism-plugin/shaders/fsr1.hlsl"
+cp "${project_dir}/shaders/rtgi.hlsl" \
+  "${staging_dir}/${package_name}/photorealism-plugin/shaders/rtgi.hlsl"
 cp "${project_dir}/third_party/fidelityfx-fsr/ffx_a.h" \
   "${staging_dir}/${package_name}/photorealism-plugin/third_party/fidelityfx-fsr/ffx_a.h"
 cp "${project_dir}/third_party/fidelityfx-fsr/ffx_fsr1.h" \

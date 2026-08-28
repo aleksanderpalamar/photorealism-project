@@ -1,5 +1,49 @@
 # Changelog
 
+## Pacote 0.12.0 + Photorealism FSR/AA 0.7.1 - 2026-08-28
+
+- fundacao do Screen-Space Ray-Traced Global Illumination (SSRTGI): a tecnica
+  aproxima luz indireta de curto/medio alcance reaproveitando depth
+  linearizado, normais reconstruidas, scene color e historico temporal, para
+  produzir o `color bleeding` que tira da cena o aspecto de CG;
+- `shaders/depth_view_space.hlsli` passa a ser a fonte unica da matematica
+  depth -> view-space -> normal, que antes estava duplicada em ssao.hlsl,
+  temporal.hlsl e depth-preview.hlsl; os parametros que vinham de cbuffer
+  viraram argumentos explicitos e as amostras de depth chegam prontas, de modo
+  que o header faz matematica e cada shader faz o proprio I/O;
+- a igualdade foi provada em bytecode, nao no olho: `tools/shader_check.sh`
+  compila com o mesmo `d3dcompiler_47.dll` que o plugin resolve em tempo de
+  execucao e com os mesmos flags. `photorealism.hlsl`, `ssao.hlsl` e
+  `temporal.hlsl` ficaram byte-identicos -- inclusive as 1716 instrucoes do
+  SSAO aprovado;
+- `depth-preview.hlsl` mudou de proposito, e apenas nisso: ganhou a guarda do
+  `rsqrt` e a validade de normal que o SSAO ja tinha (+1 max, +2 lt, +2 movc no
+  histograma de opcodes). Onde o produto vetorial degenerava e o `normalize`
+  produzia NaN, o modo 4 do Insert agora mostra preto;
+- nova secao `[module.rtgi.0.12.0]` e `src/rtgi_config.hpp`, header-folha puro
+  com os sete modos de `rtgi_debug`, a derivacao de resolucao e o clamp dos
+  parametros; um cfg editado a mao nao consegue mais descrever um dispatch
+  invalido;
+- recursos em meia resolucao `R16G16B16A16_FLOAT` (960x540 em Full-HD), com
+  `RGB` = luz indireta e `A` = confianca, e o passe `PSRtgi` posicionado antes
+  do grading, para que exposure, contraste e LUT alcancem tanto a luz direta
+  quanto a indireta;
+- modo Insert 6 `rtgi-normals`, que desenha a reconstrucao pelo caminho novo e
+  deve ficar identico ao modo 4;
+- `Page Up` liga e desliga o RTGI em tempo real, para comparacao A/B sem sair
+  do jogo; `End` restaura o que o arquivo de configuracao diz;
+- a validacao proibia os literais `VK_F12`, `VK_PRIOR` e `PageUp` em todo o
+  `src/`. A proibicao de `VK_F12` era redundante: o que mantem o F12 como tecla
+  de screenshot do Steam e o `HookScreenshots(true)`, que a validacao ja
+  verifica, e nao a ausencia do literal. Ela foi removida. Restam duas regras
+  que dizem o que de fato importa -- o modulo de captura nao pode consultar
+  teclado, e `Page Up` so pode existir no passe de pos-processamento, uma
+  unica vez;
+- **nenhum raio e tracado nesta versao.** O modulo nasce com `enabled=false` e,
+  mesmo ligado, devolve luz indireta zerada e nao alimenta a composicao: compor
+  zero e neutro, entao a 0.12.0 mede o custo do andaime sem poder piorar a
+  imagem. A calibracao visual consolidada permanece intacta.
+
 ## Pacote 0.11.4 + Photorealism FSR/AA 0.7.1 - 2026-08-27
 
 - a ABI v6 observa `RSSetState`, `RSSetViewports` e `RSSetScissorRects` e mantem

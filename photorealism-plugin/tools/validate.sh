@@ -392,9 +392,27 @@ for core_0110_message in \
   fi
 done
 
-if rg -n 'VK_F12|VK_PRIOR|PageUp' \
+# F12 e a tecla de screenshot do Steam e continua sendo dele. Quem garante
+# isso e o HookScreenshots(true) verificado mais abaixo, nao uma proibicao do
+# literal VK_F12 no codigo -- a captura e delegada ao Steam por API.
+#
+# A unica invariante necessaria aqui e que o modulo de captura nao passe a
+# disputar teclado com o Steam.
+if rg -n 'VK_|GetAsyncKeyState' \
+    "${project_dir}/src/steam_screenshots.cpp" >/dev/null; then
+  echo "A captura Steam nao pode consultar teclado." >&2
+  exit 1
+fi
+
+# Page Up alterna o RTGI desde a 0.12.0, e so isso: precisa aparecer uma unica
+# vez, no passe de pos-processamento.
+if rg -n --glob '!postprocess.cpp' 'VK_PRIOR|PageUp' \
     "${project_dir}/src" >/dev/null; then
-  echo "Atalho/captura manual proibido encontrado no core ou FSR." >&2
+  echo "Page Up so pode existir no passe de pos-processamento." >&2
+  exit 1
+fi
+if [[ "$(grep -c 'VK_PRIOR' "${project_dir}/src/postprocess.cpp")" != "1" ]]; then
+  echo "Page Up precisa aparecer exatamente uma vez no postprocess." >&2
   exit 1
 fi
 
@@ -500,7 +518,7 @@ for telemetry_message in \
 done
 
 cfg="${project_dir}/config/photorealism-plugin.cfg"
-expected_cfg_sha256="b43b4a495d0252801c515b76e9c430848ed9bed0d5a398ed27db306b1e298cfe"
+expected_cfg_sha256="d96e99034f46364d06b4a18b5df9a6a4e91f9777983700f10968d7943458737b"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
@@ -539,15 +557,44 @@ grep -Fqx 'history_weight=0.65' "${cfg}"
 grep -Fqx 'depth_rejection=0.02' "${cfg}"
 grep -Fqx 'color_rejection=0.08' "${cfg}"
 
-# Os hashes de depth-preview, ssao e temporal mudaram: os tres perderam suas
-# copias de linearize_reversed_depth/reconstruct_view_* para o header
-# compartilhado depth_view_space.hlsli. A igualdade foi provada em bytecode com
-# tools/shader_check.sh: ssao e temporal ficaram byte-identicos, e depth-preview
-# mudou apenas por +1 max (guarda do rsqrt) e +2 lt/+2 movc (validade da
-# normal, que antes nao existia).
+# Modulo RTGI 0.12.0. Os valores vem do documento da tecnica; enabled=false
+# porque esta versao e andaime e nao traca raio nenhum.
+grep -Fqx '[module.rtgi.0.12.0]' "${cfg}"
+grep -Fqx 'resolution_scale=2' "${cfg}"
+grep -Fqx 'ray_count=4' "${cfg}"
+grep -Fqx 'max_steps=12' "${cfg}"
+grep -Fqx 'range_min=0.5' "${cfg}"
+grep -Fqx 'range_max=15.0' "${cfg}"
+grep -Fqx 'gi_intensity=0.15' "${cfg}"
+grep -Fqx 'max_indirect_luma=4.0' "${cfg}"
+grep -Fqx 'history_weight=0.90' "${cfg}"
+grep -Fqx 'normal_rejection=0.85' "${cfg}"
+grep -Fqx 'debug=final' "${cfg}"
+
+# O modulo RTGI 0.12.0 precisa estar compilado no nucleo, incluindo a tecla
+# Page Up e o aviso de que nenhum raio e tracado nesta versao.
+for rtgi_message in \
+  'RTGI 0.12.0 %s pelo atalho Page Up.' \
+  'Recursos RTGI 0.12.0 criados' \
+  'Falha ao criar recursos RTGI 0.12.0' \
+  'andaime: nenhum raio e tracado' \
+  'rtgi-normals' \
+  'rtgi_0.12.0=%s'; do
+  if ! grep -Fq "${rtgi_message}" "${dxgi_strings}"; then
+    echo "Modulo RTGI ausente no nucleo DXGI: ${rtgi_message}" >&2
+    exit 1
+  fi
+done
+
+# Os hashes de depth-preview, ssao e temporal mudaram na 0.12.0: os tres
+# perderam suas copias de linearize_reversed_depth/reconstruct_view_* para o
+# header compartilhado depth_view_space.hlsli. A igualdade foi provada em
+# bytecode com tools/shader_check.sh: ssao e temporal ficaram byte-identicos,
+# e depth-preview mudou apenas por +1 max (guarda do rsqrt) e +2 lt/+2 movc
+# (validade da normal, que antes nao existia).
 #
-# O header entra no pino porque agora e a unica fonte da matematica usada pelos
-# tres shaders aprovados: alterar so ele mudaria os tres em silencio.
+# O header entra no pino porque agora e a unica fonte da matematica usada
+# pelos tres shaders aprovados: alterar so ele mudaria os tres em silencio.
 depth_view_space_header="${project_dir}/shaders/depth_view_space.hlsli"
 expected_depth_view_space_sha256="413d5157abd8feda28e5198e312d327428097d00c88ed2a707a0ab1fdac4f2ac"
 actual_depth_view_space_sha256="$(sha256sum "${depth_view_space_header}" | awk '{print $1}')"
@@ -630,6 +677,12 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/tests/fsr_rejected_draw_identity_test.cpp" \
   -o "${fsr_rejected_draw_identity_test}"
 "${fsr_rejected_draw_identity_test}"
+
+rtgi_config_test="/tmp/photorealism-rtgi-config-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/rtgi_config_test.cpp" \
+  -o "${rtgi_config_test}"
+"${rtgi_config_test}"
 
 screenshot_request_gate_test="/tmp/photorealism-screenshot-request-gate-test"
 g++ -std=c++20 -Wall -Wextra -Werror \

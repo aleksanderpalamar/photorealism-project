@@ -160,3 +160,44 @@ o nucleo 0.10.1 sem modificar sua pilha visual.
 
 Cada etapa so avancara apos comparacao A/B, teste de chuva, amanhecer,
 entardecer, noite e verificacao de frame time.
+
+## 0.12.0 - Screen-Space Ray-Traced Global Illumination (SSRTGI)
+
+Luz indireta em screen-space, de curto/medio alcance (0.5 m a 15 m), sobre
+cabine, caminhao, asfalto, paredes, postos, edificios e vegetacao proxima. O
+nome e deliberado: screen-space, nao hardware ray tracing. DXR/D3D12 sobre os
+RT cores da RX 6600 fica explicitamente fora do escopo.
+
+O GI roda **antes** do grading. O diagrama original da tecnica pedia
+`SSAO -> GI -> Temporal -> grading`, mas a cadeia real do plugin sempre foi
+`grading -> SSAO -> temporal`: inverte-la invalidaria a calibracao consolidada
+da base 0.1.2 + 0.2.0 + 0.3.0, os limiares de highlight do SSAO e o
+`color_rejection` do temporal. Pondo o GI antes do grading, o motivo declarado
+-- o grading alcancar tanto a luz direta quanto a indireta -- e atendido sem
+custo de recalibracao:
+
+```
+scene color -> SSRTGI -> grading -> SSAO -> temporal -> backbuffer
+```
+
+As fases:
+
+- **0.12.0 (entregue)** consolidacao da matematica depth/view-space numa fonte
+  unica, configuracao, buffers em meia resolucao e o passe inerte; nenhum raio
+  e tracado;
+- **0.12.1** ray march de raio unico em screen-space, hit/miss e contribuicao
+  de ceu no miss;
+- **0.12.2** GI difusa multi-raio, protecao de iluminancia e composicao com
+  `gi_intensity`;
+- **0.12.3** acumulacao temporal com rotacao de raios por frame, somando
+  `normal_rejection` a rejeicao de depth e cor que ja existe;
+- **0.12.4** denoiser bilateral depth-aware e normal-aware, que nao pode
+  atravessar bordas;
+- **0.12.5** traversal Hi-Z sobre mips de depth; e o ponto em que compute
+  shader passa a valer o custo de introduzir UAVs no plugin;
+- **0.12.6** qualidade adaptativa e presets Low/Medium/High para a RX 6600.
+
+A partir da 0.12.2 o RTGI precisa ser executado uma unica vez por frame, antes
+dos quatro draws de composicao ladrilhados do Prism3D -- substituir tile a tile
+reproduziria o artefato de quadrantes corrigido na 0.11.2. Isso depende da
+prova de composicao, em investigacao na branch `fsr-0.7.2-tiles`.

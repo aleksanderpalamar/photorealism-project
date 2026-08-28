@@ -56,6 +56,7 @@ struct CalibrationStack {
     float temporal_history_weight;
     float temporal_depth_rejection;
     float temporal_color_rejection;
+    rtgi::RtgiSettings rtgi;
 };
 
 enum class Section {
@@ -68,6 +69,7 @@ enum class Section {
     ssao_refinement_0_8_0,
     ssao_interior_0_9_0,
     temporal_0_10_0,
+    rtgi_0_12_0,
     unknown,
 };
 
@@ -127,6 +129,9 @@ Section parse_section(const char* name) {
     }
     if (_stricmp(name, "module.temporal.0.10.0") == 0) {
         return Section::temporal_0_10_0;
+    }
+    if (_stricmp(name, "module.rtgi.0.12.0") == 0) {
+        return Section::rtgi_0_12_0;
     }
     return Section::unknown;
 }
@@ -309,6 +314,58 @@ void assign_temporal_value(
     }
 }
 
+void assign_rtgi_value(
+    CalibrationStack* stack, const char* key, const char* value) {
+    if (stack == nullptr || key == nullptr || value == nullptr) {
+        return;
+    }
+    if (_stricmp(key, "enabled") == 0) {
+        stack->rtgi.enabled = parse_bool(value);
+        return;
+    }
+    if (_stricmp(key, "debug") == 0) {
+        stack->rtgi.debug = rtgi::parse_rtgi_debug_mode(value);
+        return;
+    }
+
+    if (_stricmp(key, "resolution_scale") == 0) {
+        stack->rtgi.resolution_scale =
+            static_cast<unsigned>(std::strtoul(value, nullptr, 10));
+        return;
+    }
+    if (_stricmp(key, "ray_count") == 0) {
+        stack->rtgi.ray_count =
+            static_cast<unsigned>(std::strtoul(value, nullptr, 10));
+        return;
+    }
+    if (_stricmp(key, "max_steps") == 0) {
+        stack->rtgi.max_steps =
+            static_cast<unsigned>(std::strtoul(value, nullptr, 10));
+        return;
+    }
+
+    const float number = static_cast<float>(std::strtod(value, nullptr));
+    if (_stricmp(key, "range_min") == 0) {
+        stack->rtgi.range_min = number;
+    } else if (_stricmp(key, "range_max") == 0) {
+        stack->rtgi.range_max = number;
+    } else if (_stricmp(key, "gi_intensity") == 0) {
+        stack->rtgi.gi_intensity = number;
+    } else if (_stricmp(key, "max_indirect_luma") == 0) {
+        stack->rtgi.max_indirect_luma = number;
+    } else if (_stricmp(key, "sky_ambient") == 0) {
+        stack->rtgi.sky_ambient = number;
+    } else if (_stricmp(key, "history_weight") == 0) {
+        stack->rtgi.history_weight = number;
+    } else if (_stricmp(key, "depth_rejection") == 0) {
+        stack->rtgi.depth_rejection = number;
+    } else if (_stricmp(key, "normal_rejection") == 0) {
+        stack->rtgi.normal_rejection = number;
+    } else if (_stricmp(key, "color_rejection") == 0) {
+        stack->rtgi.color_rejection = number;
+    }
+}
+
 CalibrationLayer reference_base() {
     CalibrationLayer layer = {};
     layer.enabled = true;
@@ -394,6 +451,7 @@ CalibrationStack reference_stack() {
     stack.temporal_history_weight = 0.65f;
     stack.temporal_depth_rejection = 0.02f;
     stack.temporal_color_rejection = 0.08f;
+    stack.rtgi = rtgi::default_rtgi_settings();
     return stack;
 }
 
@@ -460,6 +518,8 @@ Settings compose_stack(const CalibrationStack& stack) {
     settings.temporal_history_weight = stack.temporal_history_weight;
     settings.temporal_depth_rejection = stack.temporal_depth_rejection;
     settings.temporal_color_rejection = stack.temporal_color_rejection;
+    // Os limites do SSRTGI vivem no header puro; aqui so delegamos.
+    settings.rtgi = rtgi::clamp_rtgi_settings(stack.rtgi);
 
     settings.temperature = clamp_value(settings.temperature, 3000.0f, 9000.0f);
     settings.exposure = clamp_value(settings.exposure, -2.0f, 2.0f);
@@ -590,6 +650,29 @@ void log_stack(const CalibrationStack& stack, const Settings& settings) {
         settings.temporal_history_weight,
         settings.temporal_depth_rejection,
         settings.temporal_color_rejection);
+    const rtgi::RtgiDimensions rtgi_size = rtgi::rtgi_resolution(
+        1920, 1080, settings.rtgi.resolution_scale);
+    log_message(
+        "Modulo RTGI 0.12.0: %s escala=1/%u (%ux%u em 1920x1080) rays=%u "
+        "steps=%u range=%.2f-%.2f intensity=%.3f max_luma=%.2f "
+        "sky_ambient=%.3f history_weight=%.2f depth_rejection=%.3f "
+        "normal_rejection=%.2f color_rejection=%.3f debug=%s.",
+        settings.rtgi.enabled ? "ativo" : "inativo",
+        settings.rtgi.resolution_scale,
+        rtgi_size.width,
+        rtgi_size.height,
+        settings.rtgi.ray_count,
+        settings.rtgi.max_steps,
+        settings.rtgi.range_min,
+        settings.rtgi.range_max,
+        settings.rtgi.gi_intensity,
+        settings.rtgi.max_indirect_luma,
+        settings.rtgi.sky_ambient,
+        settings.rtgi.history_weight,
+        settings.rtgi.depth_rejection,
+        settings.rtgi.normal_rejection,
+        settings.rtgi.color_rejection,
+        rtgi::rtgi_debug_mode_name(settings.rtgi.debug));
 }
 
 }  // namespace
@@ -659,6 +742,10 @@ bool load_settings(Settings* settings) {
         }
         if (section == Section::temporal_0_10_0) {
             assign_temporal_value(&stack, key, value);
+            continue;
+        }
+        if (section == Section::rtgi_0_12_0) {
+            assign_rtgi_value(&stack, key, value);
             continue;
         }
         assign_layer_value(layer_for_section(&stack, section), key, value);

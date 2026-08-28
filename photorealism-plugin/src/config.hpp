@@ -1,5 +1,7 @@
 #pragma once
 
+#include "rtgi_config.hpp"
+
 namespace photorealism {
 
 struct Settings {
@@ -41,6 +43,9 @@ struct Settings {
     float temporal_history_weight;
     float temporal_depth_rejection;
     float temporal_color_rejection;
+    // O SSRTGI mantem seus proprios campos num tipo proprio: quem define os
+    // limites e o header puro, nao este struct.
+    rtgi::RtgiSettings rtgi;
 };
 
 Settings default_settings();

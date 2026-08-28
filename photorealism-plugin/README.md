@@ -302,7 +302,9 @@ Atalhos:
   depth; nao e necessario para ativar SSAO ou temporal.
 - `Insert`: e a unica tecla do diagnostico; cada toque percorre `normal`,
   `raw`, `reversed-Z realcado`, `distancia linear`, `normais reconstruidas`,
-  `mascara de visibilidade SSAO` e volta ao normal com SSAO.
+  `mascara de visibilidade SSAO`, `normais RTGI` e volta ao normal com SSAO.
+- `Page Up`: liga ou desliga o RTGI 0.12.0 sem sair do jogo, para comparacao
+  A/B direta; `End` restaura o que o arquivo de configuracao diz.
 
 O log sera criado em:
 
