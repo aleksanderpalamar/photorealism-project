@@ -202,3 +202,20 @@ A partir da 0.12.2 o RTGI precisa ser executado uma unica vez por frame, antes
 dos quatro draws de composicao ladrilhados do Prism3D -- substituir tile a tile
 reproduziria o artefato de quadrantes corrigido na 0.11.2. Isso depende da
 prova de composicao, em investigacao na branch `fsr-0.7.2-tiles`.
+
+## 0.13.0 - Elegibilidade do depth de camera
+
+Correcao da regra que rejeitava o depth de camera por construcao, e que mantinha
+RTGI, SSAO e resolve temporal sem fonte. Detalhe em
+`references/depth-eligibility-0.13.0.md`.
+
+- **0.13.1 (proxima)** recalibrar SSAO sobre o depth certo. Se o depth de camera
+  nunca foi usado, a calibracao aprovada nas versoes 0.7.0 a 0.9.1 foi feita
+  sobre uma cascata de sombra, e `radius`, `intensity` e `fade` precisam de nova
+  rodada A/B;
+- **0.14.0 (condicional)** upgrade de bind flag via hook de `CreateTexture2D`,
+  na tecnica do ReShade: promover o depth a typeless com
+  `BIND_SHADER_RESOURCE`, sintetizando o descritor no `CreateDepthStencilView`.
+  So entra se o `CopyResource` de um depth `DEPTH_STENCIL`-only falhar sob
+  DXVK. Hoje nao ha evidencia de que falhe -- o plugin ja copia para textura
+  propria e cria o SRV sobre a copia.

@@ -1,5 +1,37 @@
 # Changelog
 
+## Pacote 0.13.0 + Photorealism FSR/AA 0.7.1 - 2026-08-28
+
+- **o depth de camera era rejeitado por construcao.** `kMinimumScaledSceneAreaPercent`
+  exigia 110% da area da tela, regra escrita para o depth supersampleado do
+  ETS2; sem supersampling (`r_scale_x=1`, `r_scale_y=1`) o depth tem
+  exatamente 100% e nunca passava. A valvula de escape pedia 400 binds/s e ele
+  faz 291/s. Sobrava um shadow map 2048x2048 com 202% da area -- e era ele que
+  vencia a selecao;
+- por isso RTGI, SSAO e resolve temporal nunca rodaram nas sessoes de teste da
+  0.12.1: os tres estavam sem fonte, e nenhum tinha defeito. Cascata de sombra
+  deixa de ser vinculada quando nada projeta sombra em vista, e ai
+  `Depth sem atividade confirmada por 3 frames` derrubava os tres juntos;
+- **forma passa a ser veto, nao bonus.** `is_plausible_scene_shape` aceita a
+  proporcao da tela ou a tela multiplicada por fator inteiro em cada eixo, que
+  e como o Prism3D faz supersampling. O 1920x2160 do ETS2 supersampleado tem
+  proporcao 8:9, longe de 16:9, mas e 1x por 2x: legitimo. O 2048x2048 nao e
+  nem uma coisa nem outra;
+- **tamanho nativo passa a ser condicao suficiente**, via
+  `kMinimumSceneAreaPercent = 95`, ao lado das duas regras que ja existiam. Os
+  95% dao folga sem abrir a porta para meia resolucao;
+- uma assercao do teste desde a 0.6.x afirmava que um alvo do tamanho exato da
+  tela era interface e nunca cena. Era essa rigidez que excluia o depth real.
+  A elegibilidade nao precisa dessa separacao porque o score ja a faz: quando o
+  mundo supersampleado existe, ele vence. A assercao foi trocada pela
+  invariante correta;
+- `depth_candidate_rejection` passa a dizer no log **por que** cada candidato
+  caiu (`forma-incompativel`, `bindings-insuficientes`, `multisample`,
+  `menor-que-metade-da-tela`, `area-e-atividade-insuficientes`). O bug
+  sobreviveu versoes porque o log mostrava o score, nunca o motivo. Um teste
+  garante que o diagnostico e `is_scene_candidate` nunca divergem;
+- nenhum shader foi tocado: `tools/shader_check.sh` da diff zero nos seis.
+
 ## Pacote 0.12.2 + Photorealism FSR/AA 0.7.1 - 2026-08-28
 
 - **o plugin deixa de desligar o AA/TAA nativo do jogo.** Ate agora ele forcava

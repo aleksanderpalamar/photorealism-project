@@ -565,7 +565,7 @@ void finish_discovery_if_due() {
             "Depth recurso #%u: resource=%p size=%ux%u "
             "texture_format=%u(%s) view_format=%u(%s) samples=%u "
             "bind_flags=0x%08X shader_readable=%s views=%u bindings=%llu "
-            "score=%llu.",
+            "score=%llu elegibilidade=%s.",
             rank + 1,
             resource.identity,
             resource.width,
@@ -581,7 +581,16 @@ void finish_discovery_if_due() {
                 : "nao",
             resource.observed_views,
             static_cast<unsigned long long>(resource.bindings),
-            static_cast<unsigned long long>(resource.score));
+            static_cast<unsigned long long>(resource.score),
+            depth_scoring::depth_rejection_name(
+                depth_scoring::depth_candidate_rejection(
+                    resource.width,
+                    resource.height,
+                    resource.bindings,
+                    resource.sample_count,
+                    backbuffer_width,
+                    backbuffer_height,
+                    elapsed)));
     }
 }
 

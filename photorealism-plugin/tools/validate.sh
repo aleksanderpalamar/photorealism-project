@@ -668,6 +668,25 @@ for relative in "${!fsr_official_hashes[@]}"; do
   fi
 done
 
+# A elegibilidade do depth de camera: forma e veto, tamanho nativo e
+# suficiente, e o log diz por que cada candidato caiu.
+for depth_eligibility_marker in \
+  'kMinimumSceneAreaPercent' \
+  'is_plausible_scene_shape' \
+  'depth_candidate_rejection' \
+  'forma-incompativel'; do
+  if ! grep -Fq "${depth_eligibility_marker}" \
+      "${project_dir}/src/depth_scoring.hpp"; then
+    echo "Elegibilidade de depth incompleta: ${depth_eligibility_marker}" >&2
+    exit 1
+  fi
+done
+if ! grep -Fq 'elegibilidade=%s' \
+    "${project_dir}/src/resource_observer.cpp"; then
+  echo "Motivo de rejeicao ausente no log de recursos depth." >&2
+  exit 1
+fi
+
 depth_scoring_test="/tmp/photorealism-plugin-depth-scoring-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/tests/depth_scoring_test.cpp" \
