@@ -416,6 +416,17 @@ if [[ "$(grep -c 'VK_PRIOR' "${project_dir}/src/postprocess.cpp")" != "1" ]]; th
   exit 1
 fi
 
+# Page Down cicla as debug views do RTGI, com a mesma regra.
+if rg -n --glob '!postprocess.cpp' 'VK_NEXT|PageDown' \
+    "${project_dir}/src" >/dev/null; then
+  echo "Page Down so pode existir no passe de pos-processamento." >&2
+  exit 1
+fi
+if [[ "$(grep -c 'VK_NEXT' "${project_dir}/src/postprocess.cpp")" != "1" ]]; then
+  echo "Page Down precisa aparecer exatamente uma vez no postprocess." >&2
+  exit 1
+fi
+
 if rg -n 'void Run\(void\* parameter, bool, std::uint64_t\).*Run\(parameter\)' \
     -U "${project_dir}/src/steam_screenshots.cpp" >/dev/null; then
   echo "Callback Steam call-result nao pode criar outra captura." >&2
@@ -518,7 +529,7 @@ for telemetry_message in \
 done
 
 cfg="${project_dir}/config/photorealism-plugin.cfg"
-expected_cfg_sha256="d96e99034f46364d06b4a18b5df9a6a4e91f9777983700f10968d7943458737b"
+expected_cfg_sha256="27ca79103bc2baef134f52ba20687079a7161817a4605702d738dcf2730061ba"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
@@ -569,17 +580,20 @@ grep -Fqx 'gi_intensity=0.15' "${cfg}"
 grep -Fqx 'max_indirect_luma=4.0' "${cfg}"
 grep -Fqx 'history_weight=0.90' "${cfg}"
 grep -Fqx 'normal_rejection=0.85' "${cfg}"
+grep -Fqx 'hit_thickness=0.5' "${cfg}"
+grep -Fqx 'normal_bias=0.05' "${cfg}"
 grep -Fqx 'debug=final' "${cfg}"
 
 # O modulo RTGI 0.12.0 precisa estar compilado no nucleo, incluindo a tecla
 # Page Up e o aviso de que nenhum raio e tracado nesta versao.
 for rtgi_message in \
-  'RTGI 0.12.0 %s pelo atalho Page Up.' \
-  'Recursos RTGI 0.12.0 criados' \
-  'Falha ao criar recursos RTGI 0.12.0' \
-  'andaime: nenhum raio e tracado' \
-  'rtgi-normals' \
-  'rtgi_0.12.0=%s'; do
+  'RTGI 0.12.1 %s pelo atalho Page Up.' \
+  'Preview RTGI 0.12.1 pelo Page Down: debug=%s.' \
+  'Recursos RTGI 0.12.1 criados' \
+  'Falha ao criar recursos RTGI 0.12.1' \
+  'um raio por pixel, o buffer de GI ainda nao alimenta a composicao' \
+  'hit_distance' \
+  'rtgi_0.12.1=%s'; do
   if ! grep -Fq "${rtgi_message}" "${dxgi_strings}"; then
     echo "Modulo RTGI ausente no nucleo DXGI: ${rtgi_message}" >&2
     exit 1
@@ -596,7 +610,7 @@ done
 # O header entra no pino porque agora e a unica fonte da matematica usada
 # pelos tres shaders aprovados: alterar so ele mudaria os tres em silencio.
 depth_view_space_header="${project_dir}/shaders/depth_view_space.hlsli"
-expected_depth_view_space_sha256="413d5157abd8feda28e5198e312d327428097d00c88ed2a707a0ab1fdac4f2ac"
+expected_depth_view_space_sha256="e0e6f4ce484186b80a5e9ed676cbe22272f5ea188c1afba9f1a8fc93a36e1192"
 actual_depth_view_space_sha256="$(sha256sum "${depth_view_space_header}" | awk '{print $1}')"
 if [[ "${actual_depth_view_space_sha256}" != "${expected_depth_view_space_sha256}" ]]; then
   echo "Header depth/view-space aprovado foi alterado: ${actual_depth_view_space_sha256}" >&2

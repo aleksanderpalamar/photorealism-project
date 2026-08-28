@@ -9,6 +9,8 @@ int main() {
     using photorealism::rtgi::parse_rtgi_debug_mode;
     using photorealism::rtgi::rtgi_debug_mode_name;
     using photorealism::rtgi::rtgi_resolution;
+    using photorealism::rtgi::next_rtgi_preview_debug;
+    using photorealism::rtgi::rtgi_step_size;
     using photorealism::rtgi::RtgiDebugMode;
     using photorealism::rtgi::RtgiSettings;
 
@@ -29,6 +31,27 @@ int main() {
     assert(parse_rtgi_debug_mode("") == RtgiDebugMode::final);
     assert(parse_rtgi_debug_mode(nullptr) == RtgiDebugMode::final);
     assert(parse_rtgi_debug_mode("normals ") == RtgiDebugMode::final);
+
+    // O ciclo do Page Down fecha em cinco posicoes e volta ao inicio, sem
+    // passar por temporal_gi (que so existe a partir da 0.12.3) nem por final
+    // (que nao e diagnostico).
+    static_assert(
+        next_rtgi_preview_debug(RtgiDebugMode::normals) == RtgiDebugMode::rays);
+    static_assert(
+        next_rtgi_preview_debug(RtgiDebugMode::confidence) ==
+        RtgiDebugMode::normals);
+    RtgiDebugMode cycle = RtgiDebugMode::normals;
+    for (int step = 0; step < 5; ++step) {
+        cycle = next_rtgi_preview_debug(cycle);
+        assert(cycle != RtgiDebugMode::temporal_gi);
+        assert(cycle != RtgiDebugMode::final);
+    }
+    assert(cycle == RtgiDebugMode::normals);
+    // Entrar no ciclo por um modo fora dele nao pode travar.
+    assert(next_rtgi_preview_debug(RtgiDebugMode::final) ==
+           RtgiDebugMode::normals);
+    assert(next_rtgi_preview_debug(RtgiDebugMode::temporal_gi) ==
+           RtgiDebugMode::normals);
 
     // A resolucao que o documento cita explicitamente.
     constexpr auto half = rtgi_resolution(1920, 1080, 2);
@@ -51,6 +74,20 @@ int main() {
     static_assert(tiny.width == 1 && tiny.height == 1);
     static_assert(rtgi_resolution(0, 1080, 2).width == 0);
 
+    // O passo da marcha, com os valores do documento: 0.5 a 15 m em 12 passos.
+    static_assert(rtgi_step_size(0.5f, 15.0f, 12) > 1.2f);
+    static_assert(rtgi_step_size(0.5f, 15.0f, 12) < 1.21f);
+    static_assert(rtgi_step_size(0.5f, 15.0f, 1) > 14.4f);
+
+    // A marcha precisa avancar sempre: intervalo degenerado, invertido ou
+    // com max_steps fora da faixa nao pode produzir passo zero ou negativo.
+    static_assert(rtgi_step_size(5.0f, 5.0f, 12) > 0.0f);
+    static_assert(rtgi_step_size(15.0f, 0.5f, 12) > 0.0f);
+    static_assert(rtgi_step_size(0.5f, 15.0f, 0) > 0.0f);
+    static_assert(rtgi_step_size(0.5f, 15.0f, 9999) > 0.0f);
+    assert(rtgi_step_size(0.5f, 15.0f, 9999) ==
+           rtgi_step_size(0.5f, 15.0f, 24));
+
     // O padrao do documento sobrevive ao clamp sem ser alterado.
     constexpr RtgiSettings defaults = default_rtgi_settings();
     constexpr RtgiSettings clamped_defaults = clamp_rtgi_settings(defaults);
@@ -61,6 +98,8 @@ int main() {
     static_assert(clamped_defaults.range_max == 15.0f);
     static_assert(clamped_defaults.gi_intensity == 0.15f);
     static_assert(clamped_defaults.history_weight == 0.90f);
+    static_assert(clamped_defaults.hit_thickness == 0.5f);
+    static_assert(clamped_defaults.normal_bias == 0.05f);
     static_assert(clamped_defaults.debug == RtgiDebugMode::final);
     static_assert(!clamped_defaults.enabled);
 
@@ -78,6 +117,8 @@ int main() {
     hostile.depth_rejection = -0.5f;
     hostile.normal_rejection = 9.0f;
     hostile.color_rejection = -0.0001f;
+    hostile.hit_thickness = 0.0f;
+    hostile.normal_bias = -3.0f;
     const RtgiSettings safe = clamp_rtgi_settings(hostile);
     assert(safe.resolution_scale >= 1 && safe.resolution_scale <= 4);
     assert(safe.ray_count >= 1 && safe.ray_count <= 8);
@@ -91,6 +132,9 @@ int main() {
     assert(safe.depth_rejection >= 0.0f && safe.depth_rejection <= 1.0f);
     assert(safe.normal_rejection >= 0.0f && safe.normal_rejection <= 1.0f);
     assert(safe.color_rejection >= 0.0f && safe.color_rejection <= 1.0f);
+    // Espessura zero aceitaria qualquer coisa atras da geometria como acerto.
+    assert(safe.hit_thickness > 0.0f);
+    assert(safe.normal_bias >= 0.0f);
 
     // Intervalo invertido vira intervalo valido, nunca vazio.
     RtgiSettings inverted = defaults;
@@ -107,11 +151,13 @@ int main() {
     poisoned.gi_intensity = nan_value;
     poisoned.history_weight = nan_value;
     poisoned.range_min = nan_value;
+    poisoned.hit_thickness = nan_value;
     const RtgiSettings healthy = clamp_rtgi_settings(poisoned);
     assert(healthy.gi_intensity == 0.0f);
     assert(healthy.history_weight == 0.0f);
     assert(healthy.range_min > 0.0f);
     assert(healthy.range_max > healthy.range_min);
+    assert(healthy.hit_thickness > 0.0f);
 
     // Os presets Low/Medium/High do documento cabem nos limites.
     RtgiSettings low = defaults;

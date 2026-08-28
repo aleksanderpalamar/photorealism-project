@@ -1,5 +1,35 @@
 # Changelog
 
+## Pacote 0.12.1 + Photorealism FSR/AA 0.7.1 - 2026-08-28
+
+- o SSRTGI traca raios pela primeira vez: um raio por pixel, marchado em
+  view-space e projetado de volta para a tela a cada passo, com acerto por
+  espessura, contribuicao de ceu no miss e alcance util de 0.5 a 15 m;
+- `depth_view_space.hlsli` ganha `project_view_position`, inverso exato de
+  `reconstruct_view_position`. Fica no mesmo header porque separar as duas
+  metades da mesma transformacao e como a duplicacao que a 0.12.0 desfez
+  comecou; como nenhum shader aprovado a chama, o bytecode dos quatro
+  continuou identico -- verificado com `tools/shader_check.sh`;
+- **o resultado ainda nao e composto na imagem.** O buffer RTGI_RAW e
+  preenchido e inspecionado pelas debug views; compor e 0.12.2. Nada le o
+  buffer, entao a versao continua sem poder piorar a imagem;
+- o canal alfa distingue vazio de desconhecido: acerto e ceu valem confianca
+  1.0, raio que sai da tela vale 0.0. Screen-space nao tem a informacao nas
+  bordas, e marcar isso e o que vai permitir a acumulacao temporal da 0.12.3
+  confiar mais em quem sabe;
+- `hit_thickness` e `normal_bias` entram no cfg com clamp e teste. Sem o
+  primeiro, qualquer coisa atras da geometria contaria como acerto e a luz
+  vazaria por tras das paredes;
+- `RtgiConstants` cresce de 64 para 80 bytes e ganha `InputNeedsSrgbDecode`,
+  que nao existia. Era inofensivo enquanto o shader nao lia cor; agora e
+  correcao, porque sem decodificar para linear o bounce sairia claro demais
+  nas sombras;
+- com o Insert na posicao 6, `Page Down` cicla as debug views:
+  `normals -> rays -> hit_distance -> raw_gi -> confidence`. O ciclo e a funcao
+  pura `next_rtgi_preview_debug`, testada, em vez de uma cadeia de literais;
+- com um raio e sem denoise, `raw_gi` parece ruido. E esperado: a 0.12.3 e a
+  0.12.4 sao o que tornam o sinal usavel.
+
 ## Pacote 0.12.0 + Photorealism FSR/AA 0.7.1 - 2026-08-28
 
 - fundacao do Screen-Space Ray-Traced Global Illumination (SSRTGI): a tecnica

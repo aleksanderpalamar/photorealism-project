@@ -41,6 +41,40 @@ constexpr float kMinimumMaxIndirectLuma = 0.01f;
 constexpr float kMaximumMaxIndirectLuma = 64.0f;
 constexpr float kMaximumSkyAmbient = 16.0f;
 
+// Screen-space nao conhece a profundidade real do que o raio atinge: so sabe o
+// depth da superficie visivel naquele texel. Sem um limite de espessura,
+// qualquer coisa atras da geometria conta como acerto e a luz vaza por tras
+// das paredes.
+constexpr float kMinimumHitThickness = 0.01f;
+constexpr float kMaximumHitThickness = 10.0f;
+
+// Deslocamento da origem ao longo da normal, para o raio nao acertar a
+// propria superficie no primeiro passo.
+constexpr float kMinimumNormalBias = 0.0f;
+constexpr float kMaximumNormalBias = 1.0f;
+
+constexpr std::uint32_t clamp_unsigned(
+    std::uint32_t value, std::uint32_t minimum, std::uint32_t maximum) {
+    if (value < minimum) {
+        return minimum;
+    }
+    if (value > maximum) {
+        return maximum;
+    }
+    return value;
+}
+
+constexpr float clamp_float(float value, float minimum, float maximum) {
+    // NaN falha as duas comparacoes e cai no minimo, que e o valor seguro.
+    if (!(value > minimum)) {
+        return minimum;
+    }
+    if (value > maximum) {
+        return maximum;
+    }
+    return value;
+}
+
 constexpr const char* rtgi_debug_mode_name(RtgiDebugMode mode) {
     switch (mode) {
         case RtgiDebugMode::normals:
@@ -96,6 +130,27 @@ constexpr RtgiDebugMode parse_rtgi_debug_mode(const char* name) {
     return RtgiDebugMode::final;
 }
 
+// Ciclo das debug views no preview, na ordem em que sao uteis para depurar a
+// marcha: primeiro a geometria, depois os raios, depois o resultado.
+// temporal_gi fica de fora ate a 0.12.3 existir, e final nao e diagnostico.
+constexpr RtgiDebugMode next_rtgi_preview_debug(RtgiDebugMode mode) {
+    switch (mode) {
+        case RtgiDebugMode::normals:
+            return RtgiDebugMode::rays;
+        case RtgiDebugMode::rays:
+            return RtgiDebugMode::hit_distance;
+        case RtgiDebugMode::hit_distance:
+            return RtgiDebugMode::raw_gi;
+        case RtgiDebugMode::raw_gi:
+            return RtgiDebugMode::confidence;
+        case RtgiDebugMode::confidence:
+        case RtgiDebugMode::temporal_gi:
+        case RtgiDebugMode::final:
+            return RtgiDebugMode::normals;
+    }
+    return RtgiDebugMode::normals;
+}
+
 struct RtgiDimensions {
     std::uint32_t width;
     std::uint32_t height;
@@ -123,6 +178,21 @@ constexpr RtgiDimensions rtgi_resolution(
         scaled_height == 0 ? 1u : scaled_height};
 }
 
+// Passo fixo em view-space, como o documento descreve. Os limites de
+// range/max_steps ja passaram pelo clamp, entao o unico risco restante e a
+// divisao degenerar; o piso garante que a marcha sempre avance.
+constexpr float rtgi_step_size(
+    float range_min, float range_max, std::uint32_t max_steps) {
+    const std::uint32_t steps = clamp_unsigned(
+        max_steps, kMinimumMaxSteps, kMaximumMaxSteps);
+    const float span = range_max - range_min;
+    if (!(span > 0.0f)) {
+        return kMinimumRangeSeparation;
+    }
+    const float step = span / static_cast<float>(steps);
+    return step > kMinimumRangeSeparation ? step : kMinimumRangeSeparation;
+}
+
 struct RtgiSettings {
     bool enabled;
     std::uint32_t resolution_scale;
@@ -133,34 +203,14 @@ struct RtgiSettings {
     float gi_intensity;
     float max_indirect_luma;
     float sky_ambient;
+    float hit_thickness;
+    float normal_bias;
     float history_weight;
     float depth_rejection;
     float normal_rejection;
     float color_rejection;
     RtgiDebugMode debug;
 };
-
-constexpr std::uint32_t clamp_unsigned(
-    std::uint32_t value, std::uint32_t minimum, std::uint32_t maximum) {
-    if (value < minimum) {
-        return minimum;
-    }
-    if (value > maximum) {
-        return maximum;
-    }
-    return value;
-}
-
-constexpr float clamp_float(float value, float minimum, float maximum) {
-    // NaN falha as duas comparacoes e cai no minimo, que e o valor seguro.
-    if (!(value > minimum)) {
-        return minimum;
-    }
-    if (value > maximum) {
-        return maximum;
-    }
-    return value;
-}
 
 // Os limites vem do documento da tecnica. Um cfg editado a mao nunca deve
 // conseguir descrever um dispatch invalido: intervalo invertido, contagem de
@@ -191,6 +241,10 @@ constexpr RtgiSettings clamp_rtgi_settings(RtgiSettings settings) {
         kMaximumMaxIndirectLuma);
     settings.sky_ambient = clamp_float(
         settings.sky_ambient, 0.0f, kMaximumSkyAmbient);
+    settings.hit_thickness = clamp_float(
+        settings.hit_thickness, kMinimumHitThickness, kMaximumHitThickness);
+    settings.normal_bias = clamp_float(
+        settings.normal_bias, kMinimumNormalBias, kMaximumNormalBias);
 
     settings.history_weight = clamp_float(settings.history_weight, 0.0f, 1.0f);
     settings.depth_rejection =
@@ -214,6 +268,8 @@ constexpr RtgiSettings default_rtgi_settings() {
         0.15f,
         4.0f,
         0.0f,
+        0.5f,
+        0.05f,
         0.90f,
         0.015f,
         0.85f,

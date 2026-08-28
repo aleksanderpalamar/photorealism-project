@@ -355,6 +355,10 @@ void assign_rtgi_value(
         stack->rtgi.max_indirect_luma = number;
     } else if (_stricmp(key, "sky_ambient") == 0) {
         stack->rtgi.sky_ambient = number;
+    } else if (_stricmp(key, "hit_thickness") == 0) {
+        stack->rtgi.hit_thickness = number;
+    } else if (_stricmp(key, "normal_bias") == 0) {
+        stack->rtgi.normal_bias = number;
     } else if (_stricmp(key, "history_weight") == 0) {
         stack->rtgi.history_weight = number;
     } else if (_stricmp(key, "depth_rejection") == 0) {
@@ -655,7 +659,8 @@ void log_stack(const CalibrationStack& stack, const Settings& settings) {
     log_message(
         "Modulo RTGI 0.12.0: %s escala=1/%u (%ux%u em 1920x1080) rays=%u "
         "steps=%u range=%.2f-%.2f intensity=%.3f max_luma=%.2f "
-        "sky_ambient=%.3f history_weight=%.2f depth_rejection=%.3f "
+        "sky_ambient=%.3f thickness=%.2f normal_bias=%.3f "
+        "history_weight=%.2f depth_rejection=%.3f "
         "normal_rejection=%.2f color_rejection=%.3f debug=%s.",
         settings.rtgi.enabled ? "ativo" : "inativo",
         settings.rtgi.resolution_scale,
@@ -668,6 +673,8 @@ void log_stack(const CalibrationStack& stack, const Settings& settings) {
         settings.rtgi.gi_intensity,
         settings.rtgi.max_indirect_luma,
         settings.rtgi.sky_ambient,
+        settings.rtgi.hit_thickness,
+        settings.rtgi.normal_bias,
         settings.rtgi.history_weight,
         settings.rtgi.depth_rejection,
         settings.rtgi.normal_rejection,

@@ -49,6 +49,22 @@ float3 reconstruct_view_position(
         linear_distance);
 }
 
+// Inverso exato de reconstruct_view_position, e por isso mora ao lado dela:
+// separar as duas metades da mesma transformacao em arquivos diferentes e como
+// a duplicacao que esta versao veio desfazer comecou.
+//
+// De reconstruct_view_position temos view.x = ndc.x * z / proj.x, entao
+// ndc.x = view.x * proj.x / z. O eixo vertical carrega a mesma inversao de
+// sinal usada la.
+float2 project_view_position(float3 view_position, float2 projection_scale)
+{
+    float depth = max(view_position.z, 0.000001);
+    float2 ndc = float2(
+        view_position.x * max(projection_scale.x, 0.000001) / depth,
+        view_position.y * max(projection_scale.y, 0.000001) / depth);
+    return float2((ndc.x + 1.0) * 0.5, (1.0 - ndc.y) * 0.5);
+}
+
 // As cinco amostras de depth chegam prontas porque cada shader liga a textura
 // de depth em um registrador diferente. Entre o vizinho da frente e o de tras
 // vence o de menor salto em Z: e o que impede a normal de atravessar uma

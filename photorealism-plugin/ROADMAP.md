@@ -185,8 +185,9 @@ As fases:
 - **0.12.0 (entregue)** consolidacao da matematica depth/view-space numa fonte
   unica, configuracao, buffers em meia resolucao e o passe inerte; nenhum raio
   e tracado;
-- **0.12.1** ray march de raio unico em screen-space, hit/miss e contribuicao
-  de ceu no miss;
+- **0.12.1 (entregue)** ray march de raio unico em screen-space, com acerto por
+  espessura, contribuicao de ceu no miss e confianca separando "vazio" de
+  "desconhecido"; o resultado preenche o buffer mas ainda nao e composto;
 - **0.12.2** GI difusa multi-raio, protecao de iluminancia e composicao com
   `gi_intensity`;
 - **0.12.3** acumulacao temporal com rotacao de raios por frame, somando

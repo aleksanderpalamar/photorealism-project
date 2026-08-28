@@ -144,14 +144,17 @@ struct RtgiConstants {
     float gi_intensity;
     float max_indirect_luma;
     float sky_ambient;
+    float hit_thickness;
+    float normal_bias;
     float debug_mode;
     float output_needs_srgb_encode;
+    float input_needs_srgb_decode;
     float frame_index;
-    float padding;
+    float padding[2];
 };
 
 static_assert(
-    sizeof(RtgiConstants) == 64,
+    sizeof(RtgiConstants) == 80,
     "RTGI constant buffer must be aligned");
 
 struct SavedState {
@@ -311,12 +314,23 @@ public:
             } else if (depth_preview_mode_ == 5) {
                 mode_name = "ssao-visibility";
             } else if (depth_preview_mode_ == 6) {
-                mode_name = "rtgi-normals";
+                mode_name = rtgi::rtgi_debug_mode_name(rtgi_preview_debug_);
             }
             log_message(
                 "Preview depth solicitado pelo Insert: mode=%u(%s).",
                 depth_preview_mode_,
                 mode_name);
+        }
+        // Page Down so tem efeito com o Insert na posicao do RTGI: e ali que
+        // as debug views sao desenhadas. Fora dela a tecla nao faz nada, para
+        // nao mudar estado invisivel.
+        if (key_pressed_once(VK_NEXT, &page_down_key_down_) &&
+            depth_preview_mode_ == 6) {
+            rtgi_preview_debug_ =
+                rtgi::next_rtgi_preview_debug(rtgi_preview_debug_);
+            log_message(
+                "Preview RTGI 0.12.1 pelo Page Down: debug=%s.",
+                rtgi::rtgi_debug_mode_name(rtgi_preview_debug_));
         }
         // Page Up existe para comparacao A/B direta do RTGI, sem sair do
         // jogo e sem editar o cfg. A recarga por End volta a valer o que o
@@ -329,7 +343,7 @@ public:
                 release_rtgi_resources();
             }
             log_message(
-                "RTGI 0.12.0 %s pelo atalho Page Up.",
+                "RTGI 0.12.1 %s pelo atalho Page Up.",
                 settings_.rtgi.enabled ? "ativado" : "desativado");
         }
         set_fsr_processing_enabled(settings_.enabled);
@@ -649,10 +663,10 @@ public:
             rtgi_wait_logged_ = false;
             if (rtgi_active_logged_generation_ != depth_generation) {
                 log_message(
-                    "RTGI 0.12.0 ativo: source=%ux%u rtgi=%ux%u rays=%u "
-                    "steps=%u range=%.2f-%.2f intensity=%.3f debug=%s "
-                    "generation=%llu; andaime: nenhum raio e tracado e o "
-                    "buffer de GI ainda nao alimenta a composicao.",
+                    "RTGI 0.12.1 ativo: source=%ux%u rtgi=%ux%u rays=%u "
+                    "steps=%u range=%.2f-%.2f thickness=%.2f intensity=%.3f "
+                    "debug=%s generation=%llu; um raio por pixel, o buffer de "
+                    "GI ainda nao alimenta a composicao.",
                     description.Width,
                     description.Height,
                     rtgi_width_,
@@ -661,6 +675,7 @@ public:
                     settings_.rtgi.max_steps,
                     settings_.rtgi.range_min,
                     settings_.rtgi.range_max,
+                    settings_.rtgi.hit_thickness,
                     settings_.rtgi.gi_intensity,
                     rtgi::rtgi_debug_mode_name(settings_.rtgi.debug),
                     static_cast<unsigned long long>(depth_generation));
@@ -669,7 +684,7 @@ public:
         } else if (depth_preview_mode_ == 0 && settings_.rtgi.enabled &&
                    !rtgi_wait_logged_) {
             log_message(
-                "RTGI 0.12.0 aguardando depth e recursos validos; "
+                "RTGI 0.12.1 aguardando depth e recursos validos; "
                 "a pilha visual permanece intacta.");
             rtgi_wait_logged_ = true;
         }
@@ -813,10 +828,15 @@ public:
         rtgi_constants.gi_intensity = settings_.rtgi.gi_intensity;
         rtgi_constants.max_indirect_luma = settings_.rtgi.max_indirect_luma;
         rtgi_constants.sky_ambient = settings_.rtgi.sky_ambient;
-        // No preview o shader desenha diagnostico; no passe de trabalho ele
-        // escreve o buffer de GI, que ainda nao alimenta ninguem na 0.12.0.
+        rtgi_constants.hit_thickness = settings_.rtgi.hit_thickness;
+        rtgi_constants.normal_bias = settings_.rtgi.normal_bias;
+        // Sem decodificar para linear, o bounce seria calculado sobre valores
+        // sRGB e o GI sairia claro demais nas sombras.
+        rtgi_constants.input_needs_srgb_decode =
+            scene_needs_srgb_decode_ ? 1.0f : 0.0f;
+        // No preview quem manda e o Page Down; no passe de trabalho, o cfg.
         rtgi_constants.debug_mode = rtgi_preview_active
-            ? static_cast<float>(rtgi::RtgiDebugMode::normals)
+            ? static_cast<float>(rtgi_preview_debug_)
             : static_cast<float>(settings_.rtgi.debug);
         rtgi_constants.output_needs_srgb_encode =
             rtgi_preview_active && output_needs_srgb_encode ? 1.0f : 0.0f;
@@ -1424,7 +1444,7 @@ private:
         invalidate_temporal_history("recompilacao de shader");
         log_message(
             "Shaders Photorealism compilados: visual=ok depth_preview=%s "
-            "ssao_0.9.1=%s temporal_0.10.0=%s rtgi_0.12.0=%s.",
+            "ssao_0.9.1=%s temporal_0.10.0=%s rtgi_0.12.1=%s.",
             depth_preview_shader_ != nullptr ? "ok" : "indisponivel",
             ssao_shader_ != nullptr ? "ok" : "indisponivel",
             temporal_shader_ != nullptr ? "ok" : "indisponivel",
@@ -1851,7 +1871,7 @@ private:
             rtgi_view_ == nullptr || rtgi_target_ == nullptr) {
             if (!rtgi_resources_failure_logged_) {
                 log_message(
-                    "Falha ao criar recursos RTGI 0.12.0: result=0x%08X "
+                    "Falha ao criar recursos RTGI 0.12.1: result=0x%08X "
                     "rtgi=%ux%u; o modulo fica inativo e a pilha atual "
                     "continua intacta.",
                     static_cast<unsigned>(result),
@@ -1868,7 +1888,7 @@ private:
         rtgi_height_ = size.height;
         rtgi_resources_failure_logged_ = false;
         log_message(
-            "Recursos RTGI 0.12.0 criados: source=%ux%u rtgi=%ux%u "
+            "Recursos RTGI 0.12.1 criados: source=%ux%u rtgi=%ux%u "
             "format=R16G16B16A16_FLOAT generation=%llu.",
             frame_description.Width,
             frame_description.Height,
@@ -2268,6 +2288,8 @@ private:
     bool end_key_down_ = false;
     bool insert_key_down_ = false;
     bool page_up_key_down_ = false;
+    bool page_down_key_down_ = false;
+    rtgi::RtgiDebugMode rtgi_preview_debug_ = rtgi::RtgiDebugMode::normals;
     UINT depth_preview_mode_ = 0;
     UINT depth_preview_logged_mode_ = 0;
     bool depth_preview_wait_logged_ = false;
