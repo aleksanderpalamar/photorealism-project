@@ -190,7 +190,9 @@ As fases:
   "desconhecido"; o resultado preenche o buffer mas ainda nao e composto;
 - **0.13.2 (proxima)** GI difusa multi-raio, protecao de iluminancia e
   composicao com `gi_intensity`; e a versao em que o RTGI passa a alterar a
-  imagem do jogo, e nao so preencher um buffer inspecionado por debug view;
+  imagem do jogo, e nao so preencher um buffer inspecionado por debug view.
+  Inclui o **perfil de escala interior**, descrito abaixo, sem o qual a
+  composicao nao alcanca a cabine;
 - **0.13.3** acumulacao temporal com rotacao de raios por frame, somando
   `normal_rejection` a rejeicao de depth e cor que ja existe;
 - **0.13.4** denoiser bilateral depth-aware e normal-aware, que nao pode
@@ -198,6 +200,61 @@ As fases:
 - **0.13.5** traversal Hi-Z sobre mips de depth; e o ponto em que compute
   shader passa a valer o custo de introduzir UAVs no plugin;
 - **0.13.6** qualidade adaptativa e presets Low/Medium/High para a RX 6600.
+
+### Perfil de escala interior
+
+Os parametros do RTGI vieram do documento da tecnica com escala externa em
+mente -- asfalto, paredes, postos, edificios. Na cabine eles nao alcancam a
+geometria nem em principio:
+
+```
+range_min=0.5   range_max=15.0   max_steps=12
+passo = (15.0 - 0.5) / 12 = 1,21 m
+
+amostras em  1,71  2,92  4,13  5,33 ... 15,0 m
+```
+
+`travelled` comeca em `range_min` e o loop soma o passo **antes** da primeira
+amostra, entao nada e amostrado entre 0,5 e 1,71 m. A cabine inteira vive nessa
+faixa: banco a ~0,5 m, painel e porta a ~0,7 m, para-brisa a ~1 m. Um raio
+saindo do painel pula a cabine no primeiro passo e vai amostrar o asfalto.
+`hit_thickness=0.5` tem o mesmo defeito de escala: e espesso demais para
+superficies separadas por centimetros.
+
+A saida e a que o SSAO ja usa em `[module.ssao_interior.0.9.0]`: um perfil de
+curto alcance com passo fino, misturando para o perfil externo a partir de
+alguns metros. Sem ele, compor o GI na 0.13.2 produz efeito do lado de fora e
+nada dentro da cabine -- que e justamente o primeiro caso de uso do documento.
+
+### Luz emissiva de painel e GPS
+
+A cabine a noite e iluminada pelo painel, pelo radio e pela tela do GPS. Fazer
+essas fontes contribuirem como luz indireta **nao exige codigo novo**: o ray
+march ja amostra `scene_texture_` no ponto de acerto, e nao pergunta se aquele
+texel e emissivo. Um raio saindo do volante que atinge a tela do GPS ja pega a
+cor dela. E o caso em que screen-space e mais forte, porque a fonte esta
+visivel na tela por construcao -- ao contrario do sol, que quase nunca esta.
+
+Quatro coisas precisam existir antes de funcionar:
+
+1. **o perfil de escala interior acima.** O GPS fica a ~0,7 m do olho, dentro
+   da faixa cega de 0,5 a 1,71 m. E a mesma correcao, nao outra;
+2. **`max_indirect_luma` calibrado para a noite** (0.13.2). Uma tela clara
+   contra uma cabine escura e exatamente o caso extremo que o teto existe para
+   conter; baixo demais o GPS nao contribui, alto demais ele estoura;
+3. **acumulacao temporal (0.13.3) e denoise bilateral (0.13.4).** O GPS e uma
+   fonte pequena, clara e de alta frequencia: com poucos raios, acertar ou nao
+   vira cara-ou-coroa e o resultado cintila. Sem essas duas fases o efeito e
+   pior que a ausencia dele;
+4. **mascarar a HUD.** A cor de cena e uma copia do backbuffer no Present, ja
+   com interface. De dia isso e uma limitacao conhecida; de noite piora, porque
+   a HUD e proporcionalmente muito mais clara que a cabine escura e passaria a
+   injetar luz que nao existe. Depende da prova de composicao, hoje em
+   investigacao na branch `fsr-0.7.2-tiles`.
+
+`InputNeedsSrgbDecode`, que entrou na 0.12.1, ja garante que o bounce e
+calculado em espaco linear -- o que importa muito neste caso, porque sem ele
+uma fonte clara contra fundo escuro sairia clara demais.
 
 As fases do RTGI saltam de 0.12.1 para 0.13.2 porque **o numero e carimbo de
 chegada, nao de agenda**. O documento original da tecnica numerou as sete fases
