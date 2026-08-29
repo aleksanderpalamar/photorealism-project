@@ -188,23 +188,23 @@ As fases:
 - **0.12.1 (entregue)** ray march de raio unico em screen-space, com acerto por
   espessura, contribuicao de ceu no miss e confianca separando "vazio" de
   "desconhecido"; o resultado preenche o buffer mas ainda nao e composto;
-- **0.13.2 (proxima)** GI difusa multi-raio, protecao de iluminancia e
-  composicao com `gi_intensity`; e a versao em que o RTGI passa a alterar a
-  imagem do jogo, e nao so preencher um buffer inspecionado por debug view.
-  Inclui o **perfil de escala interior**, descrito abaixo, sem o qual a
-  composicao nao alcanca a cabine;
-- **0.13.3** acumulacao temporal com rotacao de raios por frame, somando
-  `normal_rejection` a rejeicao de depth e cor que ja existe;
+- **0.13.2 (entregue)** GI difusa de quatro raios, amostragem cosine-weighted,
+  rejeicao de firefly por raio e composicao com `gi_intensity`; e a versao em
+  que o RTGI passou a alterar a imagem do jogo. Inclui a **marcha geometrica**,
+  descrita abaixo, sem a qual a composicao nao alcancava a cabine. Detalhe em
+  `references/rtgi-composition-0.13.2.md`;
+- **0.13.3 (proxima)** acumulacao temporal com rotacao de raios por frame,
+  somando `normal_rejection` a rejeicao de depth e cor que ja existe;
 - **0.13.4** denoiser bilateral depth-aware e normal-aware, que nao pode
   atravessar bordas;
 - **0.13.5** traversal Hi-Z sobre mips de depth; e o ponto em que compute
   shader passa a valer o custo de introduzir UAVs no plugin;
 - **0.13.6** qualidade adaptativa e presets Low/Medium/High para a RX 6600.
 
-### Perfil de escala interior
+### Marcha geometrica
 
 Os parametros do RTGI vieram do documento da tecnica com escala externa em
-mente -- asfalto, paredes, postos, edificios. Na cabine eles nao alcancam a
+mente -- asfalto, paredes, postos, edificios. Na cabine eles nao alcancavam a
 geometria nem em principio:
 
 ```
@@ -214,17 +214,31 @@ passo = (15.0 - 0.5) / 12 = 1,21 m
 amostras em  1,71  2,92  4,13  5,33 ... 15,0 m
 ```
 
-`travelled` comeca em `range_min` e o loop soma o passo **antes** da primeira
-amostra, entao nada e amostrado entre 0,5 e 1,71 m. A cabine inteira vive nessa
-faixa: banco a ~0,5 m, painel e porta a ~0,7 m, para-brisa a ~1 m. Um raio
-saindo do painel pula a cabine no primeiro passo e vai amostrar o asfalto.
-`hit_thickness=0.5` tem o mesmo defeito de escala: e espesso demais para
-superficies separadas por centimetros.
+`travelled` comecava em `range_min` e o laco somava o passo **antes** da
+primeira amostra, entao nada era amostrado entre 0,5 e 1,71 m. A cabine inteira
+vive nessa faixa: banco a ~0,5 m, painel e GPS a ~0,7 m, para-brisa a ~1 m. Um
+raio saindo do painel pulava a cabine e ia amostrar o asfalto.
 
-A saida e a que o SSAO ja usa em `[module.ssao_interior.0.9.0]`: um perfil de
-curto alcance com passo fino, misturando para o perfil externo a partir de
-alguns metros. Sem ele, compor o GI na 0.13.2 produz efeito do lado de fora e
-nada dentro da cabine -- que e justamente o primeiro caso de uso do documento.
+A saida considerada primeiro foi espelhar `[module.ssao_interior.0.9.0]`: um
+perfil de curto alcance misturado por distancia de camera. Foi **preterida** em
+favor de trocar a distribuicao dos passos por progressao geometrica:
+
+```
+razao = (range_max / range_min) ^ (1 / max_steps)
+
+com 0.10 a 15.0 em 12 passos, razao = 1,5182:
+  0,15  0,23  0,35  0,53  0,81  1,22  1,86  2,82  4,29  6,51  9,88  15,0
+         ^------ seis dentro da cabine ------^
+```
+
+Um perfil unico cobre as duas escalas, sem seccao nova no cfg e sem a heuristica
+de "isto e cabine?" -- que teria o efeito colateral de fazer um carro a 3 m na
+estrada contar como interior e perder o alcance longo. `hit_thickness` virou
+teto em vez de valor fixo, porque a ambiguidade que a marcha introduz e o
+proprio comprimento do passo.
+
+A cobertura do interior e teste, nao aritmetica de comentario:
+`rtgi_samples_within(0.10f, 15.0f, 12, 1.5f) >= 4` falha com `range_min=0.5`.
 
 ### Luz emissiva de painel e GPS
 
@@ -237,15 +251,17 @@ visivel na tela por construcao -- ao contrario do sol, que quase nunca esta.
 
 Quatro coisas precisam existir antes de funcionar:
 
-1. **o perfil de escala interior acima.** O GPS fica a ~0,7 m do olho, dentro
-   da faixa cega de 0,5 a 1,71 m. E a mesma correcao, nao outra;
-2. **`max_indirect_luma` calibrado para a noite** (0.13.2). Uma tela clara
-   contra uma cabine escura e exatamente o caso extremo que o teto existe para
-   conter; baixo demais o GPS nao contribui, alto demais ele estoura;
+1. ~~alcance~~ **resolvido na 0.13.2.** O GPS fica a ~0,7 m do olho, dentro da
+   faixa cega de 0,5 a 1,71 m que a marcha geometrica eliminou. Hoje ha seis
+   amostras entre 0,15 e 1,22 m;
+2. **`max_indirect_luma` calibrado para a noite.** Existe e ja e aplicado por
+   raio desde a 0.13.2, mas o valor 4.0 veio do documento e nunca foi ajustado
+   para tela clara contra cabine escura -- que e o caso extremo que ele existe
+   para conter. Baixo demais o GPS nao contribui, alto demais ele estoura;
 3. **acumulacao temporal (0.13.3) e denoise bilateral (0.13.4).** O GPS e uma
    fonte pequena, clara e de alta frequencia: com poucos raios, acertar ou nao
    vira cara-ou-coroa e o resultado cintila. Sem essas duas fases o efeito e
-   pior que a ausencia dele;
+   pior que a ausencia dele. **E o obstaculo que resta de fato**;
 4. **mascarar a HUD.** A cor de cena e uma copia do backbuffer no Present, ja
    com interface. De dia isso e uma limitacao conhecida; de noite piora, porque
    a HUD e proporcionalmente muito mais clara que a cabine escura e passaria a
@@ -268,7 +284,7 @@ A regra, daqui para frente: **quando um pacote sai, as versoes ainda nao
 entregues deste arquivo sao renumeradas na mesma hora**, para que nenhuma
 promessa aponte para um numero ja usado. `tools/validate.sh` verifica isso.
 
-A partir da 0.13.2 o RTGI precisa ser executado uma unica vez por frame, antes
+A partir da 0.13.3 o RTGI precisa ser executado uma unica vez por frame, antes
 dos quatro draws de composicao ladrilhados do Prism3D -- substituir tile a tile
 reproduziria o artefato de quadrantes corrigido na 0.11.2. Isso depende da
 prova de composicao, em investigacao na branch `fsr-0.7.2-tiles`.

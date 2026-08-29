@@ -1,5 +1,46 @@
 # Changelog
 
+## Pacote 0.13.2 + Photorealism FSR/AA 0.7.1 - 2026-08-29
+
+- **o RTGI passa a alterar a imagem do jogo.** Ate a 0.12.1 o buffer de GI era
+  preenchido e so as debug views o liam. `PSRtgiCompose`, segundo entry point
+  de `rtgi.hlsl`, soma o GI a cor de cena em espaco linear com `gi_intensity`,
+  antes do grading -- para que exposure, contraste e LUT alcancem tambem a luz
+  indireta, que era o requisito declarado no documento da tecnica;
+- **a marcha virou geometrica, e sem isso a composicao nao alcancaria a
+  cabine.** O passo fixo valia `(15.0-0.5)/12 = 1,21 m` e o laco somava antes
+  de amostrar, entao nada era amostrado entre 0,5 e 1,71 m -- banco (~0,5 m),
+  painel e GPS (~0,7 m) e para-brisa (~1 m) ficavam num ponto cego e um raio
+  saindo do painel pulava a cabine inteira. Com razao geometrica e
+  `range_min=0.10`, seis das doze amostras caem no interior e o exterior
+  continua alcancando 15 m, com o mesmo numero de passos;
+- `hit_thickness` deixa de ser espessura fixa e vira **teto**: a ambiguidade
+  que a marcha introduz e o proprio comprimento do passo, entao a espessura
+  usada e `min(passo, hit_thickness)`. Perto da ~0,05 m e impede a luz de vazar
+  pelo painel; longe o teto impede que uma fatia de 5 m aceite qualquer coisa;
+- **`ray_count`, `gi_intensity` e `max_indirect_luma` deixam de ser inertes.**
+  Quatro raios somados e divididos; `max_indirect_luma` aplicado **por raio**,
+  antes da media, porque e rejeicao de firefly -- depois da media o estrago de
+  uma amostra estourada ja estaria diluido em todos;
+- amostragem passa a ser cosine-weighted e o `dot(N, dir)` explicito **sai**:
+  com o peso ja no PDF ele viraria `cos²` e escureceria os bounces rasantes,
+  que sao os que carregam o color bleeding de parede e de painel;
+- `rtgi_step_size` da lugar a `rtgi_step_ratio`, `rtgi_sample_distance` e
+  `rtgi_samples_within` em `src/rtgi_config.hpp`. A ultima transforma a
+  cobertura da cabine em invariante testada:
+  `rtgi_samples_within(0.10f, 15.0f, 12, 1.5f) >= 4` devolve 3 e falha com o
+  `range_min=0.5` antigo;
+- as debug views `rays` e `hit_distance` passam a mostrar o primeiro raio --
+  sao diagnostico por raio; `raw_gi` e `confidence` mostram o acumulado;
+- **`photorealism.hlsl` nao foi tocado.** A composicao e passe proprio em vez
+  de mais um trecho do grading, e os quatro shaders aprovados sairam
+  byte-identicos ao HEAD: 2367 linhas de disassembly iguais dos dois lados,
+  verificado com `tools/shader_check.sh`;
+- custo: `PSRtgi` de 591 para 688 linhas de bytecode (o laco de raios e
+  dinamico, entao o que multiplica e a execucao) e `PSRtgiCompose` com 60. O
+  modulo continua nascendo desligado: quatro raios sem denoise ainda cintilam,
+  e e a 0.13.3 e a 0.13.4 que resolvem isso.
+
 ## Pacote 0.13.1 + Photorealism FSR/AA 0.7.1 - 2026-08-28
 
 - **Page Down era engolido em silencio.** Ate a 0.13.0 ele so tinha efeito com

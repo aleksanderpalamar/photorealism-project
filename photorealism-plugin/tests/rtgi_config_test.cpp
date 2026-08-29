@@ -10,7 +10,9 @@ int main() {
     using photorealism::rtgi::rtgi_debug_mode_name;
     using photorealism::rtgi::rtgi_resolution;
     using photorealism::rtgi::next_rtgi_preview_debug;
-    using photorealism::rtgi::rtgi_step_size;
+    using photorealism::rtgi::rtgi_sample_distance;
+    using photorealism::rtgi::rtgi_samples_within;
+    using photorealism::rtgi::rtgi_step_ratio;
     using photorealism::rtgi::RtgiDebugMode;
     using photorealism::rtgi::RtgiSettings;
 
@@ -74,19 +76,43 @@ int main() {
     static_assert(tiny.width == 1 && tiny.height == 1);
     static_assert(rtgi_resolution(0, 1080, 2).width == 0);
 
-    // O passo da marcha, com os valores do documento: 0.5 a 15 m em 12 passos.
-    static_assert(rtgi_step_size(0.5f, 15.0f, 12) > 1.2f);
-    static_assert(rtgi_step_size(0.5f, 15.0f, 12) < 1.21f);
-    static_assert(rtgi_step_size(0.5f, 15.0f, 1) > 14.4f);
+    // A marcha e geometrica: a razao e sempre maior que 1, senao ela nao
+    // avanca. Com 0.10 a 15 m em 12 passos a razao fica perto de 1,518.
+    assert(rtgi_step_ratio(0.10f, 15.0f, 12) > 1.51f);
+    assert(rtgi_step_ratio(0.10f, 15.0f, 12) < 1.52f);
 
-    // A marcha precisa avancar sempre: intervalo degenerado, invertido ou
-    // com max_steps fora da faixa nao pode produzir passo zero ou negativo.
-    static_assert(rtgi_step_size(5.0f, 5.0f, 12) > 0.0f);
-    static_assert(rtgi_step_size(15.0f, 0.5f, 12) > 0.0f);
-    static_assert(rtgi_step_size(0.5f, 15.0f, 0) > 0.0f);
-    static_assert(rtgi_step_size(0.5f, 15.0f, 9999) > 0.0f);
-    assert(rtgi_step_size(0.5f, 15.0f, 9999) ==
-           rtgi_step_size(0.5f, 15.0f, 24));
+    // O ultimo passo pousa em range_max, e nao antes nem depois: e o que
+    // garante que o alcance util declarado no cfg e o alcance real.
+    assert(rtgi_sample_distance(0.10f, 15.0f, 12, 12) > 14.9f);
+    assert(rtgi_sample_distance(0.10f, 15.0f, 12, 12) < 15.1f);
+
+    // A primeira amostra tem que cair dentro da cabine. Com o passo fixo da
+    // 0.12.1 ela caia em 1,71 m -- depois do para-brisa.
+    assert(rtgi_sample_distance(0.10f, 15.0f, 12, 1) < 0.20f);
+
+    // REGRESSAO 0.13.2: a cobertura da cabine. Banco a ~0,5 m, painel e GPS a
+    // ~0,7 m, para-brisa a ~1 m. O passo fixo da 0.12.1 nao punha NENHUMA
+    // amostra abaixo de 1,71 m, e por isso o RTGI nao alcancava o interior.
+    assert(rtgi_samples_within(0.10f, 15.0f, 12, 1.5f) >= 4);
+    assert(rtgi_samples_within(0.10f, 15.0f, 12, 1.0f) >= 3);
+
+    // E o exterior nao pode ter sido sacrificado para isso: metade dos passos
+    // continua alem de 1,5 m.
+    assert(rtgi_samples_within(0.10f, 15.0f, 12, 1.5f) <= 8);
+
+    // A marcha precisa avancar sempre: intervalo degenerado, invertido ou com
+    // max_steps fora da faixa nao pode produzir razao <= 1, que travaria o
+    // laco do shader na mesma distancia por 12 iteracoes.
+    assert(rtgi_step_ratio(5.0f, 5.0f, 12) >= 1.0f);
+    assert(rtgi_step_ratio(15.0f, 0.5f, 12) >= 1.0f);
+    assert(rtgi_step_ratio(0.10f, 15.0f, 0) > 1.0f);
+    assert(rtgi_step_ratio(0.10f, 15.0f, 9999) > 1.0f);
+    assert(rtgi_step_ratio(0.10f, 15.0f, 9999) ==
+           rtgi_step_ratio(0.10f, 15.0f, 24));
+
+    // range_min abaixo do piso nao pode virar divisao por zero na razao.
+    assert(rtgi_step_ratio(0.0f, 15.0f, 12) > 1.0f);
+    assert(rtgi_sample_distance(0.0f, 15.0f, 12, 1) > 0.0f);
 
     // O padrao do documento sobrevive ao clamp sem ser alterado.
     constexpr RtgiSettings defaults = default_rtgi_settings();
@@ -94,7 +120,14 @@ int main() {
     static_assert(clamped_defaults.resolution_scale == 2);
     static_assert(clamped_defaults.ray_count == 4);
     static_assert(clamped_defaults.max_steps == 12);
-    static_assert(clamped_defaults.range_min == 0.5f);
+    // O fallback interno tem que casar com o cfg: um cfg ausente nao
+    // pode devolver o RTGI ao ponto cego da cabine.
+    static_assert(clamped_defaults.range_min == 0.10f);
+    assert(rtgi_samples_within(
+               clamped_defaults.range_min,
+               clamped_defaults.range_max,
+               clamped_defaults.max_steps,
+               1.5f) >= 4);
     static_assert(clamped_defaults.range_max == 15.0f);
     static_assert(clamped_defaults.gi_intensity == 0.15f);
     static_assert(clamped_defaults.history_weight == 0.90f);

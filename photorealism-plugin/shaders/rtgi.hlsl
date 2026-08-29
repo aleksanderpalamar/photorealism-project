@@ -1,17 +1,24 @@
 #include "depth_view_space.hlsli"
 
-// Screen-Space Ray-Traced Global Illumination -- ray march 0.12.1.
+// Screen-Space Ray-Traced Global Illumination -- composicao 0.13.2.
 //
-// Um raio por pixel, marchado em view-space e projetado de volta para a tela a
-// cada passo. O resultado ainda NAO e composto na imagem: o buffer e
-// preenchido e inspecionado pelas debug views. Compor e 0.12.2.
+// Dois entry points. PSRtgi marcha os raios e escreve o buffer de GI em meia
+// resolucao; PSRtgiCompose soma esse buffer a cor de cena, antes do grading.
+// Ate a 0.12.1 o segundo nao existia e o buffer nao alimentava ninguem.
 //
-// Com um raio e sem denoise, raw_gi parece ruido -- e esperado. O que se
-// verifica aqui e estrutural: se os raios acertam o que deviam, se a cor vem
-// de lugares plausiveis e se a confianca cai nas bordas da tela.
+// A marcha e geometrica, e nao de passo fixo. Com passo fixo (0.12.1) nada era
+// amostrado entre range_min e range_min+passo -- 0,5 a 1,71 m com os valores do
+// documento -- e a cabine inteira vive nessa faixa: banco a ~0,5 m, painel e
+// GPS a ~0,7 m, para-brisa a ~1 m. O RTGI nao alcancava o interior por
+// construcao. A razao geometrica poe seis das doze amostras dentro da cabine
+// sem tirar alcance do exterior.
+//
+// Com 4 raios e sem denoise ainda ha ruido temporal. A acumulacao da 0.13.3 e
+// o bilateral da 0.13.4 sao o que tornam o sinal limpo.
 
 Texture2D<float4> SceneTexture : register(t0);
 Texture2D<float> DepthTexture : register(t1);
+Texture2D<float4> RtgiTexture : register(t2);
 SamplerState SceneSampler : register(s0);
 SamplerState DepthSampler : register(s1);
 
@@ -110,11 +117,17 @@ void build_tangent_basis(float3 normal, out float3 tangent, out float3 bitangent
     bitangent = cross(normal, tangent);
 }
 
-// Amostragem uniforme no hemisferio. O peso cosseno entra explicitamente
-// depois, como o documento da tecnica escreve.
+// Amostragem cosine-weighted no hemisferio da normal.
+//
+// A 0.12.1 usava amostragem uniforme com o peso dot(N, dir) aplicado a mao,
+// como o documento da tecnica escreve. Com 4 raios a variancia passa a importar
+// e o cosseno no PDF a reduz de graca. Consequencia obrigatoria: o dot()
+// explicito SAI de march_ray -- mantido junto com o PDF ele viraria cos², que
+// escurece demais os bounces rasantes, que sao justamente os que carregam o
+// color bleeding de parede e de painel.
 float3 sample_hemisphere(float3 normal, float2 random)
 {
-    float cos_theta = random.x;
+    float cos_theta = sqrt(saturate(random.x));
     float sin_theta = sqrt(saturate(1.0 - cos_theta * cos_theta));
     float phi = 6.28318530718 * random.y;
 
@@ -141,7 +154,7 @@ struct RayResult
 // carrega: acertar e saber, terminar no ceu tambem e saber, mas sair da tela e
 // justamente NAO saber -- screen-space nao tem a informacao. Marcar isso
 // separado e o que permite a acumulacao temporal confiar mais em quem sabe.
-RayResult march_ray(float3 origin, float3 normal, float3 direction)
+RayResult march_ray(float3 origin, float3 direction)
 {
     RayResult result;
     result.indirect = 0.0.xxx;
@@ -149,14 +162,27 @@ RayResult march_ray(float3 origin, float3 normal, float3 direction)
     result.distance_travelled = 0.0;
     result.direction = direction;
 
-    float step_size = max((RangeMax - RangeMin) / max(MaxSteps, 1.0), 0.05);
-    float travelled = RangeMin;
+    // Espelha photorealism::rtgi::rtgi_step_ratio. O piso de 0.05 e o mesmo
+    // kMinimumRange do header, e existe para range_min=0 nao virar divisao por
+    // zero na razao.
+    float near_bound = max(RangeMin, 0.05);
+    float far_bound = max(RangeMax, near_bound * 1.0001);
+    float ratio = max(pow(far_bound / near_bound, 1.0 / max(MaxSteps, 1.0)),
+                      1.0001);
+    float travelled = near_bound;
     int step_count = (int)MaxSteps;
 
     [loop]
     for (int index = 0; index < step_count; ++index)
     {
-        travelled += step_size;
+        float previous = travelled;
+        travelled *= ratio;
+
+        // A ambiguidade de profundidade que a marcha introduz E o comprimento
+        // do passo: nada se sabe sobre o que esta entre duas amostras. Perto
+        // isso da ~0,05 m e impede a luz de vazar pelo painel; longe o teto do
+        // cfg impede que uma fatia de 5 m aceite qualquer coisa como acerto.
+        float thickness = min(travelled - previous, HitThickness);
         float3 position = origin + direction * travelled;
         if (position.z <= NearPlane)
         {
@@ -187,10 +213,10 @@ RayResult march_ray(float3 origin, float3 normal, float3 direction)
 
         float surface_distance = linearize_reversed_depth(raw_hit, NearPlane);
         float delta = position.z - surface_distance;
-        if (delta > 0.0 && delta < HitThickness)
+        if (delta > 0.0 && delta < thickness)
         {
-            float3 bounced = sample_scene_linear(hit_uv).rgb;
-            result.indirect = bounced * max(dot(normal, direction), 0.0);
+            // Sem dot() aqui: o peso cosseno ja esta no PDF da amostragem.
+            result.indirect = sample_scene_linear(hit_uv).rgb;
             result.confidence = 1.0;
             result.distance_travelled = travelled;
             return result;
@@ -202,7 +228,22 @@ RayResult march_ray(float3 origin, float3 normal, float3 direction)
     return result;
 }
 
-// RGB = luz indireta, A = confianca.
+// Rejeicao de firefly, aplicada POR RAIO e nao depois da media. Uma unica
+// amostra estourada -- um farol, o sol num vidro, a HUD -- domina a media de
+// quatro raios e vira um pixel branco piscando. Depois da media nao haveria o
+// que proteger: o estrago ja estaria diluido em todos.
+float3 clamp_indirect_luma(float3 color)
+{
+    float luma = dot(color, float3(0.2126, 0.7152, 0.0722));
+    float ceiling = max(MaxIndirectLuma, 0.01);
+    if (luma > ceiling)
+    {
+        color *= ceiling / max(luma, 0.000001);
+    }
+    return color;
+}
+
+// RGB = luz indireta media, A = confianca media.
 RayResult resolve_ray(float2 uv, float raw_depth)
 {
     RayResult empty;
@@ -234,8 +275,34 @@ RayResult resolve_ray(float2 uv, float raw_depth)
     float3 position = reconstruct_view_position(
         uv, distance_to_surface, ProjectionScale);
     float3 origin = position + view_normal * NormalBias;
-    float3 direction = sample_hemisphere(view_normal, ray_random(uv, 0.0));
-    return march_ray(origin, view_normal, direction);
+
+    // O primeiro raio e guardado inteiro porque as debug views `rays` e
+    // `hit_distance` sao diagnostico POR RAIO -- promediar direcao e distancia
+    // de quatro raios nao produz nada interpretavel. Ja `raw_gi` e
+    // `confidence` mostram o acumulado, que e o que de fato e composto.
+    int ray_count = clamp((int)RayCount, 1, 8);
+    RayResult accumulated = empty;
+    float3 indirect_sum = 0.0.xxx;
+    float confidence_sum = 0.0;
+
+    [loop]
+    for (int index = 0; index < ray_count; ++index)
+    {
+        float3 direction = sample_hemisphere(
+            view_normal, ray_random(uv, (float)index));
+        RayResult ray = march_ray(origin, direction);
+        if (index == 0)
+        {
+            accumulated = ray;
+        }
+        indirect_sum += clamp_indirect_luma(ray.indirect);
+        confidence_sum += ray.confidence;
+    }
+
+    float inverse_count = 1.0 / (float)ray_count;
+    accumulated.indirect = indirect_sum * inverse_count;
+    accumulated.confidence = confidence_sum * inverse_count;
+    return accumulated;
 }
 
 float3 debug_color_for(uint mode, float2 uv, float raw_depth, RayResult ray)
@@ -281,4 +348,29 @@ float4 PSRtgi(VertexOutput input) : SV_Target
     }
 
     return float4(ray.indirect, ray.confidence);
+}
+
+// Composicao 0.13.2: a cor de cena somada a luz indireta, antes do grading.
+//
+// Roda em resolucao cheia lendo o buffer de GI em meia resolucao, com upsample
+// bilinear do proprio sampler. Isso borra o GI atraves das bordas de geometria;
+// o upsample depth-aware entra junto com o denoiser bilateral da 0.13.4.
+//
+// A soma acontece em espaco linear e o resultado volta ao espaco da copia de
+// cena, para que o grading receba exatamente o que ja recebia -- so que com luz
+// indireta somada. E por isso que a composicao e um passe proprio em vez de
+// virar mais um trecho de photorealism.hlsl: o grading calibrado nao e tocado.
+float4 PSRtgiCompose(VertexOutput input) : SV_Target
+{
+    float2 uv = saturate(input.uv);
+    float4 scene = sample_scene_linear(uv);
+    float3 indirect = RtgiTexture.SampleLevel(SceneSampler, uv, 0.0).rgb;
+
+    float3 color = scene.rgb + max(indirect, 0.0.xxx) * GiIntensity;
+    color = saturate(color);
+    if (OutputNeedsSrgbEncode > 0.5)
+    {
+        color = linear_to_srgb(color);
+    }
+    return float4(saturate(color), scene.a);
 }

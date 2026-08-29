@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <cstdint>
 
 // Regras puras do Screen-Space Ray-Traced Global Illumination.
@@ -178,19 +179,66 @@ constexpr RtgiDimensions rtgi_resolution(
         scaled_height == 0 ? 1u : scaled_height};
 }
 
-// Passo fixo em view-space, como o documento descreve. Os limites de
-// range/max_steps ja passaram pelo clamp, entao o unico risco restante e a
-// divisao degenerar; o piso garante que a marcha sempre avance.
-constexpr float rtgi_step_size(
+// Progressao geometrica em view-space, e nao passo fixo.
+//
+// O passo fixo da 0.12.1 era cego para a cabine por construcao: com
+// range 0.5-15.0 em 12 passos o passo vale 1,21 m, e como `travelled` comeca em
+// range_min e o laco soma antes de amostrar, nada era amostrado entre 0,5 e
+// 1,71 m -- justamente onde vivem banco (~0,5 m), painel e GPS (~0,7 m) e
+// para-brisa (~1 m). Um raio saindo do painel pulava a cabine inteira.
+//
+// A razao geometrica distribui os mesmos passos em escala logaritmica: fino
+// perto, grosso longe. Com 0.10-15.0 em 12 passos, seis amostras caem dentro da
+// cabine e o alcance externo continua chegando a 15 m.
+inline float rtgi_step_ratio(
     float range_min, float range_max, std::uint32_t max_steps) {
     const std::uint32_t steps = clamp_unsigned(
         max_steps, kMinimumMaxSteps, kMaximumMaxSteps);
-    const float span = range_max - range_min;
-    if (!(span > 0.0f)) {
-        return kMinimumRangeSeparation;
+    const float near_bound =
+        range_min > kMinimumRange ? range_min : kMinimumRange;
+    if (!(range_max > near_bound)) {
+        return 1.0f;
     }
-    const float step = span / static_cast<float>(steps);
-    return step > kMinimumRangeSeparation ? step : kMinimumRangeSeparation;
+    return std::pow(
+        range_max / near_bound, 1.0f / static_cast<float>(steps));
+}
+
+// Distancia da k-esima amostra, com k de 1 a max_steps. k=0 devolve a origem
+// da marcha, que nunca e amostrada.
+inline float rtgi_sample_distance(
+    float range_min,
+    float range_max,
+    std::uint32_t max_steps,
+    std::uint32_t index) {
+    const float near_bound =
+        range_min > kMinimumRange ? range_min : kMinimumRange;
+    const float ratio = rtgi_step_ratio(range_min, range_max, max_steps);
+    float distance = near_bound;
+    for (std::uint32_t step = 0; step < index; ++step) {
+        distance *= ratio;
+    }
+    return distance;
+}
+
+// Quantas amostras caem abaixo de um limite. Existe para que a cobertura da
+// cabine seja uma invariante testada, e nao uma aritmetica refeita na mao a
+// cada mudanca de parametro -- foi exatamente essa conta que ninguem fez ate a
+// 0.13.2, e o RTGI passou duas versoes sem alcancar o interior.
+inline std::uint32_t rtgi_samples_within(
+    float range_min,
+    float range_max,
+    std::uint32_t max_steps,
+    float limit) {
+    const std::uint32_t steps = clamp_unsigned(
+        max_steps, kMinimumMaxSteps, kMaximumMaxSteps);
+    std::uint32_t found = 0;
+    for (std::uint32_t index = 1; index <= steps; ++index) {
+        if (rtgi_sample_distance(range_min, range_max, max_steps, index) <=
+            limit) {
+            ++found;
+        }
+    }
+    return found;
 }
 
 struct RtgiSettings {
@@ -263,7 +311,7 @@ constexpr RtgiSettings default_rtgi_settings() {
         2,
         4,
         12,
-        0.5f,
+        0.10f,
         15.0f,
         0.15f,
         4.0f,

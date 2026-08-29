@@ -529,7 +529,7 @@ for telemetry_message in \
 done
 
 cfg="${project_dir}/config/photorealism-plugin.cfg"
-expected_cfg_sha256="ac3c6257758faea912fc6ee330943bfa7566c872f207350221db20a419660cd0"
+expected_cfg_sha256="4d89b8c228b166adfc2fd4b66bc1085e0384cd4b6451ab5318aaea73ee22755f"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
@@ -574,17 +574,19 @@ grep -Fqx '[module.rtgi.0.12.0]' "${cfg}"
 grep -Fqx 'resolution_scale=2' "${cfg}"
 grep -Fqx 'ray_count=4' "${cfg}"
 grep -Fqx 'max_steps=12' "${cfg}"
-grep -Fqx 'range_min=0.5' "${cfg}"
+grep -Fqx 'range_min=0.10' "${cfg}"
 grep -Fqx 'range_max=15.0' "${cfg}"
 grep -Fqx 'gi_intensity=0.15' "${cfg}"
 grep -Fqx 'max_indirect_luma=4.0' "${cfg}"
 grep -Fqx 'history_weight=0.90' "${cfg}"
 grep -Fqx 'normal_rejection=0.85' "${cfg}"
-# Sete valores da secao vao para o cbuffer ou nem isso, e nenhum tem efeito
-# ainda. Sem a marca, `ray_count=4` faz o arquivo afirmar quatro raios num
-# shader que traca um. A marca sai junto com a versao que liga cada grupo.
-grep -Fq 'INERTE ate a 0.13.2' "${cfg}"
+# Os quatro parametros temporais continuam sem efeito ate a 0.13.3 e nem chegam
+# ao cbuffer. A marca da 0.13.2 saiu junto com a entrega dela.
 grep -Fq 'INERTE ate a 0.13.3' "${cfg}"
+if grep -Fq 'INERTE ate a 0.13.2' "${cfg}"; then
+  echo "cfg ainda marca como inertes valores que a 0.13.2 ligou." >&2
+  exit 1
+fi
 # Politica de AA nativa: o TAA ligado e o que expoe o depth ao shader.
 grep -Fqx '[native_aa.0.12.2]' "${cfg}"
 grep -Fqx 'manage=true' "${cfg}"
@@ -598,14 +600,16 @@ grep -Fqx 'debug=final' "${cfg}"
 # O modulo RTGI 0.12.0 precisa estar compilado no nucleo, incluindo a tecla
 # Page Up e o aviso de que nenhum raio e tracado nesta versao.
 for rtgi_message in \
-  'RTGI 0.12.1 %s pelo atalho Page Up.' \
+  'RTGI 0.13.2 %s pelo atalho Page Up.' \
   'Preview RTGI 0.13.1 pelo Page Down: debug=%s%s.' \
   'Insert na posicao 6 para desenhar' \
-  'Recursos RTGI 0.12.1 criados' \
-  'Falha ao criar recursos RTGI 0.12.1' \
-  'um raio por pixel, o buffer de GI ainda nao alimenta a composicao' \
+  'Recursos RTGI 0.13.2 criados' \
+  'Falha ao criar recursos RTGI 0.13.2' \
+  'Falha ao criar alvo de composicao RTGI 0.13.2' \
+  'marcha geometrica, o GI e somado a cena antes do grading' \
   'hit_distance' \
-  'rtgi_0.12.1=%s'; do
+  'rtgi_0.13.2=%s' \
+  'rtgi_composicao_0.13.2=%s'; do
   if ! grep -Fq "${rtgi_message}" "${dxgi_strings}"; then
     echo "Modulo RTGI ausente no nucleo DXGI: ${rtgi_message}" >&2
     exit 1
@@ -837,5 +841,27 @@ if ! grep -Fq 'carimbo de' "${roadmap}"; then
   echo "ROADMAP sem a regra de renumeracao das fases nao entregues." >&2
   exit 1
 fi
+
+# A 0.13.2 e o que faz o RTGI alterar a imagem. Tres coisas nao podem sumir sem
+# a versao deixar de entregar o que promete: a marcha geometrica (sem ela o
+# ponto cego de 0,5 a 1,71 m volta e a cabine fica fora do alcance), a
+# cobertura do interior como teste, e o passe de composicao.
+for rtgi_marker in \
+  'rtgi_step_ratio' \
+  'rtgi_sample_distance' \
+  'rtgi_samples_within'; do
+  if ! grep -Fq "${rtgi_marker}" "${project_dir}/src/rtgi_config.hpp"; then
+    echo "Marcha geometrica RTGI 0.13.2 incompleta: ${rtgi_marker}" >&2
+    exit 1
+  fi
+done
+if grep -Fq 'rtgi_step_size' "${project_dir}/src/rtgi_config.hpp"; then
+  echo "rtgi_step_size sobreviveu a 0.13.2; o passo fixo foi substituido." >&2
+  exit 1
+fi
+grep -Fq 'PSRtgiCompose' "${project_dir}/shaders/rtgi.hlsl"
+grep -Fq 'PSRtgiCompose' "${project_dir}/src/postprocess.cpp"
+grep -Fq 'render_rtgi_compose_pass' "${project_dir}/src/postprocess.cpp"
+grep -Fq 'rtgi_samples_within' "${project_dir}/tests/rtgi_config_test.cpp"
 
 echo "Proxies, core Photorealism, captura Steam, draw proof FSR 0.7.1, depth, SSAO, telemetria, perfil, shaders e numeracao de versao validados."
