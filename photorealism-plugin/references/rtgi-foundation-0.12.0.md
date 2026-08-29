@@ -85,7 +85,7 @@ uma funcao PS. Manter PS reaproveita o vertex shader, o caminho de RTV/SRV e o
 tratamento de sRGB existentes, sem introduzir UAVs e dimensionamento de thread
 group que nenhum passe do plugin usa hoje.
 
-Compute passa a ser avaliado na 0.12.5, no traversal Hi-Z, que e onde ele traz
+Compute passa a ser avaliado na 0.13.5, no traversal Hi-Z, que e onde ele traz
 ganho real.
 
 ## Prova em bytecode
@@ -161,13 +161,13 @@ O que a 0.12.0 mede e o custo do andaime, nao o efeito.
 | versao | entrega |
 |---|---|
 | 0.12.1 | ray march de raio unico, hit/miss, `SkyAmbient` no miss |
-| 0.12.2 | GI difusa multi-raio, `MaxIndirectLuma`, composicao com `gi_intensity` |
-| 0.12.3 | acumulacao temporal com rotacao de raios e `normal_rejection` |
-| 0.12.4 | denoiser bilateral depth-aware e normal-aware |
-| 0.12.5 | traversal Hi-Z sobre mips de depth |
-| 0.12.6 | qualidade adaptativa e presets Low/Medium/High |
+| 0.13.2 | GI difusa multi-raio, `MaxIndirectLuma`, composicao com `gi_intensity` |
+| 0.13.3 | acumulacao temporal com rotacao de raios e `normal_rejection` |
+| 0.13.4 | denoiser bilateral depth-aware e normal-aware |
+| 0.13.5 | traversal Hi-Z sobre mips de depth |
+| 0.13.6 | qualidade adaptativa e presets Low/Medium/High |
 
 A integracao com a particao de tiles do Prism3D - executar o RTGI uma unica vez
-por frame, antes dos quatro draws de composicao - entra a partir da 0.12.2 e
+por frame, antes dos quatro draws de composicao - entra a partir da 0.13.2 e
 depende da prova de composicao, hoje em investigacao na branch
 `fsr-0.7.2-tiles`.

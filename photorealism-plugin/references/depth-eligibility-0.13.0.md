@@ -146,4 +146,4 @@ Se o depth de camera nunca foi usado, o **SSAO aprovado nas versoes 0.7.0 a
 0.9.1 rodou sobre uma cascata de sombra**. Os logs daquela epoca foram
 sobrescritos e nao da para confirmar. Com o depth certo o efeito muda de
 verdade, e `radius`, `intensity` e `fade` provavelmente vao precisar de nova
-rodada de calibracao A/B. E trabalho da 0.13.1.
+rodada de calibracao A/B. E trabalho da 0.13.7.

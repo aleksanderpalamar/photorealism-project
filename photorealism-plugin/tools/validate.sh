@@ -807,4 +807,30 @@ for native_aa_marker in \
   fi
 done
 
-echo "Proxies, core Photorealism, captura Steam, draw proof FSR 0.7.1, depth, SSAO, telemetria, perfil e shaders validados."
+# O numero de versao e carimbo de chegada, nao de agenda. Duas vezes o ROADMAP
+# prometeu uma entrega num numero que um pacote ja tinha consumido -- a fase de
+# composicao do RTGI presa na 0.12.2, que virou a politica de AA nativo, e a
+# recalibracao do SSAO presa na 0.13.1, que virou o conserto do Page Down.
+# Promessa apontando para numero ja entregue e documentacao que mente.
+changelog="${project_dir}/CHANGELOG.md"
+roadmap="${project_dir}/ROADMAP.md"
+shipped_versions="$(grep -E '^## ' "${changelog}" \
+  | grep -oE '^## (Pacote |Core )?[0-9]+\.[0-9]+\.[0-9]+' \
+  | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -Vu)"
+promised_versions="$(grep -E '^- \*\*[0-9]+\.[0-9]+\.[0-9]+' "${roadmap}" \
+  | grep -v '(entregue)' \
+  | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -Vu)"
+version_collisions="$(printf '%s\n' "${promised_versions}" \
+  | grep -Fxf <(printf '%s\n' "${shipped_versions}") || true)"
+if [[ -n "${version_collisions}" ]]; then
+  echo "ROADMAP promete versao ja entregue no CHANGELOG: \
+${version_collisions//$'\n'/ }" >&2
+  echo "Renumere as fases nao entregues do ROADMAP." >&2
+  exit 1
+fi
+if ! grep -Fq 'carimbo de' "${roadmap}"; then
+  echo "ROADMAP sem a regra de renumeracao das fases nao entregues." >&2
+  exit 1
+fi
+
+echo "Proxies, core Photorealism, captura Steam, draw proof FSR 0.7.1, depth, SSAO, telemetria, perfil, shaders e numeracao de versao validados."

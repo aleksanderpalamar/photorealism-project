@@ -11,7 +11,7 @@ versao preenche esse corpo: um raio por pixel, marchado em view-space e
 projetado de volta para a tela a cada passo.
 
 O resultado **nao** e composto na cena. Ele preenche o buffer RTGI_RAW em meia
-resolucao e se verifica pelas debug views. Compor e 0.12.2. A propriedade de
+resolucao e se verifica pelas debug views. Compor e 0.13.2. A propriedade de
 "nao pode piorar a imagem" continua valendo por construcao: nada le o buffer.
 
 ## A projecao inversa
@@ -69,7 +69,7 @@ propria superficie no primeiro passo.
 
 Sair da tela nao e o caso vazio, e o caso *desconhecido*: screen-space
 simplesmente nao tem a informacao. Registrar isso separadamente e o que vai
-permitir a acumulacao temporal da 0.12.3 confiar mais em quem sabe, em vez de
+permitir a acumulacao temporal da 0.13.3 confiar mais em quem sabe, em vez de
 tratar ignorancia como ausencia de luz.
 
 Na debug view `confidence` isso aparece como valor alto no centro da tela e
@@ -80,11 +80,11 @@ baixo nas bordas -- a assinatura correta da tecnica.
 Direcao uniforme no hemisferio da normal, com o peso `dot(N, dir)` aplicado
 explicitamente, exatamente como o documento da tecnica escreve. Cosine-weighted
 teria variancia menor, mas ai o peso explicito viraria `cos²` e escureceria
-demais os bounces rasantes; a troca fica para a 0.12.2, junto da divisao por
+demais os bounces rasantes; a troca fica para a 0.13.2, junto da divisao por
 `rayCount`.
 
 A semente varia por pixel **e por `FrameIndex`**: os raios ja mudam a cada
-frame, que e de onde a 0.12.3 vai extrair amostras de graca.
+frame, que e de onde a 0.13.3 vai extrair amostras de graca.
 
 ## Espaco linear
 
@@ -102,7 +102,7 @@ Com o Insert na posicao 6, **Page Down** cicla:
 normals -> rays -> hit_distance -> raw_gi -> confidence -> normals
 ```
 
-`temporal_gi` fica de fora ate a 0.12.3 existir, e `final` nao e diagnostico. O
+`temporal_gi` fica de fora ate a 0.13.3 existir, e `final` nao e diagnostico. O
 ciclo e a funcao pura `next_rtgi_preview_debug`, testada, para nao virar uma
 cadeia de literais no `postprocess.cpp`. O passe de trabalho continua obedecendo
 ao `debug=` do cfg; so o preview obedece ao Page Down.
@@ -120,11 +120,11 @@ paredes e do chao.
    cena pre-UI depende da prova de composicao, ainda em investigacao na branch
    `fsr-0.7.2-tiles`.
 2. **Passo fixo em view-space** e grosso perto da camera e desperdicado longe.
-   E o que o traversal Hi-Z da 0.12.5 resolve.
+   E o que o traversal Hi-Z da 0.13.5 resolve.
 3. **`saturate(dir.y)` e "cima" em view-space**, que inclina junto com a camera.
    Aceitavel no ETS2, onde se dirige praticamente nivelado.
 4. **Um raio por pixel, sem denoise: `raw_gi` parece ruido.** E esperado, nao
-   defeito. A 0.12.3 (temporal) e a 0.12.4 (bilateral) sao o que tornam o sinal
+   defeito. A 0.13.3 (temporal) e a 0.13.4 (bilateral) sao o que tornam o sinal
    usavel.
 
 ## Custo
@@ -137,8 +137,8 @@ sendo o padrao, nenhum draw acontece.
 
 | versao | entrega |
 |---|---|
-| 0.12.2 | GI difusa multi-raio, `MaxIndirectLuma`, composicao com `gi_intensity` |
-| 0.12.3 | acumulacao temporal com rotacao de raios e `normal_rejection` |
-| 0.12.4 | denoiser bilateral depth-aware e normal-aware |
-| 0.12.5 | traversal Hi-Z sobre mips de depth |
-| 0.12.6 | qualidade adaptativa e presets Low/Medium/High |
+| 0.13.2 | GI difusa multi-raio, `MaxIndirectLuma`, composicao com `gi_intensity` |
+| 0.13.3 | acumulacao temporal com rotacao de raios e `normal_rejection` |
+| 0.13.4 | denoiser bilateral depth-aware e normal-aware |
+| 0.13.5 | traversal Hi-Z sobre mips de depth |
+| 0.13.6 | qualidade adaptativa e presets Low/Medium/High |

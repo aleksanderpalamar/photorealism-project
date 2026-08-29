@@ -188,17 +188,30 @@ As fases:
 - **0.12.1 (entregue)** ray march de raio unico em screen-space, com acerto por
   espessura, contribuicao de ceu no miss e confianca separando "vazio" de
   "desconhecido"; o resultado preenche o buffer mas ainda nao e composto;
-- **0.12.2** GI difusa multi-raio, protecao de iluminancia e composicao com
-  `gi_intensity`;
-- **0.12.3** acumulacao temporal com rotacao de raios por frame, somando
+- **0.13.2 (proxima)** GI difusa multi-raio, protecao de iluminancia e
+  composicao com `gi_intensity`; e a versao em que o RTGI passa a alterar a
+  imagem do jogo, e nao so preencher um buffer inspecionado por debug view;
+- **0.13.3** acumulacao temporal com rotacao de raios por frame, somando
   `normal_rejection` a rejeicao de depth e cor que ja existe;
-- **0.12.4** denoiser bilateral depth-aware e normal-aware, que nao pode
+- **0.13.4** denoiser bilateral depth-aware e normal-aware, que nao pode
   atravessar bordas;
-- **0.12.5** traversal Hi-Z sobre mips de depth; e o ponto em que compute
+- **0.13.5** traversal Hi-Z sobre mips de depth; e o ponto em que compute
   shader passa a valer o custo de introduzir UAVs no plugin;
-- **0.12.6** qualidade adaptativa e presets Low/Medium/High para a RX 6600.
+- **0.13.6** qualidade adaptativa e presets Low/Medium/High para a RX 6600.
 
-A partir da 0.12.2 o RTGI precisa ser executado uma unica vez por frame, antes
+As fases do RTGI saltam de 0.12.1 para 0.13.2 porque **o numero e carimbo de
+chegada, nao de agenda**. O documento original da tecnica numerou as sete fases
+como 0.12.0 a 0.12.6 supondo que sairiam em sequencia, mas entre a 0.12.1 e a
+fase seguinte entraram dois consertos nao planejados -- a politica de AA nativo
+(0.12.2) e a elegibilidade do depth (0.13.0), mais o Page Down (0.13.1) -- e
+cada um consumiu um numero. As promessas antigas passaram a colidir com pacotes
+ja entregues e foram renumeradas.
+
+A regra, daqui para frente: **quando um pacote sai, as versoes ainda nao
+entregues deste arquivo sao renumeradas na mesma hora**, para que nenhuma
+promessa aponte para um numero ja usado. `tools/validate.sh` verifica isso.
+
+A partir da 0.13.2 o RTGI precisa ser executado uma unica vez por frame, antes
 dos quatro draws de composicao ladrilhados do Prism3D -- substituir tile a tile
 reproduziria o artefato de quadrantes corrigido na 0.11.2. Isso depende da
 prova de composicao, em investigacao na branch `fsr-0.7.2-tiles`.
@@ -209,7 +222,7 @@ Correcao da regra que rejeitava o depth de camera por construcao, e que mantinha
 RTGI, SSAO e resolve temporal sem fonte. Detalhe em
 `references/depth-eligibility-0.13.0.md`.
 
-- **0.13.1 (proxima)** recalibrar SSAO sobre o depth certo. Se o depth de camera
+- **0.13.7** recalibrar SSAO sobre o depth certo. Se o depth de camera
   nunca foi usado, a calibracao aprovada nas versoes 0.7.0 a 0.9.1 foi feita
   sobre uma cascata de sombra, e `radius`, `intensity` e `fade` precisam de nova
   rodada A/B;
