@@ -529,7 +529,7 @@ for telemetry_message in \
 done
 
 cfg="${project_dir}/config/photorealism-plugin.cfg"
-expected_cfg_sha256="18d782fb6faf9d90d4670632db603d7fcbfedea1b6dd61fb260606290be0bcf6"
+expected_cfg_sha256="ac3c6257758faea912fc6ee330943bfa7566c872f207350221db20a419660cd0"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
@@ -580,6 +580,11 @@ grep -Fqx 'gi_intensity=0.15' "${cfg}"
 grep -Fqx 'max_indirect_luma=4.0' "${cfg}"
 grep -Fqx 'history_weight=0.90' "${cfg}"
 grep -Fqx 'normal_rejection=0.85' "${cfg}"
+# Sete valores da secao vao para o cbuffer ou nem isso, e nenhum tem efeito
+# ainda. Sem a marca, `ray_count=4` faz o arquivo afirmar quatro raios num
+# shader que traca um. A marca sai junto com a versao que liga cada grupo.
+grep -Fq 'INERTE ate a 0.13.2' "${cfg}"
+grep -Fq 'INERTE ate a 0.13.3' "${cfg}"
 # Politica de AA nativa: o TAA ligado e o que expoe o depth ao shader.
 grep -Fqx '[native_aa.0.12.2]' "${cfg}"
 grep -Fqx 'manage=true' "${cfg}"
