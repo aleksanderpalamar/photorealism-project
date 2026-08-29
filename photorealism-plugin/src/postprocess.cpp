@@ -321,16 +321,20 @@ public:
                 depth_preview_mode_,
                 mode_name);
         }
-        // Page Down so tem efeito com o Insert na posicao do RTGI: e ali que
-        // as debug views sao desenhadas. Fora dela a tecla nao faz nada, para
-        // nao mudar estado invisivel.
-        if (key_pressed_once(VK_NEXT, &page_down_key_down_) &&
-            depth_preview_mode_ == 6) {
+        // Page Down sempre cicla e sempre loga. Ate a 0.13.0 ele so tinha
+        // efeito com o Insert na posicao 6, e fora dela a tecla era consumida
+        // sem efeito e sem registro -- uma tecla que some sem deixar rastro e
+        // indiagnosticavel. O modo do Insert decide apenas se o resultado e
+        // desenhado.
+        if (key_pressed_once(VK_NEXT, &page_down_key_down_)) {
             rtgi_preview_debug_ =
                 rtgi::next_rtgi_preview_debug(rtgi_preview_debug_);
             log_message(
-                "Preview RTGI 0.12.1 pelo Page Down: debug=%s.",
-                rtgi::rtgi_debug_mode_name(rtgi_preview_debug_));
+                "Preview RTGI 0.13.1 pelo Page Down: debug=%s%s.",
+                rtgi::rtgi_debug_mode_name(rtgi_preview_debug_),
+                depth_preview_mode_ == 6
+                    ? ""
+                    : "; Insert na posicao 6 para desenhar");
         }
         // Page Up existe para comparacao A/B direta do RTGI, sem sair do
         // jogo e sem editar o cfg. A recarga por End volta a valer o que o
@@ -691,8 +695,12 @@ public:
 
         if (!depth_preview_active) {
             context_->CopyResource(scene_texture_, back_buffer);
+            // O modo 6 tem caminho proprio (rtgi_preview_active); sem
+            // exclui-lo aqui, ele logava "aguardando candidato valido" mesmo
+            // com o depth disponivel -- e foi essa linha que levou a leitura
+            // errada de que o depth faltava no modo 6.
             if (depth_preview_mode_ != 0 && !ssao_preview_active &&
-                !depth_preview_wait_logged_) {
+                !rtgi_preview_active && !depth_preview_wait_logged_) {
                 log_message(
                     "Diagnostico depth/SSAO aguardando candidato valido; "
                     "o passe visual normal permanece ativo.");

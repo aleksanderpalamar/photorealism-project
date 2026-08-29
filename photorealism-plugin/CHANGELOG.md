@@ -1,5 +1,22 @@
 # Changelog
 
+## Pacote 0.13.1 + Photorealism FSR/AA 0.7.1 - 2026-08-28
+
+- **Page Down era engolido em silencio.** Ate a 0.13.0 ele so tinha efeito com
+  o Insert na posicao 6; fora dela `key_pressed_once` consumia a tecla e nada
+  acontecia -- sem efeito e sem linha no log. O usuario percorreu o Insert de 1
+  a 6 em seis segundos e apertou Page Down em seguida; bastou a tecla cair um
+  frame antes do modo 6 assentar para o toque sumir sem deixar rastro. Agora o
+  Page Down sempre cicla e sempre loga, e o modo do Insert decide apenas se o
+  resultado e desenhado;
+- **o modo 6 logava "aguardando candidato valido" com o depth disponivel.** A
+  condicao excluia `ssao_preview_active` e `depth_preview_active`, mas nao
+  `rtgi_preview_active`, que e o caminho do modo 6. A mensagem falsa levou a
+  leitura errada de que faltava depth no preview do RTGI quando nao faltava;
+- os dois defeitos sao da 0.12.0/0.12.1 e mascararam a verificacao do ray
+  march: o RTGI vinha rodando e custando, mas as debug views nunca chegaram a
+  ser trocadas.
+
 ## Pacote 0.13.0 + Photorealism FSR/AA 0.7.1 - 2026-08-28
 
 - **o depth de camera era rejeitado por construcao.** `kMinimumScaledSceneAreaPercent`

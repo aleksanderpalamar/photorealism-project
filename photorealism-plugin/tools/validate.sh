@@ -594,7 +594,8 @@ grep -Fqx 'debug=final' "${cfg}"
 # Page Up e o aviso de que nenhum raio e tracado nesta versao.
 for rtgi_message in \
   'RTGI 0.12.1 %s pelo atalho Page Up.' \
-  'Preview RTGI 0.12.1 pelo Page Down: debug=%s.' \
+  'Preview RTGI 0.13.1 pelo Page Down: debug=%s%s.' \
+  'Insert na posicao 6 para desenhar' \
   'Recursos RTGI 0.12.1 criados' \
   'Falha ao criar recursos RTGI 0.12.1' \
   'um raio por pixel, o buffer de GI ainda nao alimenta a composicao' \
