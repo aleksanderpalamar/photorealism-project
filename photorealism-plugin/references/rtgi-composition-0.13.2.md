@@ -3,6 +3,9 @@
 Data: 2026-08-29
 Escopo: Photorealism 0.13.2, branch `feat/screen-space-ray-traced-global-ilumination`
 Estado: GI composto na cena; ruido temporal ainda nao tratado
+Corrigido por: `rtgi-ambient-escape-0.13.2.1.md` -- a composicao funcionou, mas
+os raios que escapavam sem acertar nada devolviam preto, e na cabine escapam
+todos. O criterio de aceite do interior so foi atingido la.
 
 ## O que muda
 

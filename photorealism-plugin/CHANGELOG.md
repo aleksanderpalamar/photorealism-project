@@ -1,5 +1,46 @@
 # Changelog
 
+## Pacote 0.13.2.1 + Photorealism FSR/AA 0.7.1 - 2026-08-30
+
+Correcao da 0.13.2. A composicao funcionou, mas a cabine continuou preta, e o
+teste em jogo mostrou por que: um tunel de concreto branco iluminado em volta
+inteira, com o painel preto chapado e **sem nem granulado**. Ruido ausente onde
+deveria haver ruido nao e denoise faltando -- e sinal ausente.
+
+- **os raios que escapam deixam de devolver preto.** `march_ray` tem quatro
+  desfechos e so um e acerto real. Os outros tres -- saiu da tela, ceu de
+  verdade, e escape (passos esgotados ou plano proximo cruzado) -- agora
+  devolvem o mesmo termo, `ambient_escape(direction)`. Ate a 0.13.2 o terceiro
+  devolvia zero duro, e com `sky_ambient=0.0` no cfg os tres devolviam preto:
+  o shader respondia breu a todo "nao sei";
+- **`sky_ambient` passa de `0.0` para `0.25`**, no cfg e no fallback interno.
+  Nao e a radiancia de um ceu; e a de uma direcao **desconhecida**, e em jogo a
+  maioria delas esta parcialmente ocluida -- cabine, tunel, viaduto, vao entre
+  predios. Um quarto de um ceu encoberto tipico e o lado conservador dessa
+  conta;
+- **por que isso custava a cabine inteira.** `reconstruct_view_normal` forca
+  toda normal a apontar para a camera, entao o hemisferio de amostragem do
+  painel e o cone entre o painel e o olho do motorista: ar vazio. Os raios
+  tipicos andam para tras e cruzam o plano proximo; os rasantes sobem em
+  direcao ao para-brisa e voam a frente da estrada, dezenas de metros adiante,
+  esgotando os doze passos. Nenhum acerta. Os quatro devolviam exatamente
+  `0.0`, e quatro zeros tem media exatamente zero -- preto liso, sem o
+  granulado que teria denunciado o problema um mes antes;
+- **o que a 0.13.2 realmente entregou, e o que nao.** A marcha geometrica
+  consertou um ponto cego de amostragem que era real, mas ele nao era a unica
+  coisa entre o RTGI e o interior. O criterio de aceite escrito no plano --
+  "painel e bancos deixando de ser preto chapado" -- nao tinha como ser
+  atingido naquela versao;
+- **limite que continua, e agora esta medido.** Isto da a cabine um piso de
+  ambiente modulado pela direcao do raio, que e o efeito de penumbra. Nao da
+  color bleeding de verdade do exterior para dentro: a estrada esta *atras* do
+  painel em view-space, fora do hemisferio dele, e nenhum ajuste de parametro
+  alcanca isso em screen-space puro;
+- regressoes travadas em `tools/validate.sh`: `sky_ambient=0.25` pinado,
+  `sky_ambient=0.0` barrado por nome, `ambient_escape` exigido em `rtgi.hlsl` e
+  a contagem dos tres desfechos de escape verificada. Em
+  `tests/rtgi_config_test.cpp`, `clamped_defaults.sky_ambient > 0.0f`.
+
 ## Pacote 0.13.2 + Photorealism FSR/AA 0.7.1 - 2026-08-29
 
 - **o RTGI passa a alterar a imagem do jogo.** Ate a 0.12.1 o buffer de GI era

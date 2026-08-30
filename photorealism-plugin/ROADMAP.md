@@ -193,6 +193,10 @@ As fases:
   que o RTGI passou a alterar a imagem do jogo. Inclui a **marcha geometrica**,
   descrita abaixo, sem a qual a composicao nao alcancava a cabine. Detalhe em
   `references/rtgi-composition-0.13.2.md`;
+- **0.13.2.1 (entregue)** o raio que escapa sem acertar nada deixa de devolver
+  preto. Os tres desfechos de nao-acerto de `march_ray` passam a compartilhar
+  `ambient_escape`, e `sky_ambient` sai de `0.0`. E o que faz o RTGI alcancar
+  o interior da cabine; ver **O escape do raio**, abaixo;
 - **0.13.3 (proxima)** acumulacao temporal com rotacao de raios por frame,
   somando `normal_rejection` a rejeicao de depth e cor que ja existe;
 - **0.13.4** denoiser bilateral depth-aware e normal-aware, que nao pode
@@ -240,6 +244,50 @@ proprio comprimento do passo.
 A cobertura do interior e teste, nao aritmetica de comentario:
 `rtgi_samples_within(0.10f, 15.0f, 12, 1.5f) >= 4` falha com `range_min=0.5`.
 
+### O escape do raio
+
+A marcha geometrica era necessaria e nao era suficiente. Com ela entregue, o
+teste em jogo da 0.13.2 mostrou a cabine ainda preta -- inclusive dentro de um
+tunel de concreto branco iluminado em volta inteira, que e a geometria mais
+favoravel a GI que o jogo oferece. E preta **sem granulado**, enquanto do lado
+de fora havia granulado. Ruido ausente onde deveria haver ruido nao e denoise
+faltando; e sinal ausente.
+
+`march_ray` tem quatro desfechos, e so um e acerto real:
+
+| desfecho | devolvia ate a 0.13.2 |
+|---|---|
+| acerto numa superficie | cor da cena |
+| saiu da tela | `sky_ambient * dir.y` |
+| ceu de verdade (`raw_depth == 0`) | `sky_ambient * dir.y` |
+| passos esgotados, ou plano proximo cruzado | **zero** |
+
+E `sky_ambient` valia `0.0` no cfg. Somando as duas coisas, **os quatro
+desfechos devolviam preto menos o acerto real** -- o shader respondia breu a
+todo "nao sei".
+
+Isso custa uma cabine inteira porque o acerto real e inalcancavel ali.
+`reconstruct_view_normal` termina com `if (normal.z > 0.0) normal = -normal;`:
+toda normal visivel aponta para a camera. O hemisferio de amostragem do painel
+e entao o cone **entre o painel e o olho do motorista**, que e ar vazio. Os
+raios tipicos andam para tras e caem no `break` do plano proximo por volta da
+sexta amostra; os rasantes sobem em direcao ao para-brisa, ficam na tela mas
+voam a frente da estrada -- que esta a dezenas de metros, com `delta` negativo
+nos doze passos -- e esgotam. Quatro raios devolvendo exatamente `0.0` tem
+media exatamente `0.0`: preto liso.
+
+A correcao e um termo unico, `ambient_escape(direction)`, compartilhado pelos
+tres desfechos de nao-acerto, e `sky_ambient=0.25`. O valor nao e a radiancia
+de um ceu: e a de uma direcao **desconhecida**, e em jogo a maioria delas esta
+parcialmente ocluida. A confianca continua em zero nesses desfechos, que e do
+que a rejeicao temporal da 0.13.3 precisa para confiar menos neles.
+
+**O que isso nao faz.** Da a cabine um piso de ambiente modulado pela direcao
+do raio -- a penumbra. Nao da color bleeding do exterior para dentro: a estrada
+esta *atras* do painel em view-space, fora do hemisferio dele, e nenhum ajuste
+de parametro alcanca isso em screen-space puro. Superficie virada para a camera
+so enxerga o que esta **ao lado dela, em profundidade parecida**.
+
 ### Luz emissiva de painel e GPS
 
 A cabine a noite e iluminada pelo painel, pelo radio e pela tela do GPS. Fazer
@@ -253,7 +301,10 @@ Quatro coisas precisam existir antes de funcionar:
 
 1. ~~alcance~~ **resolvido na 0.13.2.** O GPS fica a ~0,7 m do olho, dentro da
    faixa cega de 0,5 a 1,71 m que a marcha geometrica eliminou. Hoje ha seis
-   amostras entre 0,15 e 1,22 m;
+   amostras entre 0,15 e 1,22 m. E o limite descoberto na 0.13.2.1 nao atinge
+   este caso: GPS e painel estao **lado a lado em profundidade parecida**, que
+   e exatamente a geometria que o screen-space alcanca -- diferente da estrada
+   vista pelo para-brisa, que esta atras do painel e fora do hemisferio dele;
 2. **`max_indirect_luma` calibrado para a noite.** Existe e ja e aplicado por
    raio desde a 0.13.2, mas o valor 4.0 veio do documento e nunca foi ajustado
    para tela clara contra cabine escura -- que e o caso extremo que ele existe

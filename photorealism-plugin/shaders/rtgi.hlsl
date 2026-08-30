@@ -15,6 +15,10 @@
 //
 // Com 4 raios e sem denoise ainda ha ruido temporal. A acumulacao da 0.13.3 e
 // o bilateral da 0.13.4 sao o que tornam o sinal limpo.
+//
+// 0.13.2.1: os tres desfechos de nao-acerto passaram a devolver o mesmo termo
+// de ambiente. Ate aqui um deles devolvia preto duro, e com sky_ambient=0.0 no
+// cfg os tres devolviam. Ver ambient_escape.
 
 Texture2D<float4> SceneTexture : register(t0);
 Texture2D<float> DepthTexture : register(t1);
@@ -148,6 +152,31 @@ struct RayResult
     float3 direction;
 };
 
+// A radiancia atribuida a um raio que ESCAPOU sem acertar nada.
+//
+// Ate a 0.13.2 tres dos quatro desfechos de march_ray devolviam preto, e com
+// sky_ambient=0.0 no cfg os quatro devolviam. Isso torna o preto a resposta
+// padrao para "nao sei", que e o vies errado: um raio que atravessou o alcance
+// util sem encontrar superficie nenhuma passou por espaco aberto, e espaco
+// aberto e claro.
+//
+// Custava uma cabine inteira. Toda normal reconstruida e forcada a apontar
+// para a camera (ver reconstruct_view_normal), entao o hemisferio do painel e
+// o cone entre o painel e o olho do motorista -- ar vazio. Os raios tipicos
+// andam para tras e cruzam o plano proximo; os rasantes sobem em direcao ao
+// para-brisa e voam a frente da estrada, que esta dezenas de metros adiante, e
+// esgotam os passos. Nenhum acerta: os quatro raios devolviam exatamente 0.0,
+// e quatro zeros tem media exatamente zero -- preto liso, sem nem o granulado
+// que denunciaria o problema.
+//
+// saturate(direction.y) e um modelo de ceu barato: quem olha para cima ve
+// mais. O "cima" e o da camera e inclina com ela, limitacao herdada e ainda
+// nao resolvida.
+float3 ambient_escape(float3 direction)
+{
+    return SkyAmbient * saturate(direction.y);
+}
+
 // Marcha em view-space e projeta de volta para a tela a cada passo.
 //
 // Quatro desfechos, e a diferenca entre eles e o que o canal de confianca
@@ -186,7 +215,9 @@ RayResult march_ray(float3 origin, float3 direction)
         float3 position = origin + direction * travelled;
         if (position.z <= NearPlane)
         {
-            // Atras do plano proximo nao existe projecao valida.
+            // Atras do plano proximo nao existe projecao valida. Sai do laco
+            // para o escape comum: o raio deixou o volume util sem saber de
+            // nada, que e a mesma situacao dos passos esgotados.
             break;
         }
 
@@ -195,7 +226,7 @@ RayResult march_ray(float3 origin, float3 direction)
             hit_uv.y < 0.0 || hit_uv.y > 1.0)
         {
             // Saiu da tela: desconhecido, nao vazio.
-            result.indirect = SkyAmbient * saturate(direction.y);
+            result.indirect = ambient_escape(direction);
             result.distance_travelled = travelled;
             return result;
         }
@@ -205,7 +236,7 @@ RayResult march_ray(float3 origin, float3 direction)
         if (raw_hit <= 0.0000001)
         {
             // Ceu de verdade: sabemos que nao ha superficie ali.
-            result.indirect = SkyAmbient * saturate(direction.y);
+            result.indirect = ambient_escape(direction);
             result.confidence = 1.0;
             result.distance_travelled = travelled;
             return result;
@@ -223,7 +254,15 @@ RayResult march_ray(float3 origin, float3 direction)
         }
     }
 
-    // Passos esgotados dentro da tela: nada encontrado no alcance util.
+    // Escape. Duas entradas: os passos acabaram dentro da tela sempre a frente
+    // das superficies testadas, ou a marcha cruzou o plano proximo. Nos dois
+    // casos o raio saiu do volume util sem encontrar nada, e nao encontrar nada
+    // e ceu aberto, nao breu.
+    //
+    // A confianca fica em zero de proposito: e o desfecho em que o
+    // screen-space admite nao saber, e e disso que a rejeicao temporal da
+    // 0.13.3 precisa para confiar menos nestes do que num acerto real.
+    result.indirect = ambient_escape(direction);
     result.distance_travelled = travelled;
     return result;
 }

@@ -529,7 +529,7 @@ for telemetry_message in \
 done
 
 cfg="${project_dir}/config/photorealism-plugin.cfg"
-expected_cfg_sha256="4d89b8c228b166adfc2fd4b66bc1085e0384cd4b6451ab5318aaea73ee22755f"
+expected_cfg_sha256="9000cf310dde47a4a1f40f2b68afe1030d39bb79529ad2a1159f75367d872f07"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
@@ -578,6 +578,16 @@ grep -Fqx 'range_min=0.10' "${cfg}"
 grep -Fqx 'range_max=15.0' "${cfg}"
 grep -Fqx 'gi_intensity=0.15' "${cfg}"
 grep -Fqx 'max_indirect_luma=4.0' "${cfg}"
+# sky_ambient e a luz de um raio que escapa sem acertar nada. Em zero (o valor
+# ate a 0.13.2.1) o shader responde preto a todo "nao sei", e dentro da cabine
+# escapam todos os raios: o hemisferio de uma superficie virada para a camera e
+# o ar entre ela e o olho. Painel preto chapado dentro de um tunel iluminado.
+if grep -Eq '^sky_ambient=0(\.0+)?$' "${cfg}"; then
+  echo "sky_ambient voltou a zero: todo raio que escapa sem acertar nada volta \
+a devolver preto, e na cabine escapam todos." >&2
+  exit 1
+fi
+grep -Fqx 'sky_ambient=0.25' "${cfg}"
 grep -Fqx 'history_weight=0.90' "${cfg}"
 grep -Fqx 'normal_rejection=0.85' "${cfg}"
 # Os quatro parametros temporais continuam sem efeito ate a 0.13.3 e nem chegam
@@ -860,6 +870,26 @@ if grep -Fq 'rtgi_step_size' "${project_dir}/src/rtgi_config.hpp"; then
   exit 1
 fi
 grep -Fq 'PSRtgiCompose' "${project_dir}/shaders/rtgi.hlsl"
+
+# A 0.13.2.1 e o que faz o RTGI alcancar o interior. march_ray tem quatro
+# desfechos e so um deles e acerto real; os outros tres -- fora da tela, ceu, e
+# escape (passos esgotados ou plano proximo cruzado) -- precisam devolver o
+# MESMO termo de ambiente. Ate a 0.13.2 dois devolviam SkyAmbient e um devolvia
+# preto, e com sky_ambient=0.0 os tres devolviam preto.
+if ! grep -Fq 'float3 ambient_escape(float3 direction)' \
+  "${project_dir}/shaders/rtgi.hlsl"; then
+  echo "ambient_escape sumiu de rtgi.hlsl: os desfechos de nao-acerto perderam \
+o termo de ambiente comum." >&2
+  exit 1
+fi
+ambient_escape_sites="$(grep -c 'result.indirect = ambient_escape(direction);' \
+  "${project_dir}/shaders/rtgi.hlsl")"
+if [[ "${ambient_escape_sites}" != "3" ]]; then
+  echo "Escapes de march_ray com ambiente: ${ambient_escape_sites}, \
+esperado 3. Algum desfecho voltou a devolver preto." >&2
+  exit 1
+fi
+grep -Fq 'sky_ambient > 0.0f' "${project_dir}/tests/rtgi_config_test.cpp"
 grep -Fq 'PSRtgiCompose' "${project_dir}/src/postprocess.cpp"
 grep -Fq 'render_rtgi_compose_pass' "${project_dir}/src/postprocess.cpp"
 grep -Fq 'rtgi_samples_within' "${project_dir}/tests/rtgi_config_test.cpp"

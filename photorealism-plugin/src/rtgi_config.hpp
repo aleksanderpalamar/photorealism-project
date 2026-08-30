@@ -305,6 +305,18 @@ constexpr RtgiSettings clamp_rtgi_settings(RtgiSettings settings) {
 }
 
 // Os valores que o documento fixa para a primeira entrega.
+//
+// sky_ambient deixou de ser 0.0 na 0.13.2.1. Zero fazia o preto ser a resposta
+// do shader para todo raio que escapava sem acertar nada, e dentro da cabine
+// escapam todos: o hemisferio de uma superficie virada para a camera e o ar
+// entre ela e o olho. O painel ficava preto chapado e sem nem o granulado que
+// denunciaria o problema.
+//
+// 0.25 nao e a radiancia de um ceu -- e a de uma direcao DESCONHECIDA, e em
+// jogo a maioria delas esta parcialmente ocluida (cabine, tunel, viaduto,
+// vao entre predios). Um quarto de um ceu encoberto tipico e o lado
+// conservador dessa conta; se o interior sair escuro demais, subir este valor
+// e edicao de cfg, sem recompilar.
 constexpr RtgiSettings default_rtgi_settings() {
     return {
         false,
@@ -315,7 +327,7 @@ constexpr RtgiSettings default_rtgi_settings() {
         15.0f,
         0.15f,
         4.0f,
-        0.0f,
+        0.25f,
         0.5f,
         0.05f,
         0.90f,

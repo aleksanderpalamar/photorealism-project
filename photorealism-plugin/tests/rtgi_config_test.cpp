@@ -130,6 +130,16 @@ int main() {
                1.5f) >= 4);
     static_assert(clamped_defaults.range_max == 15.0f);
     static_assert(clamped_defaults.gi_intensity == 0.15f);
+
+    // REGRESSAO 0.13.2.1: sky_ambient e a luz de um raio que escapou sem
+    // acertar nada, e com ele em zero o shader responde preto a todo "nao
+    // sei". Dentro da cabine escapam todos os raios -- o hemisferio de uma
+    // superficie virada para a camera e o ar entre ela e o olho -- entao zero
+    // aqui significa cabine preta chapada, e sem granulado, porque quatro
+    // zeros tem media exatamente zero. O valor exato e calibracao; ser maior
+    // que zero nao e.
+    static_assert(clamped_defaults.sky_ambient > 0.0f);
+    static_assert(clamped_defaults.sky_ambient == 0.25f);
     static_assert(clamped_defaults.history_weight == 0.90f);
     static_assert(clamped_defaults.hit_thickness == 0.5f);
     static_assert(clamped_defaults.normal_bias == 0.05f);
