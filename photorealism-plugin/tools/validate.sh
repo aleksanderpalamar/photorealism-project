@@ -581,6 +581,42 @@ sky_ambient multiplicando junto, o painel ganha uns 5 niveis em 255." >&2
 fi
 grep -Fqx 'gi_intensity=0.6' "${cfg}"
 grep -Fqx 'max_indirect_luma=4.0' "${cfg}"
+
+# A curva de tom da 0.14.0. black_lift e o piso do preto: em zero o shader
+# volta ao saturate() sem toe da 0.13.3, que esmaga a sombra em 0 e transforma
+# o painel em massa preta. As quatro referencias do ATS medidas para esta
+# versao tem o 1% mais escuro entre 8 e 11 de 255, e 0.0027 em linear cai
+# exatamente ali depois do encode sRGB.
+if grep -Eq '^black_lift=0(\.0+)?$' "${cfg}"; then
+  echo "black_lift voltou a zero: a sombra volta a ser esmagada em 0 e o \
+visual medido nas referencias (p1 entre 8 e 11) fica inalcancavel." >&2
+  exit 1
+fi
+for tone_pin in 'black_lift=0.0027' 'highlight_rolloff=0.35'; do
+  if ! grep -Fqx "${tone_pin}" "${cfg}"; then
+    echo "Curva de tom fora do valor aprovado: ${tone_pin}. A calibracao da \
+0.14.0 foi medida contra as referencias; mudar sem medir de novo a perde." >&2
+    exit 1
+  fi
+done
+# tint e o eixo verde-magenta. Em zero sobra so temperature, que troca R contra
+# B e nunca toca em G -- e as quatro referencias tem G como canal mais alto.
+if grep -Eq '^tint=0(\.0+)?$' "${cfg}"; then
+  echo "tint voltou a zero: sem o eixo verde-magenta nenhum ajuste de \
+temperature alcanca o balanco medido nas referencias." >&2
+  exit 1
+fi
+if ! grep -Fqx 'tint=0.35' "${cfg}"; then
+  echo "tint fora do valor aprovado (0.35)." >&2
+  exit 1
+fi
+# blacks somado das tres camadas era -0.06 e empurrava os pretos para baixo,
+# contra o alvo. A base leva 0.05 para a soma dar zero.
+if ! grep -Fqx 'blacks=0.05' "${cfg}"; then
+  echo "blacks da base saiu de 0.05: somado aos dois deltas ele volta a ser \
+negativo e empurra os pretos para baixo, contra o piso de black_lift." >&2
+  exit 1
+fi
 # sky_ambient e a luz de um raio que escapa sem acertar nada. Em zero (o valor
 # ate a 0.13.2.1) o shader responde preto a todo "nao sei", e dentro da cabine
 # escapam todos os raios: o hemisferio de uma superficie virada para a camera e
@@ -606,7 +642,7 @@ for rtgi_temporal_pin in \
   'history_weight=0.90' \
   'depth_rejection=0.015' \
   'normal_rejection=0.85' \
-  'color_rejection=0.05'; do
+  'color_rejection=0.5'; do
   if ! grep -Fqx "${rtgi_temporal_pin}" "${cfg}"; then
     echo "Parametro da acumulacao RTGI 0.13.3 fora do valor aprovado: \
 ${rtgi_temporal_pin}" >&2
@@ -671,13 +707,6 @@ if [[ "${actual_depth_view_space_sha256}" != "${expected_depth_view_space_sha256
   exit 1
 fi
 
-visual_shader="${project_dir}/shaders/photorealism.hlsl"
-expected_visual_shader_sha256="d748d8b92645f847ce2a8431f97187b089e5aad34e349f31d6a4c87bfc2c5c95"
-actual_visual_shader_sha256="$(sha256sum "${visual_shader}" | awk '{print $1}')"
-if [[ "${actual_visual_shader_sha256}" != "${expected_visual_shader_sha256}" ]]; then
-  echo "Shader visual aprovado foi alterado: ${actual_visual_shader_sha256}" >&2
-  exit 1
-fi
 
 depth_preview_shader="${project_dir}/shaders/depth-preview.hlsl"
 expected_depth_preview_shader_sha256="e12de14a45ce2781507963c8834ca53a1503aa25ed58a5e90b51ffd02c7b0f61"
@@ -771,6 +800,71 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   -o "${rtgi_config_test}"
 "${rtgi_config_test}"
 
+# Os defaults internos de config.cpp valem quando o cfg some, e tone_curve_test
+# nao consegue ve-los: aquele arquivo e Windows-only e nao linka no Linux. A
+# igualdade entre as duas copias fica por conta destas guardas.
+for tone_default in \
+  'layer.black_lift = 0.0027f;' \
+  'layer.highlight_rolloff = 0.35f;' \
+  'layer.tint = 0.35f;'; do
+  if ! grep -Fq "${tone_default}" "${project_dir}/src/config.cpp"; then
+    echo "Default interno da curva de tom 0.14.0 divergiu do cfg: \
+${tone_default}" >&2
+    exit 1
+  fi
+done
+# A curva em si. Sem o lift o shader volta ao saturate() sem toe da 0.13.3.
+for tone_marker in \
+  'float3 apply_black_lift(float3 color, float lift)' \
+  'float3 apply_highlight_rolloff(float3 color, float strength)'; do
+  if ! grep -Fq "${tone_marker}" \
+    "${project_dir}/shaders/photorealism.hlsl"; then
+    echo "Curva de tom 0.14.0 incompleta em photorealism.hlsl: \
+${tone_marker}" >&2
+    exit 1
+  fi
+done
+# A ordem importa: o lift e o piso da imagem FINAL, entao vem depois da
+# vignette. Antes dela os cantos escureceriam abaixo do piso.
+visual_shader_source="${project_dir}/shaders/photorealism.hlsl"
+vignette_line="$(grep -n 'color \*= lerp(1.0, smoothstep' \
+  "${visual_shader_source}" | head -1 | cut -d: -f1)"
+lift_call_line="$(grep -n 'color = apply_black_lift(color, BlackLift);' \
+  "${visual_shader_source}" | head -1 | cut -d: -f1)"
+if [[ -z "${vignette_line}" || -z "${lift_call_line}" ]] ||
+  (( lift_call_line < vignette_line )); then
+  echo "apply_black_lift saiu de depois da vignette: os cantos voltam a \
+escurecer abaixo do piso de preto, e o piso deixa de ser piso." >&2
+  exit 1
+fi
+
+# O hash fecha o shader visual DEPOIS das guardas de curva de tom, pela mesma
+# razao que o do cfg: vindo antes, qualquer edicao do arquivo saia com
+# "Shader visual aprovado foi alterado" e as guardas nomeadas nunca falavam.
+# Uma guarda muda nao guarda coisa alguma.
+visual_shader="${project_dir}/shaders/photorealism.hlsl"
+expected_visual_shader_sha256="2131faa2018c960fbb2dbbe29b6150652026b7ee91439a458c7d68f2ba1f2753"
+actual_visual_shader_sha256="$(sha256sum "${visual_shader}" | awk '{print $1}')"
+if [[ "${actual_visual_shader_sha256}" != "${expected_visual_shader_sha256}" ]]; then
+  echo "Shader visual aprovado foi alterado: ${actual_visual_shader_sha256}" >&2
+  exit 1
+fi
+
+# O alvo medido, dentro do teste. Sem esta guarda alguem apaga o bloco inteiro
+# e a build segue verde sem nada provando o piso de preto.
+if ! grep -Fq 'floor_code >= 6 && floor_code <= 12' \
+  "${project_dir}/tests/tone_curve_test.cpp"; then
+  echo "O teste parou de exigir o piso de preto medido nas referencias (p1 \
+entre 6 e 12): e o unico numero que sozinho separa aquele visual do nosso." >&2
+  exit 1
+fi
+
+tone_curve_test="/tmp/photorealism-tone-curve-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/tone_curve_test.cpp" \
+  -o "${tone_curve_test}"
+"${tone_curve_test}"
+
 screenshot_request_gate_test="/tmp/photorealism-screenshot-request-gate-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/tests/screenshot_request_gate_test.cpp" \
@@ -799,6 +893,8 @@ effective_profile="$(awk -F= '
       total["saturation"], total["vibrance"], total["shadows"], \
       total["highlights"], total["blacks"], total["whites"], \
       total["local_contrast"], total["sharpness"], total["vignette"]
+    printf " %.4f %.3f %.3f", \
+      total["black_lift"], total["highlight_rolloff"], total["tint"]
   }
 ' "${cfg}")"
 
@@ -810,13 +906,19 @@ effective_profile="$(awk -F= '
 # que importa. Uma guarda que explica uma regressao sutil so serve se for ela
 # a falar. Nesta ordem o hash continua pegando tudo que as guardas nao
 # cobrem, e so isso.
-expected_cfg_sha256="3d98bdd4d3e24d67ff2e615250001d1801bd726dabca5c9f165c970e97c04ba0"
+expected_cfg_sha256="da6e5b3784e6823c1add7252a2eecc838e08c625e881926261e0303c7207d3f9"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
   exit 1
 fi
-expected_profile="6400.0 -0.030 1.070 0.970 0.050 0.100 -0.180 -0.060 0.080 0.240 0.200 0.030"
+# 0.14.0: blacks cumulativo saiu de -0.060 para 0.000 -- somado, empurrava os
+# pretos para baixo contra o alvo, e o piso passou a ser black_lift. Os tres
+# ultimos campos sao a curva de tom, e entraram no perfil justamente para que
+# uma mudanca neles nao passe por uma camada de delta sem ser vista.
+expected_profile="6400.0 -0.030 1.070 0.970 0.050 0.100 -0.180 0.000"
+expected_profile="${expected_profile} 0.080 0.240 0.200 0.030"
+expected_profile="${expected_profile} 0.0027 0.350 0.500"
 if [[ "${effective_profile}" != "${expected_profile}" ]]; then
   echo "Perfil cumulativo divergiu da 0.3.0 aprovada: ${effective_profile}" >&2
   exit 1

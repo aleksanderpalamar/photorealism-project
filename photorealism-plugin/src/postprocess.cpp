@@ -70,9 +70,13 @@ struct ShaderConstants {
     float vignette;
     float input_needs_srgb_decode;
     float output_needs_srgb_encode;
+    float black_lift;
+    float highlight_rolloff;
+    float tint;
+    float visual_padding;
 };
 
-static_assert(sizeof(ShaderConstants) == 64, "constant buffer must be aligned");
+static_assert(sizeof(ShaderConstants) == 80, "constant buffer must be aligned");
 
 struct DepthPreviewConstants {
     float preview_mode;
@@ -742,6 +746,9 @@ public:
         constants.local_contrast = settings_.local_contrast;
         constants.sharpness = settings_.sharpness;
         constants.vignette = settings_.vignette;
+        constants.black_lift = settings_.black_lift;
+        constants.highlight_rolloff = settings_.highlight_rolloff;
+        constants.tint = settings_.tint;
         constants.input_needs_srgb_decode =
             scene_needs_srgb_decode_ ? 1.0f : 0.0f;
         constants.output_needs_srgb_encode =

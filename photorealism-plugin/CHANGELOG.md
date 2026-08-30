@@ -1,5 +1,63 @@
 # Changelog
 
+## Pacote 0.14.0 + Photorealism FSR/AA 0.7.1 - 2026-08-30
+
+Mudanca de direcao, motivada por medicao. O usuario mostrou cinco capturas do
+ATS com um shader de terceiros como alvo; os histogramas foram medidos em vez
+de julgados no olho, e o resultado inverte a premissa das tres versoes
+anteriores. Detalhe em `references/tone-curve-0.14.0.md`.
+
+| | p1 | mediana | canal mais alto |
+|---|---|---|---|
+| Referencia (4 imagens) | **8–11** | 11–40 | **G** |
+| Plugin 0.13.3 (3 imagens) | **0** | 47–70 | **B** |
+
+- **curva de tom em `photorealism.hlsl`, que nao tinha nenhuma.** O shader
+  terminava em `saturate()`: os altos cortavam retos e os baixos esmagavam em
+  zero. Entram `apply_black_lift` e `apply_highlight_rolloff`;
+- **`black_lift=0.0027`.** Em linear leva o preto a `0.0027 * 12.92 = 0.0349`
+  em sRGB, ou 8,9 em 255 -- exatamente a faixa medida nas quatro referencias.
+  E por isso que o painel do plugin virava massa preta enquanto o da
+  referencia, **mais escuro na mediana**, deixava ler cada manometro. A
+  0.13.2.1 e a 0.13.3 tentaram resolver isso somando luz, e o alvo tem a cabine
+  mais escura que a nossa: o problema nunca foi falta de luz;
+- **o lift e a ultima coisa antes do encode**, depois da vignette. Antes dela
+  os cantos escureceriam abaixo do piso. `validate.sh` guarda a ordem por
+  numero de linha;
+- **eixo de tint no balanco de branco.** `apply_temperature` so trocava R
+  contra B e nunca tocava em G, e as quatro referencias tem G como canal mais
+  alto -- o alvo era inalcancavel por qualquer combinacao dos valores
+  existentes;
+- **`blacks` da base de `-0.01` para `0.05`.** Somado aos dois deltas valia
+  `-0.06` e empurrava os pretos para baixo, contra o alvo. Agora soma zero;
+- **`tools/grade_report.py`.** Toda a serie 0.13.x foi calibrada no olho, e foi
+  assim que um efeito de cinco niveis em 255 sobreviveu tres versoes. A medida
+  vira ferramenta do repositorio;
+- **o RTGI para, desligado.** Nenhuma das cinco referencias mostra efeito que
+  exija tracado de raios: a luz de preenchimento da cabine e uniforme e sem
+  sangramento de cor, e o brilho dos mostradores ao anoitecer nao ilumina nada
+  em volta. O modulo nao esta descartado -- esta na direcao errada para este
+  alvo, e hoje empurra contra ele somando ruido e levantando meios-tons;
+- **`color_rejection` de `0.05` para `0.5`.** O `0.05` da 0.13.3 era erro meu: o
+  termo compara o frame atual com o historico, e num buffer de GI a diferenca
+  entre os dois e o ruido que a acumulacao existe para eliminar. A historia era
+  descartada todo frame, que e por que o granulado continuou visivel;
+- **`validate.sh`: o hash do shader visual passou para depois das guardas de
+  curva de tom**, pela mesma razao que o do cfg na 0.13.3 -- vindo antes, ele
+  saia com "Shader visual aprovado foi alterado" e as guardas nomeadas nunca
+  falavam. Quatro pinos nus viraram guardas com mensagem;
+- **bytecode**: so `PSMain` mudou (272 para 309 linhas). `VSMain` e os seis
+  outros entry points sairam byte-identicos ao HEAD anterior.
+
+Nao mudaram, de proposito: exposicao, contraste, saturacao e vibrance. A 0.13.2
+e a 0.13.3 moveram varias coisas de uma vez e nenhum A/B ficou interpretavel.
+
+Pendente: a faixa escura horizontal a ~84% da altura, presente desde a
+0.13.2.1. `PSRtgiCompose` so soma e a vignette e radial, entao nao sao eles; a
+hipotese principal e o SSAO, cuja calibracao foi aprovada sobre uma cascata de
+sombra antes de a 0.13.0 corrigir a elegibilidade do depth. Depende de teste em
+jogo.
+
 ## Pacote 0.13.3 + Photorealism FSR/AA 0.7.1 - 2026-08-30
 
 Acumulacao temporal do GI, e a recalibracao de escala que torna a versao

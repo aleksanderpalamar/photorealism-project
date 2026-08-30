@@ -18,6 +18,9 @@ struct Settings {
     float local_contrast;
     float sharpness;
     float vignette;
+    float black_lift;
+    float highlight_rolloff;
+    float tint;
     float depth_near_plane;
     float depth_preview_distance;
     float depth_vertical_fov;

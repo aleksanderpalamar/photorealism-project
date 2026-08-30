@@ -202,12 +202,71 @@ As fases:
   junto a recalibracao de `gi_intensity`, sem a qual a versao nao teria como
   ser avaliada; ver **A acumulacao e a escala**, abaixo. Detalhe em
   `references/rtgi-temporal-0.13.3.md`;
-- **0.13.4 (proxima)** denoiser bilateral depth-aware e normal-aware, que nao
+**As tres fases seguintes estao PAUSADAS desde a 0.14.0**, e a razao esta
+medida, nao suposta: as cinco referencias que definem o alvo visual nao mostram
+efeito nenhum que exija tracado de raios. Ver **A medicao que parou o RTGI**,
+abaixo. Ficam registradas para quando o alvo mudar:
+
+- **0.15.x (pausada)** denoiser bilateral depth-aware e normal-aware, que nao
   pode atravessar bordas. Leva junto o passe de exibicao da meia resolucao, que
   e o que falta para `debug=temporal_gi` mostrar o buffer acumulado;
-- **0.13.5** traversal Hi-Z sobre mips de depth; e o ponto em que compute
-  shader passa a valer o custo de introduzir UAVs no plugin;
-- **0.13.6** qualidade adaptativa e presets Low/Medium/High para a RX 6600.
+- **0.15.x (pausada)** traversal Hi-Z sobre mips de depth; e o ponto em que
+  compute shader passa a valer o custo de introduzir UAVs no plugin;
+- **0.15.x (pausada)** qualidade adaptativa e presets Low/Medium/High para a
+  RX 6600.
+
+### A medicao que parou o RTGI
+
+A 0.14.0 mediu os histogramas de cinco capturas do ATS com um shader de
+terceiros -- o alvo visual pedido -- contra a saida da 0.13.3:
+
+| | p1 | mediana | canal mais alto |
+|---|---|---|---|
+| Referencia (4 imagens) | **8–11** | 11–40 | **G** |
+| Plugin 0.13.3 (3 imagens) | **0** | 47–70 | **B** |
+
+Tres conclusoes, e a terceira e a que para o modulo:
+
+1. **a referencia nunca chega ao preto**, e o plugin batia em 0 nas tres
+   capturas. Era o `saturate()` sem toe, nao falta de luz;
+2. **a referencia e mais escura na mediana**, nao mais clara. A 0.13.2.1 e a
+   0.13.3 foram gastas somando ambiente para clarear a cabine, na direcao
+   oposta;
+3. **nenhuma das cinco referencias mostra efeito que exija tracado de raios.**
+   A luz de preenchimento da cabine e uniforme e sem sangramento de cor -- nao
+   ha verde da grama no painel nem vermelho do caminhao a frente -- e o brilho
+   dos mostradores ao anoitecer nao ilumina nada em volta. E AO, curva de tom e
+   grading.
+
+O RTGI **nao esta descartado**. Esta na direcao errada para este alvo, e hoje
+empurra contra ele em dois eixos: soma ruido onde a referencia e limpa, e
+levanta os meios-tons que precisam descer. Fica desligado
+(`[module.rtgi.0.12.0] enabled=false`) e as fases seguintes ficam pausadas.
+
+A licao de processo, que vale para tudo daqui em diante: **toda a serie 0.13.x
+foi calibrada no olho**, e foi assim que um efeito de cinco niveis em 255
+sobreviveu tres versoes sem que ninguem percebesse que era invisivel.
+`tools/grade_report.py` existe para que isso nao se repita.
+
+### A faixa escura
+
+Linha horizontal nitida, largura inteira, a ~84% da altura, tudo abaixo mais
+escuro. Presente nas capturas da 0.13.2.1 e da 0.13.3, interiores e exteriores.
+
+Descartado por leitura de codigo: `PSRtgiCompose` **so soma**
+(`cena + indirect * gi_intensity`), entao nao pode escurecer; e a vignette de
+`photorealism.hlsl` e radial e suave, com peso 0,03.
+
+Hipotese principal: o SSAO. `ssao.hlsl` faz
+`distance_fade = 1 - smoothstep(30, 70, center_distance)`, e em chao plano
+distancia constante e altura de tela constante -- a fronteira e horizontal por
+construcao. Reforca a hipotese que a calibracao de `radius`/`intensity`/`fade`
+foi aprovada sobre uma cascata de sombra, antes de a 0.13.0 corrigir a
+elegibilidade do depth. Ressalva: `smoothstep` da gradiente, nao aresta.
+
+Resolve em jogo, em ordem, sem recompilar: desligar o SSAO; se persistir,
+desligar a base do grading; se persistir, Insert nas posicoes 1 a 4 para ver o
+depth. E a 0.14.1.
 
 ### Marcha geometrica
 
@@ -388,11 +447,17 @@ Correcao da regra que rejeitava o depth de camera por construcao, e que mantinha
 RTGI, SSAO e resolve temporal sem fonte. Detalhe em
 `references/depth-eligibility-0.13.0.md`.
 
-- **0.13.7** recalibrar SSAO sobre o depth certo. Se o depth de camera
-  nunca foi usado, a calibracao aprovada nas versoes 0.7.0 a 0.9.1 foi feita
-  sobre uma cascata de sombra, e `radius`, `intensity` e `fade` precisam de nova
-  rodada A/B;
-- **0.14.0 (condicional)** upgrade de bind flag via hook de `CreateTexture2D`,
+- **0.14.1 (proxima)** recalibrar SSAO sobre o depth certo. Se o depth de
+  camera nunca foi usado, a calibracao aprovada nas versoes 0.7.0 a 0.9.1 foi
+  feita sobre uma cascata de sombra, e `radius`, `intensity` e `fade` precisam
+  de nova rodada A/B. **Subiu de prioridade na 0.14.0**: e a hipotese principal
+  para a faixa escura horizontal descrita abaixo;
+- **0.15.0** bloom. Visivel nas referencias -- o flare do sol na golden hour, o
+  brilho na borda do para-brisa -- e exige passes e recursos novos:
+  bright-pass, blur separavel, composicao. Ficou fora da 0.14.0 de proposito:
+  somar glare sobre uma curva de tom ainda nao calibrada torna as duas coisas
+  impossiveis de julgar separadamente;
+- **0.16.0 (condicional)** upgrade de bind flag via hook de `CreateTexture2D`,
   na tecnica do ReShade: promover o depth a typeless com
   `BIND_SHADER_RESOURCE`, sintetizando o descritor no `CreateDepthStencilView`.
   So entra se o `CopyResource` de um depth `DEPTH_STENCIL`-only falhar sob
