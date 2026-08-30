@@ -1,7 +1,6 @@
 #include "postprocess.hpp"
 
 #include "config.hpp"
-#include "fsr_bridge.hpp"
 #include "resource_observer.hpp"
 #include "runtime.hpp"
 #include "steam_screenshots.hpp"
@@ -364,7 +363,6 @@ public:
                 "RTGI 0.13.2 %s pelo atalho Page Up.",
                 settings_.rtgi.enabled ? "ativado" : "desativado");
         }
-        set_fsr_processing_enabled(settings_.enabled);
         if (!settings_.enabled) {
             return;
         }
@@ -391,7 +389,6 @@ public:
                 safe_release(frame_device);
                 return;
             }
-            initialize_fsr_module(device_);
             log_message("Pipeline D3D11 inicializado.");
         }
         safe_release(frame_device);
@@ -422,13 +419,6 @@ public:
             safe_release(back_buffer);
             return;
         }
-
-        report_fsr_frame(
-            back_buffer,
-            description.Width,
-            description.Height,
-            description.Format,
-            description.SampleDesc.Count);
 
         update_backbuffer_signature(
             description.Width, description.Height, description.Format);
@@ -551,14 +541,6 @@ public:
             }
         }
         safe_release(depth_candidate);
-
-        report_fsr_automatic_selection_context(
-            description.Width,
-            description.Height,
-            description.Format,
-            depth_available ? depth_description.Width : 0u,
-            depth_available ? depth_description.Height : 0u,
-            depth_available ? depth_generation : 0u);
 
         depth_preview_active =
             depth_available && depth_preview_mode_ >= 1 &&
@@ -1077,7 +1059,6 @@ public:
         if (swap_chain == nullptr) {
             return;
         }
-        reset_fsr_color_observation_for_resize();
         if (active_swap_chain_ == nullptr || active_swap_chain_ == swap_chain) {
             resize_in_progress_ = true;
             release_frame_resources();
@@ -2676,7 +2657,6 @@ private:
 
     void reset_device() {
         shutdown_steam_screenshots();
-        shutdown_fsr_device();
         release_frame_resources();
         release_gpu_timing();
         safe_release(vertex_shader_);

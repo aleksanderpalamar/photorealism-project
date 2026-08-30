@@ -1,5 +1,50 @@
 # Changelog
 
+## Pacote 0.15.0 - 2026-08-30
+
+Remocao completa do modulo FSR/AA auxiliar, a pedido do usuario. A 0.14.0
+acertou o alvo visual medido, e a conclusao foi que o foto-realismo pretendido
+sai de tonemap, coloracao, iluminacao, TAA/AA nativo e SSAO -- nenhum deles
+passa pelo FSR.
+
+O proprio log sustentava isso ha versoes: `replacement=0 dispatch=0`. O modulo
+nunca substituiu um draw nem despachou um passe.
+
+- **5.833 linhas apagadas** em 26 arquivos: os 18 de `src/fsr_*` mais a ABI e o
+  `.def`, `shaders/fsr1.hlsl`, `third_party/fidelityfx-fsr/`, os tres testes de
+  FSR e o `FSR_ROADMAP.md`. O historico do git preserva tudo, e a branch
+  `fsr-0.7.2-tiles` continua intacta;
+- **oito hooks de vtable removidos**, e este e o ganho que nao aparece no
+  diff: `PSSetShaderResources`, `RSSetState`, `RSSetViewports`,
+  `RSSetScissorRects`, `Draw`, `DrawIndexed`, `DrawIndexedInstanced` e
+  `DrawInstanced` existiam **so** para alimentar o FSR. Cada corpo era
+  `if (fsr_processing_enabled()) observe_fsr_*(...)`, e o ETS2 emite milhares
+  de draws por frame -- cada um pagava uma indirecao, um load atomico e um
+  branch para alimentar um modulo que nao fazia nada;
+- **os hooks de `OMSetRenderTargets` e da variante com UAVs ficaram**: a
+  descoberta de depth vive neles, e sem ela SSAO, resolve temporal e RTGI
+  perdem a fonte. Perderam so a chamada `observe_fsr_color_targets`;
+- **`photorealism-fsr.dll` deixa de existir.** A instalacao passa de tres
+  arquivos para dois, e o nome do pacote perde o segmento de FSR:
+  `photorealism-plugin-0.15.0-ets2-ats-1.60-proton`. `dxgi.dll` encolheu 7 KB;
+- **`native_aa` nao e FSR e ficou.** Ele administra o `r_aa` do jogo, que e o
+  TAA que o usuario quer manter -- o nome do pacote e que associava AA a FSR,
+  por historico;
+- **`validate.sh` ganhou duas guardas de nao-retorno**, uma para o codigo e
+  outra para os oito hooks. Uma remocao sem guarda volta sozinha na primeira
+  vez que alguem colar um trecho antigo. A primeira versao da guarda usava
+  `easu|rcas` no padrao e derrubava `grade_report.py`, que contem "m**easu**re";
+- **`README.md`**: as tres secoes de estado ainda descreviam a 0.11.3 e eram
+  quase inteiramente narrativa de FSR. Foram substituidas por uma secao atual.
+
+**Nenhum pixel muda.** Os sete entry points de shader sairam byte-identicos a
+0.14.0, e o modulo removido nunca executou nada. O que muda e o que deixa de
+ser executado a cada chamada de desenho.
+
+O RTGI continua no codigo, desligado. Sai numa versao propria: ele tem 377
+referencias dentro de `postprocess.cpp`, entrelacado com a cadeia que alimenta
+o grading e o SSAO, enquanto o FSR tinha 33 em dois arquivos.
+
 ## Pacote 0.14.0 + Photorealism FSR/AA 0.7.1 - 2026-08-30
 
 Mudanca de direcao, motivada por medicao. O usuario mostrou cinco capturas do

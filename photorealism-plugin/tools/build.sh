@@ -38,24 +38,9 @@ common_flags=(
   -Wextra \
   -Werror \
   -Wno-cast-function-type-mismatch \
-  "${project_dir}/src/fsr_module.cpp" \
-  "${project_dir}/src/fsr_device_capability_log.cpp" \
-  "${project_dir}/src/fsr_logging.cpp" \
-  "${project_dir}/src/fsr_rasterizer_shadow.cpp" \
-  "${project_dir}/src/fsr_runtime.cpp" \
-  "${project_dir}/src/photorealism-fsr.def" \
-  -o "${build_dir}/photorealism-fsr.dll"
-
-"${zig_bin}" c++ \
-  "${common_flags[@]}" \
-  -Wall \
-  -Wextra \
-  -Werror \
-  -Wno-cast-function-type-mismatch \
   "${project_dir}/src/dxgi_proxy.cpp" \
   "${project_dir}/src/hook.cpp" \
   "${project_dir}/src/postprocess.cpp" \
-  "${project_dir}/src/fsr_bridge.cpp" \
   "${project_dir}/src/steam_screenshots.cpp" \
   "${project_dir}/src/config.cpp" \
   "${project_dir}/src/resource_observer.cpp" \
@@ -67,4 +52,3 @@ common_flags=(
 
 echo "Gerado: ${build_dir}/dinput8.dll"
 echo "Gerado: ${build_dir}/dxgi.dll"
-echo "Gerado: ${build_dir}/photorealism-fsr.dll (AA/FSR 0.7.1 ABI v1-v6 revisao passiva de draws rejeitados; replacement=0 dispatch=0)"

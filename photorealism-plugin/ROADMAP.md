@@ -207,13 +207,35 @@ medida, nao suposta: as cinco referencias que definem o alvo visual nao mostram
 efeito nenhum que exija tracado de raios. Ver **A medicao que parou o RTGI**,
 abaixo. Ficam registradas para quando o alvo mudar:
 
-- **0.15.x (pausada)** denoiser bilateral depth-aware e normal-aware, que nao
+- **pausada** denoiser bilateral depth-aware e normal-aware, que nao
   pode atravessar bordas. Leva junto o passe de exibicao da meia resolucao, que
   e o que falta para `debug=temporal_gi` mostrar o buffer acumulado;
-- **0.15.x (pausada)** traversal Hi-Z sobre mips de depth; e o ponto em que
+- **pausada** traversal Hi-Z sobre mips de depth; e o ponto em que
   compute shader passa a valer o custo de introduzir UAVs no plugin;
-- **0.15.x (pausada)** qualidade adaptativa e presets Low/Medium/High para a
+- **pausada** qualidade adaptativa e presets Low/Medium/High para a
   RX 6600.
+
+### A remocao do FSR
+
+A 0.15.0 apagou o modulo de AA/FSR auxiliar inteiro: 5.833 linhas, 26
+arquivos, um DLL do pacote. A decisao foi do usuario, e a evidencia estava no
+proprio log ha versoes -- `replacement=0 dispatch=0`. O modulo nunca
+substituiu um draw nem despachou um passe.
+
+O ganho maior nao esta nas linhas apagadas. **Oito hooks de vtable existiam so
+para alimenta-lo** -- `PSSetShaderResources`, `RSSetState`, `RSSetViewports`,
+`RSSetScissorRects` e os quatro `Draw*` -- e o ETS2 emite milhares de draws por
+frame. Cada um pagava indirecao, load atomico e branch por um modulo inerte.
+
+Os hooks de `OMSetRenderTargets` e da variante com UAVs **ficaram**: a
+descoberta de depth vive neles, e sem ela SSAO, resolve temporal e RTGI ficam
+sem fonte. `native_aa` tambem ficou -- ele administra o `r_aa` do jogo, que e o
+TAA, e nunca teve relacao com FSR alem do nome do pacote.
+
+Duas guardas em `validate.sh` impedem o retorno: uma para o codigo, outra para
+os oito hooks. E a primeira versao dessa guarda usava `easu|rcas` no padrao e
+derrubava `grade_report.py`, que contem "m**easu**re" -- registrado aqui porque
+o mesmo tipo de colisao vai reaparecer na proxima guarda por substring.
 
 ### A medicao que parou o RTGI
 
@@ -447,17 +469,17 @@ Correcao da regra que rejeitava o depth de camera por construcao, e que mantinha
 RTGI, SSAO e resolve temporal sem fonte. Detalhe em
 `references/depth-eligibility-0.13.0.md`.
 
-- **0.14.1 (proxima)** recalibrar SSAO sobre o depth certo. Se o depth de
+- **0.15.1 (proxima)** recalibrar SSAO sobre o depth certo. Se o depth de
   camera nunca foi usado, a calibracao aprovada nas versoes 0.7.0 a 0.9.1 foi
   feita sobre uma cascata de sombra, e `radius`, `intensity` e `fade` precisam
   de nova rodada A/B. **Subiu de prioridade na 0.14.0**: e a hipotese principal
   para a faixa escura horizontal descrita abaixo;
-- **0.15.0** bloom. Visivel nas referencias -- o flare do sol na golden hour, o
+- **0.16.0** bloom. Visivel nas referencias -- o flare do sol na golden hour, o
   brilho na borda do para-brisa -- e exige passes e recursos novos:
   bright-pass, blur separavel, composicao. Ficou fora da 0.14.0 de proposito:
   somar glare sobre uma curva de tom ainda nao calibrada torna as duas coisas
   impossiveis de julgar separadamente;
-- **0.16.0 (condicional)** upgrade de bind flag via hook de `CreateTexture2D`,
+- **0.17.0 (condicional)** upgrade de bind flag via hook de `CreateTexture2D`,
   na tecnica do ReShade: promover o depth a typeless com
   `BIND_SHADER_RESOURCE`, sintetizando o descritor no `CreateDepthStencilView`.
   So entra se o `CopyResource` de um depth `DEPTH_STENCIL`-only falhar sob
