@@ -16,7 +16,6 @@ wchar_t g_shader_path[MAX_PATH] = {};
 wchar_t g_depth_preview_shader_path[MAX_PATH] = {};
 wchar_t g_ssao_shader_path[MAX_PATH] = {};
 wchar_t g_temporal_shader_path[MAX_PATH] = {};
-wchar_t g_rtgi_shader_path[MAX_PATH] = {};
 wchar_t g_log_path[MAX_PATH] = {};
 
 bool append_path(wchar_t* destination, size_t capacity, const wchar_t* suffix) {
@@ -65,8 +64,6 @@ BOOL CALLBACK initialize_paths(PINIT_ONCE, PVOID, PVOID*) {
     append_path(
         g_temporal_shader_path, MAX_PATH, L"\\shaders\\temporal.hlsl");
 
-    std::wcsncpy(g_rtgi_shader_path, g_plugin_root, MAX_PATH - 1);
-    append_path(g_rtgi_shader_path, MAX_PATH, L"\\shaders\\rtgi.hlsl");
 
     std::wcsncpy(g_log_path, g_plugin_root, MAX_PATH - 1);
     append_path(g_log_path, MAX_PATH, L"\\photorealism-plugin.log");
@@ -116,11 +113,6 @@ const wchar_t* ssao_shader_path() {
 const wchar_t* temporal_shader_path() {
     ensure_paths();
     return g_temporal_shader_path;
-}
-
-const wchar_t* rtgi_shader_path() {
-    ensure_paths();
-    return g_rtgi_shader_path;
 }
 
 void log_message(const char* format, ...) {

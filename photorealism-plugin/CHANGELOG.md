@@ -1,5 +1,46 @@
 # Changelog
 
+## Pacote 0.16.0 - 2026-08-30
+
+Remocao completa do RTGI, a pedido do usuario e pela mesma razao medida na
+0.14.0: nenhuma das cinco referencias que definem o alvo visual mostra efeito
+que exija tracado de raios. A luz de preenchimento da cabine e uniforme e **sem
+sangramento de cor** -- nao ha verde da grama no painel nem vermelho do
+caminhao a frente -- e o brilho dos mostradores ao anoitecer nao ilumina nada em
+volta. O modulo estava desligado desde entao.
+
+Com a 0.15.0, o plugin perdeu **17.000 linhas em duas versoes** e ficou com o
+que o visual realmente usa: curva de tom, coloracao, iluminacao, TAA/AA nativo
+e SSAO.
+
+- **1.252 linhas apagadas** em tres arquivos -- `shaders/rtgi.hlsl` com seus
+  tres entry points, `src/rtgi_config.hpp` e `tests/rtgi_config_test.cpp` --
+  mais 377 referencias em `postprocess.cpp`, 47 em `config.cpp` e a secao
+  `[module.rtgi.0.12.0]` do cfg;
+- **a cadeia do frame voltou a forma pre-0.13.2.** `grading_source` existia so
+  porque o passe de composicao podia substitui-lo; sem RTGI ele era sempre
+  `scene_view_`, e os tres `PSSetShaderResources` voltaram a ler a cena
+  diretamente;
+- **`Page Up` e `Page Down` deixaram de existir.** Eram do RTGI e de mais nada.
+  `Insert` passa de sete para **seis** posicoes, terminando na mascara de
+  visibilidade do SSAO;
+- **`references/rtgi-*.md` ficam** -- os cinco. Sao registro retrospectivo de
+  medicao, diferente do `FSR_ROADMAP.md`, que era plano futuro e saiu junto com
+  o codigo na 0.15.0. Um deles carrega a conta que redirecionou o projeto;
+- **guarda de nao-retorno** para o codigo e para as duas teclas, no molde da
+  0.15.0. O padrao e so `rtgi`, sem termo generico: na 0.15.0 um `easu` no
+  padrao casou com "m**easu**re" e derrubou `grade_report.py`.
+
+**Nenhum pixel muda.** Os cinco entry points restantes sairam byte-identicos a
+0.15.0, e o modulo estava desligado.
+
+Uma correcao de processo que a 0.15.0 tinha deixado passar: as guardas da curva
+de tom da 0.14.0 estavam posicionadas logo depois de `max_indirect_luma`, que
+era **chave do RTGI** -- e sairam junto com o bloco dele, em silencio. Foram
+recuperadas e movidas para junto dos outros pinos do cfg, com um comentario
+explicando por que o lugar importa. Guarda misturada com modulo alheio morre
+com o modulo alheio.
+
 ## Pacote 0.15.0 - 2026-08-30
 
 Remocao completa do modulo FSR/AA auxiliar, a pedido do usuario. A 0.14.0

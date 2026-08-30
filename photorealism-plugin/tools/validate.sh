@@ -115,30 +115,6 @@ if rg -n 'VK_|GetAsyncKeyState' \
   echo "A captura Steam nao pode consultar teclado." >&2
   exit 1
 fi
-
-# Page Up alterna o RTGI desde a 0.12.0, e so isso: precisa aparecer uma unica
-# vez, no passe de pos-processamento.
-if rg -n --glob '!postprocess.cpp' 'VK_PRIOR|PageUp' \
-    "${project_dir}/src" >/dev/null; then
-  echo "Page Up so pode existir no passe de pos-processamento." >&2
-  exit 1
-fi
-if [[ "$(grep -c 'VK_PRIOR' "${project_dir}/src/postprocess.cpp")" != "1" ]]; then
-  echo "Page Up precisa aparecer exatamente uma vez no postprocess." >&2
-  exit 1
-fi
-
-# Page Down cicla as debug views do RTGI, com a mesma regra.
-if rg -n --glob '!postprocess.cpp' 'VK_NEXT|PageDown' \
-    "${project_dir}/src" >/dev/null; then
-  echo "Page Down so pode existir no passe de pos-processamento." >&2
-  exit 1
-fi
-if [[ "$(grep -c 'VK_NEXT' "${project_dir}/src/postprocess.cpp")" != "1" ]]; then
-  echo "Page Down precisa aparecer exatamente uma vez no postprocess." >&2
-  exit 1
-fi
-
 if rg -n 'void Run\(void\* parameter, bool, std::uint64_t\).*Run\(parameter\)' \
     -U "${project_dir}/src/steam_screenshots.cpp" >/dev/null; then
   echo "Callback Steam call-result nao pode criar outra captura." >&2
@@ -264,26 +240,11 @@ grep -Fqx 'history_weight=0.65' "${cfg}"
 grep -Fqx 'depth_rejection=0.02' "${cfg}"
 grep -Fqx 'color_rejection=0.08' "${cfg}"
 
-# Modulo RTGI 0.12.0. Os valores vem do documento da tecnica; enabled=false
-# porque esta versao e andaime e nao traca raio nenhum.
-grep -Fqx '[module.rtgi.0.12.0]' "${cfg}"
-grep -Fqx 'resolution_scale=2' "${cfg}"
-grep -Fqx 'ray_count=4' "${cfg}"
-grep -Fqx 'max_steps=12' "${cfg}"
-grep -Fqx 'range_min=0.10' "${cfg}"
-grep -Fqx 'range_max=15.0' "${cfg}"
-# gi_intensity multiplica o GI inteiro na composicao, e ate a 0.13.2.1 valia
-# 0.15. Com sky_ambient tambem multiplicando, o teto do que um raio escapado
-# somava era 0,0375 linear e o raio tipico no painel ficava em ~0,008 -- cerca
-# de 5 niveis em 255. O efeito existia e nao dava para ver.
-if grep -Eq '^gi_intensity=0\.[0-2][0-9]*$' "${cfg}"; then
-  echo "gi_intensity voltou para a faixa em que o GI e invisivel: com \
-sky_ambient multiplicando junto, o painel ganha uns 5 niveis em 255." >&2
-  exit 1
-fi
-grep -Fqx 'gi_intensity=0.6' "${cfg}"
-grep -Fqx 'max_indirect_luma=4.0' "${cfg}"
-
+# As guardas da curva de tom vivem AQUI, junto dos outros pinos do cfg, e nao
+# no meio das chaves de outro modulo. Na 0.14.0 elas foram colocadas logo
+# depois de max_indirect_luma, que era chave do RTGI -- e sairam junto com ele
+# na 0.16.0, silenciosamente. Guarda misturada com modulo alheio morre com o
+# modulo alheio.
 # A curva de tom da 0.14.0. black_lift e o piso do preto: em zero o shader
 # volta ao saturate() sem toe da 0.13.3, que esmaga a sombra em 0 e transforma
 # o painel em massa preta. As quatro referencias do ATS medidas para esta
@@ -319,78 +280,6 @@ if ! grep -Fqx 'blacks=0.05' "${cfg}"; then
 negativo e empurra os pretos para baixo, contra o piso de black_lift." >&2
   exit 1
 fi
-# sky_ambient e a luz de um raio que escapa sem acertar nada. Em zero (o valor
-# ate a 0.13.2.1) o shader responde preto a todo "nao sei", e dentro da cabine
-# escapam todos os raios: o hemisferio de uma superficie virada para a camera e
-# o ar entre ela e o olho. Painel preto chapado dentro de um tunel iluminado.
-if grep -Eq '^sky_ambient=0(\.0+)?$' "${cfg}"; then
-  echo "sky_ambient voltou a zero: todo raio que escapa sem acertar nada volta \
-a devolver preto, e na cabine escapam todos." >&2
-  exit 1
-fi
-grep -Fqx 'sky_ambient=0.25' "${cfg}"
-# Os quatro parametros da acumulacao temporal, ativos desde a 0.13.3. As tres
-# rejeicoes sao multiplicadas em PSRtgiTemporal: qualquer uma zerada aceitaria
-# a historia de qualquer superficie, que e ghosting, e ghosting e o unico
-# defeito que a acumulacao introduz e nao consegue desfazer.
-rtgi_temporal_zero='^(history_weight|depth_rejection|normal_rejection'
-rtgi_temporal_zero="${rtgi_temporal_zero}|color_rejection)=0(\.0+)?$"
-if grep -Eq "${rtgi_temporal_zero}" "${cfg}"; then
-  echo "Parametro da acumulacao RTGI zerado: as tres rejeicoes sao \
-multiplicadas, e uma delas em zero descarta ou aceita tudo." >&2
-  exit 1
-fi
-for rtgi_temporal_pin in \
-  'history_weight=0.90' \
-  'depth_rejection=0.015' \
-  'normal_rejection=0.85' \
-  'color_rejection=0.5'; do
-  if ! grep -Fqx "${rtgi_temporal_pin}" "${cfg}"; then
-    echo "Parametro da acumulacao RTGI 0.13.3 fora do valor aprovado: \
-${rtgi_temporal_pin}" >&2
-    exit 1
-  fi
-done
-# As marcas de inercia saem junto com a entrega que as consome.
-for retired_marker in 'INERTE ate a 0.13.2' 'INERTE ate a 0.13.3'; do
-  if grep -Fq "${retired_marker}" "${cfg}"; then
-    echo "cfg ainda marca como inertes valores ja ligados: \
-${retired_marker}" >&2
-    exit 1
-  fi
-done
-# Politica de AA nativa: o TAA ligado e o que expoe o depth ao shader.
-grep -Fqx '[native_aa.0.12.2]' "${cfg}"
-grep -Fqx 'manage=true' "${cfg}"
-grep -Fqx 'r_aa=6' "${cfg}"
-grep -Fqx 'r_taa_luma_sharpen=1.5' "${cfg}"
-
-grep -Fqx 'hit_thickness=0.5' "${cfg}"
-grep -Fqx 'normal_bias=0.05' "${cfg}"
-grep -Fqx 'debug=final' "${cfg}"
-
-# O modulo RTGI 0.12.0 precisa estar compilado no nucleo, incluindo a tecla
-# Page Up e o aviso de que nenhum raio e tracado nesta versao.
-for rtgi_message in \
-  'RTGI 0.13.2 %s pelo atalho Page Up.' \
-  'Preview RTGI 0.13.1 pelo Page Down: debug=%s%s.' \
-  'Insert na posicao 6 para desenhar' \
-  'Recursos RTGI 0.13.2 criados' \
-  'Falha ao criar recursos RTGI 0.13.2' \
-  'Falha ao criar alvo de composicao RTGI 0.13.2' \
-  'marcha geometrica, o GI e somado a cena antes do grading' \
-  'hit_distance' \
-  'rtgi_0.13.2=%s' \
-  'rtgi_acumulacao_0.13.3=%s' \
-  'rtgi_composicao_0.13.2=%s' \
-  'Historico RTGI 0.13.3 criado' \
-  'Falha ao criar historico RTGI 0.13.3' \
-  'Historico RTGI 0.13.3 descartado'; do
-  if ! grep -Fq "${rtgi_message}" "${dxgi_strings}"; then
-    echo "Modulo RTGI ausente no nucleo DXGI: ${rtgi_message}" >&2
-    exit 1
-  fi
-done
 
 # Os hashes de depth-preview, ssao e temporal mudaram na 0.12.0: os tres
 # perderam suas copias de linearize_reversed_depth/reconstruct_view_* para o
@@ -402,7 +291,7 @@ done
 # O header entra no pino porque agora e a unica fonte da matematica usada
 # pelos tres shaders aprovados: alterar so ele mudaria os tres em silencio.
 depth_view_space_header="${project_dir}/shaders/depth_view_space.hlsli"
-expected_depth_view_space_sha256="e0e6f4ce484186b80a5e9ed676cbe22272f5ea188c1afba9f1a8fc93a36e1192"
+expected_depth_view_space_sha256="fda4531182a5b46b74c21eda30d679cd3952dc99a8cabba03ebf7041e24f4bd2"
 actual_depth_view_space_sha256="$(sha256sum "${depth_view_space_header}" | awk '{print $1}')"
 if [[ "${actual_depth_view_space_sha256}" != "${expected_depth_view_space_sha256}" ]]; then
   echo "Header depth/view-space aprovado foi alterado: ${actual_depth_view_space_sha256}" >&2
@@ -465,12 +354,6 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/tests/native_aa_config_test.cpp" \
   -o "${native_aa_config_test}"
 "${native_aa_config_test}"
-
-rtgi_config_test="/tmp/photorealism-rtgi-config-test"
-g++ -std=c++20 -Wall -Wextra -Werror \
-  "${project_dir}/tests/rtgi_config_test.cpp" \
-  -o "${rtgi_config_test}"
-"${rtgi_config_test}"
 
 # Os defaults internos de config.cpp valem quando o cfg some, e tone_curve_test
 # nao consegue ve-los: aquele arquivo e Windows-only e nao linka no Linux. A
@@ -578,7 +461,7 @@ effective_profile="$(awk -F= '
 # que importa. Uma guarda que explica uma regressao sutil so serve se for ela
 # a falar. Nesta ordem o hash continua pegando tudo que as guardas nao
 # cobrem, e so isso.
-expected_cfg_sha256="da6e5b3784e6823c1add7252a2eecc838e08c625e881926261e0303c7207d3f9"
+expected_cfg_sha256="b1d07b7e1f9eccdd1ab15b5422b5af234fb84a7900cdd1ae13e9dcbf57cde470"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
@@ -660,110 +543,29 @@ if ! grep -Fq 'carimbo de' "${roadmap}"; then
   exit 1
 fi
 
-# A 0.13.2 e o que faz o RTGI alterar a imagem. Tres coisas nao podem sumir sem
-# a versao deixar de entregar o que promete: a marcha geometrica (sem ela o
-# ponto cego de 0,5 a 1,71 m volta e a cabine fica fora do alcance), a
-# cobertura do interior como teste, e o passe de composicao.
-for rtgi_marker in \
-  'rtgi_step_ratio' \
-  'rtgi_sample_distance' \
-  'rtgi_samples_within'; do
-  if ! grep -Fq "${rtgi_marker}" "${project_dir}/src/rtgi_config.hpp"; then
-    echo "Marcha geometrica RTGI 0.13.2 incompleta: ${rtgi_marker}" >&2
+# O RTGI saiu inteiro na 0.16.0, pela mesma razao medida na 0.14.0: nenhuma das
+# cinco referencias que definem o alvo visual mostra efeito que exija tracado
+# de raios -- a luz de preenchimento da cabine e uniforme e sem sangramento de
+# cor. O padrao e so 'rtgi', sem termo generico: na 0.15.0 um 'easu' no padrao
+# casou com "measure" e derrubou grade_report.py.
+rtgi_leftovers="$(grep -rli 'rtgi' \
+  "${project_dir}/src" "${project_dir}/shaders" "${project_dir}/tests" \
+  "${project_dir}/tools" "${project_dir}/config" 2>/dev/null |
+  grep -v '/tools/validate\.sh$' || true)"
+if [[ -n "${rtgi_leftovers}" ]]; then
+  echo "RTGI reapareceu no codigo: ele foi removido na 0.16.0 porque o alvo \
+visual nao precisa dele, e voltar custa 1.252 linhas e um passe por frame." >&2
+  echo "${rtgi_leftovers}" >&2
+  exit 1
+fi
+# As duas teclas que ele usava tambem nao podem voltar sozinhas.
+for retired_key in 'VK_PRIOR' 'VK_NEXT'; do
+  if grep -Fq "${retired_key}" "${project_dir}/src/postprocess.cpp"; then
+    echo "Tecla aposentada na 0.16.0 voltou: ${retired_key}. Page Up e Page \
+Down existiam so para o RTGI." >&2
     exit 1
   fi
 done
-if grep -Fq 'rtgi_step_size' "${project_dir}/src/rtgi_config.hpp"; then
-  echo "rtgi_step_size sobreviveu a 0.13.2; o passo fixo foi substituido." >&2
-  exit 1
-fi
-grep -Fq 'PSRtgiCompose' "${project_dir}/shaders/rtgi.hlsl"
-
-# A 0.13.2.1 e o que faz o RTGI alcancar o interior. march_ray tem quatro
-# desfechos e so um deles e acerto real; os outros tres -- fora da tela, ceu, e
-# escape (passos esgotados ou plano proximo cruzado) -- precisam devolver o
-# MESMO termo de ambiente. Ate a 0.13.2 dois devolviam SkyAmbient e um devolvia
-# preto, e com sky_ambient=0.0 os tres devolviam preto.
-if ! grep -Fq 'float3 ambient_escape(float3 direction)' \
-  "${project_dir}/shaders/rtgi.hlsl"; then
-  echo "ambient_escape sumiu de rtgi.hlsl: os desfechos de nao-acerto perderam \
-o termo de ambiente comum." >&2
-  exit 1
-fi
-ambient_escape_sites="$(grep -c 'result.indirect = ambient_escape(direction);' \
-  "${project_dir}/shaders/rtgi.hlsl")"
-if [[ "${ambient_escape_sites}" != "3" ]]; then
-  echo "Escapes de march_ray com ambiente: ${ambient_escape_sites}, \
-esperado 3. Algum desfecho voltou a devolver preto." >&2
-  exit 1
-fi
-grep -Fq 'sky_ambient > 0.0f' "${project_dir}/tests/rtgi_config_test.cpp"
-grep -Fq 'PSRtgiCompose' "${project_dir}/src/postprocess.cpp"
-grep -Fq 'render_rtgi_compose_pass' "${project_dir}/src/postprocess.cpp"
-grep -Fq 'rtgi_samples_within' "${project_dir}/tests/rtgi_config_test.cpp"
-
-# A 0.13.3 e o que torna quatro raios por pixel um orcamento viavel: sem
-# acumular frames, o sorteio de direcao de cada raio vai inteiro para a tela
-# como cintilacao.
-if ! grep -Fq 'float4 PSRtgiTemporal(VertexOutput input) : SV_Target' \
-  "${project_dir}/shaders/rtgi.hlsl"; then
-  echo "PSRtgiTemporal sumiu de rtgi.hlsl: o GI volta a ser composto raio a \
-raio, sem acumulacao." >&2
-  exit 1
-fi
-# O hash por raio precisa ser inteiro. O sin() que estava aqui ate a 0.13.2.1
-# perde os bits baixos conforme o argumento cresce com o frame -- degrada
-# justamente ao longo dos minutos em que a acumulacao deveria estar somando.
-if ! grep -Fq 'uint pcg_hash(uint value)' "${project_dir}/shaders/rtgi.hlsl"
-then
-  echo "pcg_hash sumiu de rtgi.hlsl: o hash por raio volta a degradar com o \
-frame, e a acumulacao soma amostras cada vez piores." >&2
-  exit 1
-fi
-if ! grep -Fq 'float2 ray_random(uint2 pixel, uint frame, uint ray_index)' \
-  "${project_dir}/shaders/rtgi.hlsl"; then
-  echo "ray_random deixou de receber pixel, frame e raio como inteiros; e por \
-ai que o hash de ponto flutuante volta." >&2
-  exit 1
-fi
-# A constante existir nao basta: o que importa e o azimute ser girado por ela a
-# cada frame. Por isso a guarda e sobre o uso, e nao sobre o nome.
-if ! grep -Fq 'random.y = frac(random.y + frame_rotation);' \
-  "${project_dir}/shaders/rtgi.hlsl"; then
-  echo "A rotacao por frame sumiu de rtgi.hlsl: sem ela a acumulacao converge \
-para a media de amostras mal distribuidas." >&2
-  exit 1
-fi
-for rtgi_temporal_marker in \
-  'rtgi_history_alpha' \
-  'ensure_rtgi_temporal_resources' \
-  'render_rtgi_temporal_pass' \
-  'invalidate_rtgi_history'; do
-  if ! grep -Fq "${rtgi_temporal_marker}" \
-    "${project_dir}/src/postprocess.cpp" \
-    "${project_dir}/src/rtgi_config.hpp"; then
-    echo "Acumulacao RTGI 0.13.3 incompleta: ${rtgi_temporal_marker}" >&2
-    exit 1
-  fi
-done
-# As duas regressoes da 0.13.3 que so o teste pode provar. Guardas nomeadas, e
-# nao greps nus: um grep nu sob `set -e` derruba a validacao sem dizer nada, e
-# uma guarda muda nao guarda coisa alguma.
-rtgi_test="${project_dir}/tests/rtgi_config_test.cpp"
-# A asserta em si, e nao o nome: com o nome bastando, a declaracao `using` no
-# topo do teste ja satisfaria a guarda com zero cobertura.
-if ! grep -Fq 'rtgi_history_alpha(0.90f, 1.0f, 0.0f, 1.0f) == 0.0f' \
-  "${rtgi_test}"; then
-  echo "O teste parou de provar que UMA rejeicao zerada descarta a historia \
-inteira: e o que separa acumular de borrar." >&2
-  exit 1
-fi
-if ! grep -Fq 'normal_rejection > 0.0f' "${rtgi_test}"; then
-  echo "O teste parou de exigir normal_rejection maior que zero: com ele em \
-zero a historia e aceita de qualquer normal, que e ghosting na quina do \
-painel contra o para-brisa." >&2
-  exit 1
-fi
 
 # O FSR saiu inteiro na 0.15.0: 5.833 linhas, um DLL e oito hooks de vtable que
 # existiam so para alimenta-lo, custando uma indirecao em toda chamada de

@@ -202,18 +202,9 @@ As fases:
   junto a recalibracao de `gi_intensity`, sem a qual a versao nao teria como
   ser avaliada; ver **A acumulacao e a escala**, abaixo. Detalhe em
   `references/rtgi-temporal-0.13.3.md`;
-**As tres fases seguintes estao PAUSADAS desde a 0.14.0**, e a razao esta
-medida, nao suposta: as cinco referencias que definem o alvo visual nao mostram
-efeito nenhum que exija tracado de raios. Ver **A medicao que parou o RTGI**,
-abaixo. Ficam registradas para quando o alvo mudar:
-
-- **pausada** denoiser bilateral depth-aware e normal-aware, que nao
-  pode atravessar bordas. Leva junto o passe de exibicao da meia resolucao, que
-  e o que falta para `debug=temporal_gi` mostrar o buffer acumulado;
-- **pausada** traversal Hi-Z sobre mips de depth; e o ponto em que
-  compute shader passa a valer o custo de introduzir UAVs no plugin;
-- **pausada** qualidade adaptativa e presets Low/Medium/High para a
-  RX 6600.
+**As tres fases seguintes de RTGI foram removidas do roteiro na 0.16.0**,
+junto com o modulo. A razao esta medida em **A medicao que parou o RTGI**,
+abaixo, e o historico fica nos cinco `references/rtgi-*.md`.
 
 ### A remocao do FSR
 
@@ -469,17 +460,17 @@ Correcao da regra que rejeitava o depth de camera por construcao, e que mantinha
 RTGI, SSAO e resolve temporal sem fonte. Detalhe em
 `references/depth-eligibility-0.13.0.md`.
 
-- **0.15.1 (proxima)** recalibrar SSAO sobre o depth certo. Se o depth de
+- **0.16.1 (proxima)** recalibrar SSAO sobre o depth certo. Se o depth de
   camera nunca foi usado, a calibracao aprovada nas versoes 0.7.0 a 0.9.1 foi
   feita sobre uma cascata de sombra, e `radius`, `intensity` e `fade` precisam
   de nova rodada A/B. **Subiu de prioridade na 0.14.0**: e a hipotese principal
   para a faixa escura horizontal descrita abaixo;
-- **0.16.0** bloom. Visivel nas referencias -- o flare do sol na golden hour, o
+- **0.17.0** bloom. Visivel nas referencias -- o flare do sol na golden hour, o
   brilho na borda do para-brisa -- e exige passes e recursos novos:
   bright-pass, blur separavel, composicao. Ficou fora da 0.14.0 de proposito:
   somar glare sobre uma curva de tom ainda nao calibrada torna as duas coisas
   impossiveis de julgar separadamente;
-- **0.17.0 (condicional)** upgrade de bind flag via hook de `CreateTexture2D`,
+- **0.18.0 (condicional)** upgrade de bind flag via hook de `CreateTexture2D`,
   na tecnica do ReShade: promover o depth a typeless com
   `BIND_SHADER_RESOURCE`, sintetizando o descritor no `CreateDepthStencilView`.
   So entra se o `CopyResource` de um depth `DEPTH_STENCIL`-only falhar sob

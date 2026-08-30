@@ -51,7 +51,7 @@ int main() {
         "  r_taa_luma_sharpen=1.5\r\n"
         "# r_taa_tuning=99\n"
         "\n"
-        "[module.rtgi.0.12.0]\n"
+        "[native_aa.0.12.2]\n"
         "r_aa=999\n";
     assert(plugin_config_value(plugin_config, "native_aa.0.12.2", "manage") ==
            "true");

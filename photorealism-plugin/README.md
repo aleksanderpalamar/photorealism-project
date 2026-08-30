@@ -9,7 +9,7 @@ Autor: Palamar
 O shader e compilado em tempo de execucao por `d3dcompiler_47.dll`, componente
 normalmente fornecido pelo ambiente Proton.
 
-## Estado da versao 0.15.0
+## Estado da versao 0.16.0
 
 O visual sai de cinco coisas, e so delas: curva de tom, coloracao, iluminacao,
 TAA/AA nativo e SSAO. A 0.14.0 acertou o alvo medido -- o piso do preto passou
@@ -17,7 +17,7 @@ de 0 para 7-8 em 255, e o canal dominante de azul para verde, que e a
 assinatura das referencias usadas como alvo. `tools/grade_report.py` mede isso
 e esta no repositorio para que a calibracao nao volte a ser feita no olho.
 
-A 0.15.0 **remove o modulo de upscaling** que acompanhava o plugin desde a
+A 0.15.0 removeu o **modulo de upscaling** que acompanhava o plugin desde a
 0.1.0. Ele nunca substituiu um draw nem despachou um passe -- o log registrava
 `replacement=0 dispatch=0` havia varias versoes -- e custava 5.833 linhas, um
 DLL no pacote e oito hooks de vtable. Esses oito rodavam em **toda chamada de
@@ -30,11 +30,12 @@ A instalacao passou de tres arquivos para dois:
 - `dxgi.dll`: proxy DXGI e nucleo grafico que controla hook, shader,
   configuracao e log.
 
-O modulo RTGI continua no codigo, desligado por padrao
-(`[module.rtgi.0.12.0] enabled=false`). As referencias visuais que definem o
-alvo nao mostram efeito que exija tracado de raios: a luz de preenchimento da
-cabine e uniforme e sem sangramento de cor. Detalhe em
-`references/tone-curve-0.14.0.md`.
+A 0.16.0 remove o RTGI pela mesma razao medida: as referencias visuais que
+definem o alvo nao mostram efeito que exija tracado de raios -- a luz de
+preenchimento da cabine e uniforme e sem sangramento de cor, e o brilho dos
+mostradores ao anoitecer nao ilumina nada em volta. Detalhe em
+`references/tone-curve-0.14.0.md`; o historico do modulo fica nos cinco
+documentos `references/rtgi-*.md`.
 
 O bootstrap reconhece exclusivamente `eurotrucks2.exe` e `amtrucks.exe`. Ele
 cria `config.photorealism-native-aa.backup.cfg` no Documents do jogo e altera
@@ -250,9 +251,7 @@ Atalhos:
   depth; nao e necessario para ativar SSAO ou temporal.
 - `Insert`: e a unica tecla do diagnostico; cada toque percorre `normal`,
   `raw`, `reversed-Z realcado`, `distancia linear`, `normais reconstruidas`,
-  `mascara de visibilidade SSAO`, `normais RTGI` e volta ao normal com SSAO.
-- `Page Up`: liga ou desliga o RTGI 0.12.0 sem sair do jogo, para comparacao
-  A/B direta; `End` restaura o que o arquivo de configuracao diz.
+  `mascara de visibilidade SSAO` e volta ao normal com SSAO.
 
 O log sera criado em:
 
@@ -270,8 +269,8 @@ fallback.
 O SSAO usa uma projecao aproximada configurada por FOV. O resolve temporal
 0.10.0 nao possui matriz de movimento, vetores por pixel nem jitter proprio:
 ele busca correspondencia local 3x3 e rejeita historico em vez de fazer
-reprojecao completa. Isso vale tambem para a acumulacao do RTGI, e e um limite
-do plugin rodar no `Present`, sem acesso as matrizes de camera do jogo.
+reprojecao completa. E um limite de o plugin rodar no `Present`, sem acesso as
+matrizes de camera do jogo.
 
 DLSS, motion blur baseado em vetores, subsurface scattering, materiais de
 estrada, chuva e espelhos nao fazem parte do escopo. Bloom e a proxima etapa

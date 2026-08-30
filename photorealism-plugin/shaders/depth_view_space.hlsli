@@ -5,7 +5,7 @@
 //
 // Antes da 0.12.0 estas funcoes estavam duplicadas em ssao.hlsl,
 // temporal.hlsl e depth-preview.hlsl, com tres corpos que precisavam ser
-// mantidos em sincronia a mao. O SSRTGI precisa exatamente das mesmas
+// mantidos em sincronia a mao. O SSAO e o resolve temporal precisam das
 // funcoes, e uma quarta copia seria insustentavel.
 //
 // Tudo aqui recebe por parametro o que antes vinha de cbuffer (NearPlane,

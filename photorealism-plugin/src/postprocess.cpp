@@ -136,36 +136,6 @@ static_assert(
     sizeof(TemporalConstants) == 32,
     "temporal constant buffer must be aligned");
 
-struct RtgiConstants {
-    float depth_texel_size[2];
-    float projection_scale[2];
-    float near_plane;
-    float ray_count;
-    float max_steps;
-    float range_min;
-    float range_max;
-    float gi_intensity;
-    float max_indirect_luma;
-    float sky_ambient;
-    float hit_thickness;
-    float normal_bias;
-    float debug_mode;
-    float output_needs_srgb_encode;
-    float input_needs_srgb_decode;
-    float frame_index;
-    float rtgi_texel_size[2];
-    float history_weight;
-    float depth_rejection;
-    float normal_rejection;
-    float color_rejection;
-    float history_valid;
-    float padding[3];
-};
-
-static_assert(
-    sizeof(RtgiConstants) == 112,
-    "RTGI constant buffer must be aligned");
-
 struct SavedState {
     ID3D11RenderTargetView* render_targets[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT] = {};
     ID3D11DepthStencilView* depth_target = nullptr;
@@ -300,10 +270,6 @@ public:
             if (device_ != nullptr) {
                 compile_shaders();
             }
-            // O cfg recarregado pode ter mudado alcance, numero de raios ou
-            // debug, e a historia acumulada foi tracada com os valores
-            // antigos. Somar as duas coisas seria misturar duas calibracoes.
-            invalidate_rtgi_history("cfg recarregado pelo End");
             release_depth_capture_resources();
             restart_depth_discovery();
             log_message(
@@ -311,7 +277,7 @@ public:
                 "pelo atalho End.");
         }
         if (key_pressed_once(VK_INSERT, &insert_key_down_)) {
-            depth_preview_mode_ = (depth_preview_mode_ + 1) % 7;
+            depth_preview_mode_ = (depth_preview_mode_ + 1) % 6;
             invalidate_temporal_history("mudanca de preview Insert");
             depth_preview_wait_logged_ = false;
             depth_preview_logged_mode_ = 0;
@@ -326,42 +292,11 @@ public:
                 mode_name = "reconstructed-normals";
             } else if (depth_preview_mode_ == 5) {
                 mode_name = "ssao-visibility";
-            } else if (depth_preview_mode_ == 6) {
-                mode_name = rtgi::rtgi_debug_mode_name(rtgi_preview_debug_);
             }
             log_message(
                 "Preview depth solicitado pelo Insert: mode=%u(%s).",
                 depth_preview_mode_,
                 mode_name);
-        }
-        // Page Down sempre cicla e sempre loga. Ate a 0.13.0 ele so tinha
-        // efeito com o Insert na posicao 6, e fora dela a tecla era consumida
-        // sem efeito e sem registro -- uma tecla que some sem deixar rastro e
-        // indiagnosticavel. O modo do Insert decide apenas se o resultado e
-        // desenhado.
-        if (key_pressed_once(VK_NEXT, &page_down_key_down_)) {
-            rtgi_preview_debug_ =
-                rtgi::next_rtgi_preview_debug(rtgi_preview_debug_);
-            log_message(
-                "Preview RTGI 0.13.1 pelo Page Down: debug=%s%s.",
-                rtgi::rtgi_debug_mode_name(rtgi_preview_debug_),
-                depth_preview_mode_ == 6
-                    ? ""
-                    : "; Insert na posicao 6 para desenhar");
-        }
-        // Page Up existe para comparacao A/B direta do RTGI, sem sair do
-        // jogo e sem editar o cfg. A recarga por End volta a valer o que o
-        // arquivo diz.
-        if (key_pressed_once(VK_PRIOR, &page_up_key_down_)) {
-            settings_.rtgi.enabled = !settings_.rtgi.enabled;
-            rtgi_active_logged_generation_ = 0;
-            rtgi_wait_logged_ = false;
-            if (!settings_.rtgi.enabled) {
-                release_rtgi_resources();
-            }
-            log_message(
-                "RTGI 0.13.2 %s pelo atalho Page Up.",
-                settings_.rtgi.enabled ? "ativado" : "desativado");
         }
         if (!settings_.enabled) {
             return;
@@ -462,9 +397,6 @@ public:
         bool depth_preview_active = false;
         bool ssao_preview_active = false;
         bool ssao_active = false;
-        bool rtgi_preview_active = false;
-        bool rtgi_active = false;
-        bool rtgi_temporal_active = false;
         bool temporal_active = false;
         ID3D11Texture2D* depth_candidate = nullptr;
         D3D11_TEXTURE2D_DESC depth_description = {};
@@ -473,7 +405,7 @@ public:
         bool depth_candidate_invalidated = false;
         const bool depth_requested =
             settings_.ssao_enabled || settings_.temporal_enabled ||
-            settings_.rtgi.enabled || depth_preview_mode_ != 0;
+            depth_preview_mode_ != 0;
         if (depth_requested &&
             acquire_depth_candidate(
                 &depth_candidate,
@@ -548,22 +480,6 @@ public:
         ssao_preview_active =
             depth_available && depth_preview_mode_ == 5 &&
             ssao_shader_ != nullptr;
-        rtgi_preview_active =
-            depth_available && depth_preview_mode_ == 6 &&
-            rtgi_shader_ != nullptr;
-        // O passe de GI roda antes do grading, para que exposure, contraste e
-        // LUT alcancem tanto a luz direta quanto a indireta.
-        if (depth_available && depth_preview_mode_ == 0 &&
-            settings_.rtgi.enabled && rtgi_shader_ != nullptr) {
-            rtgi_active = ensure_rtgi_resources(description, depth_generation);
-            if (rtgi_active) {
-                rtgi_temporal_active =
-                    ensure_rtgi_temporal_resources(depth_description);
-            }
-        }
-        if (!rtgi_temporal_active) {
-            invalidate_rtgi_history("passe de acumulacao indisponivel");
-        }
         ssao_active =
             depth_available && depth_preview_mode_ == 0 &&
             settings_.ssao_enabled && ssao_shader_ != nullptr &&
@@ -667,45 +583,12 @@ public:
             temporal_wait_logged_ = true;
         }
 
-        if (rtgi_active) {
-            rtgi_wait_logged_ = false;
-            if (rtgi_active_logged_generation_ != depth_generation) {
-                log_message(
-                    "RTGI 0.13.2 ativo: source=%ux%u rtgi=%ux%u rays=%u "
-                    "steps=%u range=%.2f-%.2f thickness=%.2f intensity=%.3f "
-                    "debug=%s composicao=%s generation=%llu; marcha "
-                    "geometrica, o GI e somado a cena antes do grading.",
-                    description.Width,
-                    description.Height,
-                    rtgi_width_,
-                    rtgi_height_,
-                    settings_.rtgi.ray_count,
-                    settings_.rtgi.max_steps,
-                    settings_.rtgi.range_min,
-                    settings_.rtgi.range_max,
-                    settings_.rtgi.hit_thickness,
-                    settings_.rtgi.gi_intensity,
-                    rtgi::rtgi_debug_mode_name(settings_.rtgi.debug),
-                    rtgi_compose_shader_ != nullptr ? "ok" : "indisponivel",
-                    static_cast<unsigned long long>(depth_generation));
-                rtgi_active_logged_generation_ = depth_generation;
-            }
-        } else if (depth_preview_mode_ == 0 && settings_.rtgi.enabled &&
-                   !rtgi_wait_logged_) {
-            log_message(
-                "RTGI 0.13.2 aguardando depth e recursos validos; "
-                "a pilha visual permanece intacta.");
-            rtgi_wait_logged_ = true;
-        }
 
         if (!depth_preview_active) {
             context_->CopyResource(scene_texture_, back_buffer);
-            // O modo 6 tem caminho proprio (rtgi_preview_active); sem
-            // exclui-lo aqui, ele logava "aguardando candidato valido" mesmo
-            // com o depth disponivel -- e foi essa linha que levou a leitura
             // errada de que o depth faltava no modo 6.
             if (depth_preview_mode_ != 0 && !ssao_preview_active &&
-                !rtgi_preview_active && !depth_preview_wait_logged_) {
+                !depth_preview_wait_logged_) {
                 log_message(
                     "Diagnostico depth/SSAO aguardando candidato valido; "
                     "o passe visual normal permanece ativo.");
@@ -829,48 +712,6 @@ public:
             0,
             0);
 
-        RtgiConstants rtgi_constants = {};
-        rtgi_constants.depth_texel_size[0] = depth_texel_x;
-        rtgi_constants.depth_texel_size[1] = depth_texel_y;
-        rtgi_constants.projection_scale[0] = projection_x;
-        rtgi_constants.projection_scale[1] = projection_y;
-        rtgi_constants.near_plane = settings_.depth_near_plane;
-        rtgi_constants.ray_count =
-            static_cast<float>(settings_.rtgi.ray_count);
-        rtgi_constants.max_steps =
-            static_cast<float>(settings_.rtgi.max_steps);
-        rtgi_constants.range_min = settings_.rtgi.range_min;
-        rtgi_constants.range_max = settings_.rtgi.range_max;
-        rtgi_constants.gi_intensity = settings_.rtgi.gi_intensity;
-        rtgi_constants.max_indirect_luma = settings_.rtgi.max_indirect_luma;
-        rtgi_constants.sky_ambient = settings_.rtgi.sky_ambient;
-        rtgi_constants.hit_thickness = settings_.rtgi.hit_thickness;
-        rtgi_constants.normal_bias = settings_.rtgi.normal_bias;
-        // Sem decodificar para linear, o bounce seria calculado sobre valores
-        // sRGB e o GI sairia claro demais nas sombras.
-        rtgi_constants.input_needs_srgb_decode =
-            scene_needs_srgb_decode_ ? 1.0f : 0.0f;
-        // No preview quem manda e o Page Down; no passe de trabalho, o cfg.
-        rtgi_constants.debug_mode = rtgi_preview_active
-            ? static_cast<float>(rtgi_preview_debug_)
-            : static_cast<float>(settings_.rtgi.debug);
-        rtgi_constants.output_needs_srgb_encode =
-            rtgi_preview_active && output_needs_srgb_encode ? 1.0f : 0.0f;
-        rtgi_constants.frame_index =
-            static_cast<float>(rtgi_frame_index_ & 0xFFFFull);
-        // Texel do buffer de GI, e nao do depth: o clamp de vizinhanca de
-        // PSRtgiTemporal anda pelos vizinhos da meia resolucao.
-        rtgi_constants.rtgi_texel_size[0] =
-            1.0f / static_cast<float>(rtgi_width_ > 0 ? rtgi_width_ : 1u);
-        rtgi_constants.rtgi_texel_size[1] =
-            1.0f / static_cast<float>(rtgi_height_ > 0 ? rtgi_height_ : 1u);
-        rtgi_constants.history_weight = settings_.rtgi.history_weight;
-        rtgi_constants.depth_rejection = settings_.rtgi.depth_rejection;
-        rtgi_constants.normal_rejection = settings_.rtgi.normal_rejection;
-        rtgi_constants.color_rejection = settings_.rtgi.color_rejection;
-        rtgi_constants.history_valid = rtgi_history_valid_ ? 1.0f : 0.0f;
-        context_->UpdateSubresource(
-            rtgi_constant_buffer_, 0, nullptr, &rtgi_constants, 0, 0);
 
         D3D11_VIEWPORT viewport = {};
         viewport.Width = static_cast<float>(description.Width);
@@ -888,37 +729,7 @@ public:
         context_->HSSetShader(nullptr, nullptr, 0);
         context_->DSSetShader(nullptr, nullptr, 0);
 
-        // O GI e resolvido uma vez por frame, em meia resolucao, antes de
-        // qualquer coisa que escreva no backbuffer. Desde a 0.13.2 o passe de
-        // composicao soma esse buffer a cor de cena, e o grading passa a ler o
-        // resultado -- e por isso que exposure, contraste e LUT alcancam tanto
-        // a luz direta quanto a indireta, sem que photorealism.hlsl mude.
-        ID3D11ShaderResourceView* grading_source = scene_view_;
-        if (rtgi_active) {
-            render_rtgi_pass(rtgi_target_, rtgi_width_, rtgi_height_);
-            // Sem acumulacao a composicao le a marcha crua, exatamente como na
-            // 0.13.2.1. Com acumulacao ela le o resolvido, e as duas copias
-            // preparam o frame seguinte.
-            ID3D11ShaderResourceView* gi_source = rtgi_view_;
-            if (rtgi_temporal_active && render_rtgi_temporal_pass()) {
-                gi_source = rtgi_resolved_view_;
-                context_->CopyResource(
-                    rtgi_history_texture_, rtgi_resolved_texture_);
-                context_->CopyResource(
-                    rtgi_depth_history_texture_, depth_copy_texture_);
-                rtgi_history_valid_ = true;
-            }
-            ID3D11ShaderResourceView* composed =
-                render_rtgi_compose_pass(description, gi_source);
-            if (composed != nullptr) {
-                grading_source = composed;
-            }
-            context_->RSSetViewports(1, &viewport);
-        }
-
-        if (rtgi_preview_active) {
-            render_rtgi_pass(output, description.Width, description.Height);
-        } else if (depth_preview_active) {
+        if (depth_preview_active) {
             context_->OMSetRenderTargets(1, &output, nullptr);
             context_->PSSetShader(depth_preview_shader_, nullptr, 0);
             context_->PSSetShaderResources(0, 1, &depth_copy_view_);
@@ -939,7 +750,7 @@ public:
         } else if (temporal_active) {
             context_->OMSetRenderTargets(1, &visual_target_, nullptr);
             context_->PSSetShader(pixel_shader_, nullptr, 0);
-            context_->PSSetShaderResources(0, 1, &grading_source);
+            context_->PSSetShaderResources(0, 1, &scene_view_);
             context_->PSSetSamplers(0, 1, &sampler_state_);
             context_->PSSetConstantBuffers(0, 1, &constant_buffer_);
             context_->Draw(3, 0);
@@ -997,7 +808,7 @@ public:
         } else if (ssao_active) {
             context_->OMSetRenderTargets(1, &visual_target_, nullptr);
             context_->PSSetShader(pixel_shader_, nullptr, 0);
-            context_->PSSetShaderResources(0, 1, &grading_source);
+            context_->PSSetShaderResources(0, 1, &scene_view_);
             context_->PSSetSamplers(0, 1, &sampler_state_);
             context_->PSSetConstantBuffers(0, 1, &constant_buffer_);
             context_->Draw(3, 0);
@@ -1016,7 +827,7 @@ public:
         } else {
             context_->OMSetRenderTargets(1, &output, nullptr);
             context_->PSSetShader(pixel_shader_, nullptr, 0);
-            context_->PSSetShaderResources(0, 1, &grading_source);
+            context_->PSSetShaderResources(0, 1, &scene_view_);
             context_->PSSetSamplers(0, 1, &sampler_state_);
             context_->PSSetConstantBuffers(0, 1, &constant_buffer_);
             context_->Draw(3, 0);
@@ -1186,16 +997,6 @@ private:
             return false;
         }
 
-        buffer_description.ByteWidth = sizeof(RtgiConstants);
-        result = device_->CreateBuffer(
-            &buffer_description, nullptr, &rtgi_constant_buffer_);
-        if (FAILED(result)) {
-            log_message(
-                "Falha ao criar constant buffer RTGI: 0x%08X.",
-                static_cast<unsigned>(result));
-            return false;
-        }
-
         D3D11_SAMPLER_DESC sampler_description = {};
         sampler_description.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
         sampler_description.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
@@ -1269,9 +1070,6 @@ private:
         ID3DBlob* depth_preview_blob = nullptr;
         ID3DBlob* ssao_blob = nullptr;
         ID3DBlob* temporal_blob = nullptr;
-        ID3DBlob* rtgi_blob = nullptr;
-        ID3DBlob* rtgi_temporal_blob = nullptr;
-        ID3DBlob* rtgi_compose_blob = nullptr;
         ID3DBlob* errors = nullptr;
 
         HRESULT result = compile_from_file(
@@ -1359,68 +1157,11 @@ private:
         }
         safe_release(errors);
 
-        const HRESULT rtgi_compile_result = compile_from_file(
-            rtgi_shader_path(),
-            nullptr,
-            D3D_COMPILE_STANDARD_FILE_INCLUDE,
-            "PSRtgi",
-            "ps_5_0",
-            flags,
-            0,
-            &rtgi_blob,
-            &errors);
-        if (FAILED(rtgi_compile_result)) {
-            log_compile_error("RTGI", rtgi_compile_result, errors);
-            safe_release(rtgi_blob);
-        }
-        safe_release(errors);
-
-        // Segundo entry point do mesmo arquivo: a acumulacao reaproveita o
-        // cbuffer e os helpers de view-space do passe de marcha.
-        const HRESULT rtgi_temporal_compile_result = compile_from_file(
-            rtgi_shader_path(),
-            nullptr,
-            D3D_COMPILE_STANDARD_FILE_INCLUDE,
-            "PSRtgiTemporal",
-            "ps_5_0",
-            flags,
-            0,
-            &rtgi_temporal_blob,
-            &errors);
-        if (FAILED(rtgi_temporal_compile_result)) {
-            log_compile_error(
-                "acumulacao RTGI", rtgi_temporal_compile_result, errors);
-            safe_release(rtgi_temporal_blob);
-        }
-        safe_release(errors);
-
-        // Terceiro entry point do mesmo arquivo: a composicao reaproveita o
-        // cbuffer e o tratamento de sRGB do passe de marcha.
-        const HRESULT rtgi_compose_compile_result = compile_from_file(
-            rtgi_shader_path(),
-            nullptr,
-            D3D_COMPILE_STANDARD_FILE_INCLUDE,
-            "PSRtgiCompose",
-            "ps_5_0",
-            flags,
-            0,
-            &rtgi_compose_blob,
-            &errors);
-        if (FAILED(rtgi_compose_compile_result)) {
-            log_compile_error(
-                "composicao RTGI", rtgi_compose_compile_result, errors);
-            safe_release(rtgi_compose_blob);
-        }
-        safe_release(errors);
-
         ID3D11VertexShader* new_vertex_shader = nullptr;
         ID3D11PixelShader* new_pixel_shader = nullptr;
         ID3D11PixelShader* new_depth_preview_shader = nullptr;
         ID3D11PixelShader* new_ssao_shader = nullptr;
         ID3D11PixelShader* new_temporal_shader = nullptr;
-        ID3D11PixelShader* new_rtgi_shader = nullptr;
-        ID3D11PixelShader* new_rtgi_temporal_shader = nullptr;
-        ID3D11PixelShader* new_rtgi_compose_shader = nullptr;
         result = device_->CreateVertexShader(
             vertex_blob->GetBufferPointer(),
             vertex_blob->GetBufferSize(),
@@ -1476,57 +1217,11 @@ private:
             }
         }
 
-        if (rtgi_blob != nullptr) {
-            const HRESULT rtgi_create_result = device_->CreatePixelShader(
-                rtgi_blob->GetBufferPointer(),
-                rtgi_blob->GetBufferSize(),
-                nullptr,
-                &new_rtgi_shader);
-            if (FAILED(rtgi_create_result)) {
-                log_message(
-                    "Falha ao criar shader RTGI: 0x%08X.",
-                    static_cast<unsigned>(rtgi_create_result));
-                safe_release(new_rtgi_shader);
-            }
-        }
-
-        if (rtgi_temporal_blob != nullptr) {
-            const HRESULT temporal_gi_create_result =
-                device_->CreatePixelShader(
-                    rtgi_temporal_blob->GetBufferPointer(),
-                    rtgi_temporal_blob->GetBufferSize(),
-                    nullptr,
-                    &new_rtgi_temporal_shader);
-            if (FAILED(temporal_gi_create_result)) {
-                log_message(
-                    "Falha ao criar shader de acumulacao RTGI: 0x%08X.",
-                    static_cast<unsigned>(temporal_gi_create_result));
-                safe_release(new_rtgi_temporal_shader);
-            }
-        }
-
-        if (rtgi_compose_blob != nullptr) {
-            const HRESULT compose_create_result = device_->CreatePixelShader(
-                rtgi_compose_blob->GetBufferPointer(),
-                rtgi_compose_blob->GetBufferSize(),
-                nullptr,
-                &new_rtgi_compose_shader);
-            if (FAILED(compose_create_result)) {
-                log_message(
-                    "Falha ao criar shader de composicao RTGI: 0x%08X.",
-                    static_cast<unsigned>(compose_create_result));
-                safe_release(new_rtgi_compose_shader);
-            }
-        }
-
         safe_release(vertex_blob);
         safe_release(pixel_blob);
         safe_release(depth_preview_blob);
         safe_release(ssao_blob);
         safe_release(temporal_blob);
-        safe_release(rtgi_blob);
-        safe_release(rtgi_temporal_blob);
-        safe_release(rtgi_compose_blob);
         if (FAILED(result)) {
             log_message("Falha ao criar shaders D3D11: 0x%08X.", static_cast<unsigned>(result));
             safe_release(new_vertex_shader);
@@ -1534,9 +1229,6 @@ private:
             safe_release(new_depth_preview_shader);
             safe_release(new_ssao_shader);
             safe_release(new_temporal_shader);
-            safe_release(new_rtgi_shader);
-            safe_release(new_rtgi_temporal_shader);
-            safe_release(new_rtgi_compose_shader);
             return false;
         }
 
@@ -1556,32 +1248,13 @@ private:
             safe_release(temporal_shader_);
             temporal_shader_ = new_temporal_shader;
         }
-        if (new_rtgi_shader != nullptr) {
-            safe_release(rtgi_shader_);
-            rtgi_shader_ = new_rtgi_shader;
-            // O shader novo pode ter mudado a forma do buffer meia-resolucao.
-            release_rtgi_resources();
-        }
-        if (new_rtgi_temporal_shader != nullptr) {
-            safe_release(rtgi_temporal_shader_);
-            rtgi_temporal_shader_ = new_rtgi_temporal_shader;
-        }
-        if (new_rtgi_compose_shader != nullptr) {
-            safe_release(rtgi_compose_shader_);
-            rtgi_compose_shader_ = new_rtgi_compose_shader;
-        }
         invalidate_temporal_history("recompilacao de shader");
-        invalidate_rtgi_history("recompilacao de shader");
         log_message(
             "Shaders Photorealism compilados: visual=ok depth_preview=%s "
-            "ssao_0.9.1=%s temporal_0.10.0=%s rtgi_0.13.2=%s "
-            "rtgi_acumulacao_0.13.3=%s rtgi_composicao_0.13.2=%s.",
+            "ssao_0.9.1=%s temporal_0.10.0=%s.",
             depth_preview_shader_ != nullptr ? "ok" : "indisponivel",
             ssao_shader_ != nullptr ? "ok" : "indisponivel",
-            temporal_shader_ != nullptr ? "ok" : "indisponivel",
-            rtgi_shader_ != nullptr ? "ok" : "indisponivel",
-            rtgi_temporal_shader_ != nullptr ? "ok" : "indisponivel",
-            rtgi_compose_shader_ != nullptr ? "ok" : "indisponivel");
+            temporal_shader_ != nullptr ? "ok" : "indisponivel");
         return true;
     }
 
@@ -1955,439 +1628,15 @@ private:
         return true;
     }
 
-    // Meia resolucao por padrao: o documento fixa 960x540 em Full-HD, com
-    // R16G16B16A16_FLOAT porque a luz indireta precisa de faixa alem de [0,1]
-    // e o canal alfa carrega a confianca.
-    bool ensure_rtgi_resources(
-        const D3D11_TEXTURE2D_DESC& frame_description,
-        std::uint64_t generation) {
-        if (device_ == nullptr || rtgi_shader_ == nullptr ||
-            rtgi_constant_buffer_ == nullptr || generation == 0) {
-            return false;
-        }
-        const rtgi::RtgiDimensions size = rtgi::rtgi_resolution(
-            frame_description.Width,
-            frame_description.Height,
-            settings_.rtgi.resolution_scale);
-        if (size.width == 0 || size.height == 0) {
-            return false;
-        }
-        if (rtgi_texture_ != nullptr && rtgi_view_ != nullptr &&
-            rtgi_target_ != nullptr && rtgi_generation_ == generation &&
-            rtgi_width_ == size.width && rtgi_height_ == size.height) {
-            return true;
-        }
 
-        release_rtgi_resources();
 
-        D3D11_TEXTURE2D_DESC description = {};
-        description.Width = size.width;
-        description.Height = size.height;
-        description.MipLevels = 1;
-        description.ArraySize = 1;
-        description.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
-        description.SampleDesc.Count = 1;
-        description.Usage = D3D11_USAGE_DEFAULT;
-        description.BindFlags =
-            D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
-        HRESULT result = device_->CreateTexture2D(
-            &description, nullptr, &rtgi_texture_);
-        if (SUCCEEDED(result) && rtgi_texture_ != nullptr) {
-            result = device_->CreateShaderResourceView(
-                rtgi_texture_, nullptr, &rtgi_view_);
-        }
-        if (SUCCEEDED(result) && rtgi_texture_ != nullptr) {
-            result = device_->CreateRenderTargetView(
-                rtgi_texture_, nullptr, &rtgi_target_);
-        }
-        if (FAILED(result) || rtgi_texture_ == nullptr ||
-            rtgi_view_ == nullptr || rtgi_target_ == nullptr) {
-            if (!rtgi_resources_failure_logged_) {
-                log_message(
-                    "Falha ao criar recursos RTGI 0.13.2: result=0x%08X "
-                    "rtgi=%ux%u; o modulo fica inativo e a pilha atual "
-                    "continua intacta.",
-                    static_cast<unsigned>(result),
-                    size.width,
-                    size.height);
-                rtgi_resources_failure_logged_ = true;
-            }
-            release_rtgi_resources();
-            return false;
-        }
 
-        rtgi_generation_ = generation;
-        rtgi_width_ = size.width;
-        rtgi_height_ = size.height;
-        rtgi_resources_failure_logged_ = false;
-        log_message(
-            "Recursos RTGI 0.13.2 criados: source=%ux%u rtgi=%ux%u "
-            "format=R16G16B16A16_FLOAT generation=%llu.",
-            frame_description.Width,
-            frame_description.Height,
-            size.width,
-            size.height,
-            static_cast<unsigned long long>(generation));
-        return true;
-    }
 
-    // Historico do GI -- 0.13.3.
-    //
-    // Tres recursos: o alvo onde PSRtgiTemporal escreve o acumulado, a copia
-    // desse acumulado para o frame seguinte, e a copia do depth do frame
-    // anterior, de que as rejeicoes de profundidade e de normal dependem.
-    //
-    // O depth de historia e proprio do RTGI e nao reaproveita
-    // temporal_depth_history_texture_ de proposito: aquele so e atualizado
-    // quando o passe temporal da 0.10.0 esta ativo, e amarrar os dois modulos
-    // faria o GI acumular ou nao conforme uma chave de outra secao do cfg.
-    bool ensure_rtgi_temporal_resources(
-        const D3D11_TEXTURE2D_DESC& depth_description) {
-        if (device_ == nullptr || rtgi_temporal_shader_ == nullptr ||
-            depth_copy_texture_ == nullptr || rtgi_texture_ == nullptr) {
-            return false;
-        }
-        if (rtgi_resolved_texture_ != nullptr &&
-            rtgi_resolved_view_ != nullptr &&
-            rtgi_resolved_target_ != nullptr &&
-            rtgi_history_texture_ != nullptr &&
-            rtgi_history_view_ != nullptr &&
-            rtgi_depth_history_texture_ != nullptr &&
-            rtgi_depth_history_view_ != nullptr &&
-            rtgi_temporal_depth_width_ == depth_description.Width &&
-            rtgi_temporal_depth_height_ == depth_description.Height) {
-            return true;
-        }
 
-        release_rtgi_temporal_resources();
 
-        // Mesma descricao do rtgi_texture_ de ensure_rtgi_resources: a
-        // acumulacao acontece na resolucao em que o GI foi tracado.
-        D3D11_TEXTURE2D_DESC description = {};
-        description.Width = rtgi_width_;
-        description.Height = rtgi_height_;
-        description.MipLevels = 1;
-        description.ArraySize = 1;
-        description.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
-        description.SampleDesc.Count = 1;
-        description.Usage = D3D11_USAGE_DEFAULT;
-        description.BindFlags =
-            D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
-        HRESULT result = device_->CreateTexture2D(
-            &description, nullptr, &rtgi_resolved_texture_);
-        if (SUCCEEDED(result) && rtgi_resolved_texture_ != nullptr) {
-            result = device_->CreateShaderResourceView(
-                rtgi_resolved_texture_, nullptr, &rtgi_resolved_view_);
-        }
-        if (SUCCEEDED(result) && rtgi_resolved_texture_ != nullptr) {
-            result = device_->CreateRenderTargetView(
-                rtgi_resolved_texture_, nullptr, &rtgi_resolved_target_);
-        }
-        if (SUCCEEDED(result)) {
-            // A historia so e lida, nunca desenhada: recebe CopyResource.
-            D3D11_TEXTURE2D_DESC history_description = description;
-            history_description.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-            result = device_->CreateTexture2D(
-                &history_description, nullptr, &rtgi_history_texture_);
-        }
-        if (SUCCEEDED(result) && rtgi_history_texture_ != nullptr) {
-            result = device_->CreateShaderResourceView(
-                rtgi_history_texture_, nullptr, &rtgi_history_view_);
-        }
 
-        DXGI_FORMAT depth_resource_format = DXGI_FORMAT_UNKNOWN;
-        DXGI_FORMAT depth_view_format = DXGI_FORMAT_UNKNOWN;
-        if (SUCCEEDED(result) &&
-            depth_copy_formats(
-                depth_description.Format,
-                &depth_resource_format,
-                &depth_view_format)) {
-            D3D11_TEXTURE2D_DESC history_depth_description = depth_description;
-            history_depth_description.Format = depth_resource_format;
-            history_depth_description.Usage = D3D11_USAGE_DEFAULT;
-            history_depth_description.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-            history_depth_description.CPUAccessFlags = 0;
-            history_depth_description.MiscFlags = 0;
-            result = device_->CreateTexture2D(
-                &history_depth_description,
-                nullptr,
-                &rtgi_depth_history_texture_);
-            if (SUCCEEDED(result) &&
-                rtgi_depth_history_texture_ != nullptr) {
-                D3D11_SHADER_RESOURCE_VIEW_DESC view_description = {};
-                view_description.Format = depth_view_format;
-                view_description.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-                view_description.Texture2D.MostDetailedMip = 0;
-                view_description.Texture2D.MipLevels = 1;
-                result = device_->CreateShaderResourceView(
-                    rtgi_depth_history_texture_,
-                    &view_description,
-                    &rtgi_depth_history_view_);
-            }
-        } else if (SUCCEEDED(result)) {
-            result = E_INVALIDARG;
-        }
 
-        if (FAILED(result) || rtgi_resolved_texture_ == nullptr ||
-            rtgi_resolved_view_ == nullptr ||
-            rtgi_resolved_target_ == nullptr ||
-            rtgi_history_texture_ == nullptr ||
-            rtgi_history_view_ == nullptr ||
-            rtgi_depth_history_texture_ == nullptr ||
-            rtgi_depth_history_view_ == nullptr) {
-            if (!rtgi_temporal_failure_logged_) {
-                log_message(
-                    "Falha ao criar historico RTGI 0.13.3: result=0x%08X "
-                    "gi=%ux%u depth=%ux%u; o GI continua sendo composto sem "
-                    "acumulacao, como na 0.13.2.1.",
-                    static_cast<unsigned>(result),
-                    rtgi_width_,
-                    rtgi_height_,
-                    depth_description.Width,
-                    depth_description.Height);
-                rtgi_temporal_failure_logged_ = true;
-            }
-            release_rtgi_temporal_resources();
-            return false;
-        }
 
-        rtgi_temporal_depth_width_ = depth_description.Width;
-        rtgi_temporal_depth_height_ = depth_description.Height;
-        rtgi_history_valid_ = false;
-        rtgi_temporal_failure_logged_ = false;
-        log_message(
-            "Historico RTGI 0.13.3 criado: gi=%ux%u depth=%ux%u "
-            "history_weight=%.2f depth_rejection=%.3f normal_rejection=%.2f "
-            "color_rejection=%.3f.",
-            rtgi_width_,
-            rtgi_height_,
-            depth_description.Width,
-            depth_description.Height,
-            settings_.rtgi.history_weight,
-            settings_.rtgi.depth_rejection,
-            settings_.rtgi.normal_rejection,
-            settings_.rtgi.color_rejection);
-        return true;
-    }
-
-    void release_rtgi_temporal_resources() {
-        safe_release(rtgi_depth_history_view_);
-        safe_release(rtgi_depth_history_texture_);
-        safe_release(rtgi_history_view_);
-        safe_release(rtgi_history_texture_);
-        safe_release(rtgi_resolved_target_);
-        safe_release(rtgi_resolved_view_);
-        safe_release(rtgi_resolved_texture_);
-        rtgi_temporal_depth_width_ = 0;
-        rtgi_temporal_depth_height_ = 0;
-        rtgi_history_valid_ = false;
-    }
-
-    void invalidate_rtgi_history(const char* reason) {
-        if (!rtgi_history_valid_) {
-            return;
-        }
-        rtgi_history_valid_ = false;
-        log_message("Historico RTGI 0.13.3 descartado: %s.", reason);
-    }
-
-    // Alvo em resolucao cheia onde a cena entra com a luz indireta somada.
-    // Espelha visual_texture_: mesmo typeless_format/srgb_view_format do
-    // backbuffer, para que o grading receba exatamente o espaco de cor que ja
-    // recebia -- so que com GI dentro.
-    bool ensure_rtgi_composed_resources(
-        const D3D11_TEXTURE2D_DESC& source) {
-        if (device_ == nullptr) {
-            return false;
-        }
-        if (rtgi_composed_texture_ != nullptr &&
-            rtgi_composed_view_ != nullptr &&
-            rtgi_composed_target_ != nullptr &&
-            rtgi_composed_width_ == source.Width &&
-            rtgi_composed_height_ == source.Height) {
-            return true;
-        }
-
-        release_rtgi_composed_resources();
-
-        D3D11_TEXTURE2D_DESC description = source;
-        description.Usage = D3D11_USAGE_DEFAULT;
-        description.BindFlags =
-            D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
-        description.CPUAccessFlags = 0;
-        description.MiscFlags = 0;
-        description.Format = typeless_format(source.Format);
-        HRESULT result = device_->CreateTexture2D(
-            &description, nullptr, &rtgi_composed_texture_);
-        if (SUCCEEDED(result) && rtgi_composed_texture_ != nullptr) {
-            D3D11_SHADER_RESOURCE_VIEW_DESC view_description = {};
-            view_description.Format = srgb_view_format(source.Format);
-            view_description.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-            view_description.Texture2D.MostDetailedMip = 0;
-            view_description.Texture2D.MipLevels = source.MipLevels;
-            result = device_->CreateShaderResourceView(
-                rtgi_composed_texture_,
-                &view_description,
-                &rtgi_composed_view_);
-        }
-        if (SUCCEEDED(result) && rtgi_composed_texture_ != nullptr) {
-            D3D11_RENDER_TARGET_VIEW_DESC target_description = {};
-            target_description.Format = srgb_view_format(source.Format);
-            target_description.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
-            result = device_->CreateRenderTargetView(
-                rtgi_composed_texture_,
-                &target_description,
-                &rtgi_composed_target_);
-        }
-        if (FAILED(result) || rtgi_composed_texture_ == nullptr ||
-            rtgi_composed_view_ == nullptr ||
-            rtgi_composed_target_ == nullptr) {
-            if (!rtgi_composed_failure_logged_) {
-                log_message(
-                    "Falha ao criar alvo de composicao RTGI 0.13.2: "
-                    "result=0x%08X size=%ux%u; o GI fica sem compor e a pilha "
-                    "atual continua intacta.",
-                    static_cast<unsigned>(result),
-                    source.Width,
-                    source.Height);
-                rtgi_composed_failure_logged_ = true;
-            }
-            release_rtgi_composed_resources();
-            return false;
-        }
-
-        rtgi_composed_width_ = source.Width;
-        rtgi_composed_height_ = source.Height;
-        rtgi_composed_failure_logged_ = false;
-        return true;
-    }
-
-    void release_rtgi_composed_resources() {
-        safe_release(rtgi_composed_target_);
-        safe_release(rtgi_composed_view_);
-        safe_release(rtgi_composed_texture_);
-        rtgi_composed_width_ = 0;
-        rtgi_composed_height_ = 0;
-    }
-
-    void release_rtgi_resources() {
-        release_rtgi_composed_resources();
-        // O historico vive na resolucao do GI: se ela muda, ele nao serve.
-        release_rtgi_temporal_resources();
-        safe_release(rtgi_target_);
-        safe_release(rtgi_view_);
-        safe_release(rtgi_texture_);
-        rtgi_generation_ = 0;
-        rtgi_width_ = 0;
-        rtgi_height_ = 0;
-        rtgi_active_logged_generation_ = 0;
-        rtgi_wait_logged_ = false;
-    }
-
-    // Um unico lugar que sabe desenhar o passe de GI. A cadeia principal so
-    // decide para onde ele escreve, nunca como.
-    void render_rtgi_pass(
-        ID3D11RenderTargetView* target, UINT width, UINT height) {
-        if (context_ == nullptr || target == nullptr ||
-            rtgi_shader_ == nullptr || rtgi_constant_buffer_ == nullptr) {
-            return;
-        }
-        D3D11_VIEWPORT viewport = {};
-        viewport.Width = static_cast<float>(width);
-        viewport.Height = static_cast<float>(height);
-        viewport.MaxDepth = 1.0f;
-        context_->RSSetViewports(1, &viewport);
-        context_->OMSetRenderTargets(1, &target, nullptr);
-        context_->PSSetShader(rtgi_shader_, nullptr, 0);
-        ID3D11ShaderResourceView* resources[2] = {
-            scene_view_, depth_copy_view_};
-        ID3D11SamplerState* samplers[2] = {
-            sampler_state_, depth_sampler_state_};
-        context_->PSSetShaderResources(0, 2, resources);
-        context_->PSSetSamplers(0, 2, samplers);
-        context_->PSSetConstantBuffers(0, 1, &rtgi_constant_buffer_);
-        context_->Draw(3, 0);
-        context_->OMSetRenderTargets(0, nullptr, nullptr);
-        ID3D11ShaderResourceView* null_resources[2] = {};
-        context_->PSSetShaderResources(0, 2, null_resources);
-        ++rtgi_frame_index_;
-    }
-
-    // Irmao do render_rtgi_pass: soma o buffer de GI a cor de cena, em
-    // resolucao cheia, antes do grading. Devolve a SRV que o grading deve ler,
-    // ou nullptr quando a composicao nao pode acontecer -- e ai a cadeia segue
-    // lendo scene_view_ e fica byte a byte a de antes da 0.13.2.
-    // gi_source e rtgi_view_ quando nao ha acumulacao e rtgi_resolved_view_
-    // quando ha. Passar por parametro em vez de escolher aqui dentro mantem o
-    // passe de composicao sem opiniao sobre a 0.13.3.
-    ID3D11ShaderResourceView* render_rtgi_compose_pass(
-        const D3D11_TEXTURE2D_DESC& source,
-        ID3D11ShaderResourceView* gi_source) {
-        if (context_ == nullptr || rtgi_compose_shader_ == nullptr ||
-            rtgi_constant_buffer_ == nullptr || gi_source == nullptr ||
-            scene_view_ == nullptr) {
-            return nullptr;
-        }
-        if (!ensure_rtgi_composed_resources(source)) {
-            return nullptr;
-        }
-        D3D11_VIEWPORT viewport = {};
-        viewport.Width = static_cast<float>(source.Width);
-        viewport.Height = static_cast<float>(source.Height);
-        viewport.MaxDepth = 1.0f;
-        context_->RSSetViewports(1, &viewport);
-        context_->OMSetRenderTargets(1, &rtgi_composed_target_, nullptr);
-        context_->PSSetShader(rtgi_compose_shader_, nullptr, 0);
-        ID3D11ShaderResourceView* resources[3] = {
-            scene_view_, depth_copy_view_, gi_source};
-        ID3D11SamplerState* samplers[2] = {
-            sampler_state_, depth_sampler_state_};
-        context_->PSSetShaderResources(0, 3, resources);
-        context_->PSSetSamplers(0, 2, samplers);
-        context_->PSSetConstantBuffers(0, 1, &rtgi_constant_buffer_);
-        context_->Draw(3, 0);
-        context_->OMSetRenderTargets(0, nullptr, nullptr);
-        ID3D11ShaderResourceView* null_resources[3] = {};
-        context_->PSSetShaderResources(0, 3, null_resources);
-        return rtgi_composed_view_;
-    }
-
-    // Acumulacao temporal do GI -- 0.13.3. Roda na resolucao do RTGI, entre a
-    // marcha e a composicao.
-    //
-    // Le o GI atual (t2), a historia (t3), o depth atual (t1) e o depth do
-    // frame anterior (t4). t0 fica sem uso: PSRtgiTemporal nao toca na cor de
-    // cena, so no buffer de luz indireta.
-    bool render_rtgi_temporal_pass() {
-        if (context_ == nullptr || rtgi_temporal_shader_ == nullptr ||
-            rtgi_constant_buffer_ == nullptr || rtgi_view_ == nullptr ||
-            rtgi_resolved_target_ == nullptr) {
-            return false;
-        }
-        D3D11_VIEWPORT viewport = {};
-        viewport.Width = static_cast<float>(rtgi_width_);
-        viewport.Height = static_cast<float>(rtgi_height_);
-        viewport.MaxDepth = 1.0f;
-        context_->RSSetViewports(1, &viewport);
-        context_->OMSetRenderTargets(1, &rtgi_resolved_target_, nullptr);
-        context_->PSSetShader(rtgi_temporal_shader_, nullptr, 0);
-        ID3D11ShaderResourceView* resources[5] = {
-            nullptr,
-            depth_copy_view_,
-            rtgi_view_,
-            rtgi_history_view_,
-            rtgi_depth_history_view_};
-        ID3D11SamplerState* samplers[2] = {
-            sampler_state_, depth_sampler_state_};
-        context_->PSSetShaderResources(0, 5, resources);
-        context_->PSSetSamplers(0, 2, samplers);
-        context_->PSSetConstantBuffers(0, 1, &rtgi_constant_buffer_);
-        context_->Draw(3, 0);
-        context_->OMSetRenderTargets(0, nullptr, nullptr);
-        ID3D11ShaderResourceView* null_resources[5] = {};
-        context_->PSSetShaderResources(0, 5, null_resources);
-        return true;
-    }
 
     void invalidate_temporal_history(const char* reason) {
         if (!temporal_history_valid_) {
@@ -2414,7 +1663,6 @@ private:
 
     void release_depth_capture_resources(bool reset_liveness = true) {
         release_temporal_resources();
-        release_rtgi_resources();
         safe_release(depth_copy_view_);
         safe_release(depth_copy_texture_);
         depth_candidate_generation_ = 0;
@@ -2448,7 +1696,6 @@ private:
         unsupported_logged_ = false;
         processed_logged_ = false;
         temporal_resources_failure_logged_ = false;
-        rtgi_resources_failure_logged_ = false;
     }
 
     void initialize_gpu_timing() {
@@ -2664,14 +1911,10 @@ private:
         safe_release(depth_preview_shader_);
         safe_release(ssao_shader_);
         safe_release(temporal_shader_);
-        safe_release(rtgi_shader_);
-        safe_release(rtgi_temporal_shader_);
-        safe_release(rtgi_compose_shader_);
         safe_release(constant_buffer_);
         safe_release(depth_constant_buffer_);
         safe_release(ssao_constant_buffer_);
         safe_release(temporal_constant_buffer_);
-        safe_release(rtgi_constant_buffer_);
         safe_release(sampler_state_);
         safe_release(depth_sampler_state_);
         safe_release(rasterizer_state_);
@@ -2694,40 +1937,7 @@ private:
     ID3D11RenderTargetView* spatial_target_ = nullptr;
     ID3D11Texture2D* depth_copy_texture_ = nullptr;
     ID3D11ShaderResourceView* depth_copy_view_ = nullptr;
-    ID3D11Texture2D* rtgi_texture_ = nullptr;
-    ID3D11ShaderResourceView* rtgi_view_ = nullptr;
-    ID3D11RenderTargetView* rtgi_target_ = nullptr;
-    ID3D11PixelShader* rtgi_shader_ = nullptr;
-    ID3D11PixelShader* rtgi_temporal_shader_ = nullptr;
-    ID3D11PixelShader* rtgi_compose_shader_ = nullptr;
-    ID3D11Buffer* rtgi_constant_buffer_ = nullptr;
-    std::uint64_t rtgi_generation_ = 0;
-    UINT rtgi_width_ = 0;
-    UINT rtgi_height_ = 0;
-    std::uint64_t rtgi_frame_index_ = 0;
-    bool rtgi_resources_failure_logged_ = false;
-    std::uint64_t rtgi_active_logged_generation_ = 0;
-    ID3D11Texture2D* rtgi_composed_texture_ = nullptr;
-    ID3D11ShaderResourceView* rtgi_composed_view_ = nullptr;
-    ID3D11RenderTargetView* rtgi_composed_target_ = nullptr;
-    UINT rtgi_composed_width_ = 0;
-    UINT rtgi_composed_height_ = 0;
-    bool rtgi_composed_failure_logged_ = false;
-    bool rtgi_wait_logged_ = false;
-    // Historico do GI -- 0.13.3. rtgi_resolved_ e o alvo da acumulacao,
-    // rtgi_history_ a copia dele para o frame seguinte, rtgi_depth_history_ a
     // copia do depth de que as rejeicoes dependem.
-    ID3D11Texture2D* rtgi_resolved_texture_ = nullptr;
-    ID3D11ShaderResourceView* rtgi_resolved_view_ = nullptr;
-    ID3D11RenderTargetView* rtgi_resolved_target_ = nullptr;
-    ID3D11Texture2D* rtgi_history_texture_ = nullptr;
-    ID3D11ShaderResourceView* rtgi_history_view_ = nullptr;
-    ID3D11Texture2D* rtgi_depth_history_texture_ = nullptr;
-    ID3D11ShaderResourceView* rtgi_depth_history_view_ = nullptr;
-    UINT rtgi_temporal_depth_width_ = 0;
-    UINT rtgi_temporal_depth_height_ = 0;
-    bool rtgi_history_valid_ = false;
-    bool rtgi_temporal_failure_logged_ = false;
     ID3D11Texture2D* temporal_history_texture_ = nullptr;
     ID3D11ShaderResourceView* temporal_history_view_ = nullptr;
     ID3D11Texture2D* temporal_depth_history_texture_ = nullptr;
@@ -2761,9 +1971,6 @@ private:
     bool home_key_down_ = false;
     bool end_key_down_ = false;
     bool insert_key_down_ = false;
-    bool page_up_key_down_ = false;
-    bool page_down_key_down_ = false;
-    rtgi::RtgiDebugMode rtgi_preview_debug_ = rtgi::RtgiDebugMode::normals;
     UINT depth_preview_mode_ = 0;
     UINT depth_preview_logged_mode_ = 0;
     bool depth_preview_wait_logged_ = false;

@@ -158,10 +158,9 @@ bool write_atomic(const wchar_t* config_path, const std::string& contents) {
 
 // Ate a 0.12.1 o plugin zerava r_aa, r_taa_tuning, r_taa_luma_sharpen e
 // r_taa_modulated_drr_strength, para assumir integralmente o AA. Isso tem um
-// efeito colateral que so apareceu com o RTGI: com o TAA nativo desligado, o
-// Prism3D nao precisa ler o depth num shader e o cria sem
-// D3D11_BIND_SHADER_RESOURCE. Sem depth legivel, SSAO, resolve temporal e
-// RTGI ficam todos sem fonte.
+// efeito colateral: com o TAA nativo desligado, o Prism3D nao precisa ler o
+// depth num shader e o cria sem D3D11_BIND_SHADER_RESOURCE. Sem depth
+// legivel, SSAO e resolve temporal ficam sem fonte.
 //
 // A politica agora vem do photorealism-plugin.cfg, para poder ser ajustada
 // sem recompilar. Os defaults abaixo valem quando a secao nao existe.
@@ -360,7 +359,7 @@ bool configure_native_aa_for_photorealism(HMODULE proxy_module) {
         "config.photorealism-native-aa.backup.cfg "
         "timing=bootstrap-before-dxgi politica=photorealism-plugin.cfg; "
         "o TAA nativo ligado e o que faz o Prism3D expor o depth como shader "
-        "resource, de que SSAO, temporal e RTGI dependem.",
+        "resource, de que SSAO e o resolve temporal dependem.",
         game_name,
         detected_aa.c_str(),
         taa_tuning.c_str(),

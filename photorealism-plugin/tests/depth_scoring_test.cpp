@@ -53,7 +53,7 @@ int main() {
         1920, 2160, 32818, 4, backbuffer_width, backbuffer_height));
     assert(!is_scene_candidate(
         1920, 2160, 32818, 4, backbuffer_width, backbuffer_height, 30000));
-    // Numeros reais do log de 28/08, sessao em que o RTGI nunca rodou.
+    // Numeros reais do log de 28/08.
     //
     // O depth de camera do ETS2 sem supersampling (r_scale_x=1, r_scale_y=1)
     // tem exatamente a area da tela. A regra dos 110% foi escrita para o caso
