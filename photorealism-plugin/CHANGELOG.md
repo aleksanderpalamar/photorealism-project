@@ -41,6 +41,13 @@ recuperadas e movidas para junto dos outros pinos do cfg, com um comentario
 explicando por que o lugar importa. Guarda misturada com modulo alheio morre
 com o modulo alheio.
 
+**A faixa escura horizontal fecha aqui, e nao era o SSAO.** Testada em jogo
+nesta versao: nao existe mais. O usuario esclareceu que ela so aparecia com o
+RTGI ligado, na parte inferior da tela, onde o tracado nao alcancava -- ou
+seja, era a fronteira entre a regiao que recebia GI somado e a que nao recebia
+nada. Com o modulo fora, a fronteira nao tem como existir. A hipotese do SSAO
+registrada na 0.14.0 estava errada, e o item sai do roteiro.
+
 ## Pacote 0.15.0 - 2026-08-30
 
 Remocao completa do modulo FSR/AA auxiliar, a pedido do usuario. A 0.14.0

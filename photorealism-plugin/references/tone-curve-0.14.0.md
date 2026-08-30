@@ -87,7 +87,15 @@ em 0,05 a historia era descartada todo frame, justamente nas superficies
 escuras que mais precisavam dela -- que e por que o granulado continuou visivel
 nas capturas da 0.13.3.
 
-## Pendente: a faixa escura
+## Pendente: a faixa escura -- FECHADA na 0.16.0
+
+> Resolvida, e nao como este documento previa: era o **proprio RTGI**. Testado
+> em jogo na 0.16.0, sem o modulo a faixa nao existe -- a linha era a fronteira
+> entre a regiao que recebia GI somado e a que nao recebia. O descarte de
+> `PSRtgiCompose` abaixo confunde "so soma" com "nao pode criar aresta": um
+> passe que soma **em parte da tela** desenha um contorno igual. O texto
+> original fica como estava, porque o erro e o registro.
+
 
 Linha horizontal nitida, largura inteira, a ~84% da altura, tudo abaixo mais
 escuro. Aparece nas sete capturas da 0.13.3 e tambem nas da 0.13.2.1.

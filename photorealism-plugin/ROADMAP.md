@@ -261,25 +261,29 @@ foi calibrada no olho**, e foi assim que um efeito de cinco niveis em 255
 sobreviveu tres versoes sem que ninguem percebesse que era invisivel.
 `tools/grade_report.py` existe para que isso nao se repita.
 
-### A faixa escura
+### A faixa escura -- RESOLVIDA na 0.16.0, era o RTGI
 
 Linha horizontal nitida, largura inteira, a ~84% da altura, tudo abaixo mais
-escuro. Presente nas capturas da 0.13.2.1 e da 0.13.3, interiores e exteriores.
+escuro. Aparecia nas capturas da 0.13.2.1 e da 0.13.3.
 
-Descartado por leitura de codigo: `PSRtgiCompose` **so soma**
-(`cena + indirect * gi_intensity`), entao nao pode escurecer; e a vignette de
-`photorealism.hlsl` e radial e suave, com peso 0,03.
+**Era o proprio RTGI.** Testado em jogo na 0.16.0: com o modulo removido a
+faixa nao existe. O usuario esclareceu que ela so aparecia com o RTGI ligado --
+a parte inferior da tela era onde o tracado nao alcancava, e a linha era a
+fronteira entre a regiao que recebia `indirect * gi_intensity` somado e a que
+nao recebia nada.
 
-Hipotese principal: o SSAO. `ssao.hlsl` faz
-`distance_fade = 1 - smoothstep(30, 70, center_distance)`, e em chao plano
-distancia constante e altura de tela constante -- a fronteira e horizontal por
-construcao. Reforca a hipotese que a calibracao de `radius`/`intensity`/`fade`
-foi aprovada sobre uma cascata de sombra, antes de a 0.13.0 corrigir a
-elegibilidade do depth. Ressalva: `smoothstep` da gradiente, nao aresta.
+**A leitura de codigo que a descartou estava errada, e o erro tem forma.**
+"`PSRtgiCompose` so soma, entao nao pode escurecer" trata a soma como se fosse
+absoluta, quando o que se ve na tela e contraste: um passe que **so soma, mas
+nao em toda parte**, desenha uma aresta tao visivel quanto um que subtrai. O
+lado escuro nao foi escurecido -- foi o unico que nao foi clareado.
 
-Resolve em jogo, em ordem, sem recompilar: desligar o SSAO; se persistir,
-desligar a base do grading; se persistir, Insert nas posicoes 1 a 4 para ver o
-depth. E a 0.14.1.
+**E a hipotese do SSAO foi construida sem checar a evidencia mais barata.** A
+faixa aparecia exatamente nas versoes em que o RTGI executava, e havia 16
+capturas da 0.14.0 -- ja com `enabled=false` -- que teriam fechado a questao em
+um olhar. Em vez disso a investigacao foi para dentro do `ssao.hlsl` procurar
+um mecanismo. **O intervalo de versoes em que um sintoma aparece e um dado, e
+costuma chegar antes de qualquer leitura de shader.**
 
 ### Marcha geometrica
 
@@ -463,8 +467,10 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
 - **0.16.1 (proxima)** recalibrar SSAO sobre o depth certo. Se o depth de
   camera nunca foi usado, a calibracao aprovada nas versoes 0.7.0 a 0.9.1 foi
   feita sobre uma cascata de sombra, e `radius`, `intensity` e `fade` precisam
-  de nova rodada A/B. **Subiu de prioridade na 0.14.0**: e a hipotese principal
-  para a faixa escura horizontal descrita abaixo;
+  de nova rodada A/B. **Desceu de prioridade na 0.16.0**: a faixa escura, que
+  era a razao de ter subido, era o RTGI e nao o SSAO. Continua valendo por si
+  -- calibracao afinada sobre um buffer, rodando sobre outro -- mas sem
+  sintoma reportado atras dela;
 - **0.17.0** bloom. Visivel nas referencias -- o flare do sol na golden hour, o
   brilho na borda do para-brisa -- e exige passes e recursos novos:
   bright-pass, blur separavel, composicao. Ficou fora da 0.14.0 de proposito:
