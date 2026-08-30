@@ -9,6 +9,7 @@
 #include <d3dcompiler.h>
 #include <windows.h>
 
+#include <algorithm>
 #include <cfloat>
 #include <cmath>
 #include <cstdint>
@@ -73,9 +74,38 @@ struct ShaderConstants {
     float highlight_rolloff;
     float tint;
     float visual_padding;
+    float bloom_enabled;
+    float bloom_intensity;
+    float bloom_padding[2];
 };
 
-static_assert(sizeof(ShaderConstants) == 80, "constant buffer must be aligned");
+static_assert(sizeof(ShaderConstants) == 96, "constant buffer must be aligned");
+
+// Os passes do bloom. SourceTexelSize e o texel da textura LIDA, e muda a cada
+// passo da piramide -- por isso o buffer e reescrito entre draws em vez de uma
+// vez por frame como os outros.
+struct BloomConstants {
+    float source_texel_size[2];
+    float filter_radius[2];
+    float threshold;
+    float knee;
+    float input_needs_srgb_decode;
+    float output_needs_srgb_encode;
+};
+
+static_assert(
+    sizeof(BloomConstants) == 32,
+    "bloom constant buffer must be aligned");
+
+constexpr UINT kBloomPassCount = 3;
+
+// A ordem importa: o indice e usado direto em bloom_bright_shader_,
+// bloom_downsample_shader_ e bloom_upsample_shader_, nesta sequencia.
+const char* const kBloomEntryPoints[kBloomPassCount] = {
+    "PSBloomBright",
+    "PSBloomDownsample",
+    "PSBloomUpsample",
+};
 
 struct DepthPreviewConstants {
     float preview_mode;
@@ -277,7 +307,7 @@ public:
                 "pelo atalho End.");
         }
         if (key_pressed_once(VK_INSERT, &insert_key_down_)) {
-            depth_preview_mode_ = (depth_preview_mode_ + 1) % 6;
+            depth_preview_mode_ = (depth_preview_mode_ + 1) % 7;
             invalidate_temporal_history("mudanca de preview Insert");
             depth_preview_wait_logged_ = false;
             depth_preview_logged_mode_ = 0;
@@ -292,6 +322,8 @@ public:
                 mode_name = "reconstructed-normals";
             } else if (depth_preview_mode_ == 5) {
                 mode_name = "ssao-visibility";
+            } else if (depth_preview_mode_ == 6) {
+                mode_name = "bloom";
             }
             log_message(
                 "Preview depth solicitado pelo Insert: mode=%u(%s).",
@@ -398,14 +430,18 @@ public:
         bool ssao_preview_active = false;
         bool ssao_active = false;
         bool temporal_active = false;
+        bool bloom_active = false;
+        bool bloom_preview_active = false;
         ID3D11Texture2D* depth_candidate = nullptr;
         D3D11_TEXTURE2D_DESC depth_description = {};
         std::uint64_t depth_generation = 0;
         std::uint64_t depth_binding_serial = 0;
         bool depth_candidate_invalidated = false;
+        // O modo 6 e o preview do bloom, que sai da cena e nao do depth. Ele
+        // fica de fora daqui para nao disparar a copia do depth a toa.
         const bool depth_requested =
             settings_.ssao_enabled || settings_.temporal_enabled ||
-            depth_preview_mode_ != 0;
+            (depth_preview_mode_ != 0 && depth_preview_mode_ != 6);
         if (depth_requested &&
             acquire_depth_candidate(
                 &depth_candidate,
@@ -499,6 +535,44 @@ public:
             invalidate_temporal_history("depth ou passe temporal indisponivel");
         }
 
+        // O bloom nao depende de depth -- ele sai da propria cena. E a unica
+        // coisa da pilha que continua funcionando quando a descoberta de depth
+        // falha, e por isso a condicao aqui nao menciona depth_available.
+        bloom_preview_active =
+            depth_preview_mode_ == 6 && bloom_bright_shader_ != nullptr &&
+            additive_blend_state_ != nullptr;
+        if ((depth_preview_mode_ == 0 || bloom_preview_active) &&
+            settings_.bloom_enabled && bloom_bright_shader_ != nullptr &&
+            additive_blend_state_ != nullptr) {
+            bloom_active = ensure_bloom_resources(
+                description,
+                bloom_levels_for_radius(
+                    settings_.bloom_radius, description.Height));
+        }
+        if (!bloom_active) {
+            bloom_preview_active = false;
+            if (settings_.bloom_enabled && depth_preview_mode_ == 0 &&
+                !bloom_wait_logged_) {
+                log_message(
+                    "Bloom 0.17.0 aguardando shaders e recursos validos; "
+                    "a pilha visual aprovada permanece ativa.");
+                bloom_wait_logged_ = true;
+            }
+        } else {
+            bloom_wait_logged_ = false;
+            if (bloom_active_logged_levels_ != bloom_level_count_) {
+                log_message(
+                    "Bloom 0.17.0 ativo: niveis=%u threshold=%.3f knee=%.3f "
+                    "intensity=%.3f radius=%.4f.",
+                    bloom_level_count_,
+                    settings_.bloom_threshold,
+                    settings_.bloom_knee,
+                    settings_.bloom_intensity,
+                    settings_.bloom_radius);
+                bloom_active_logged_levels_ = bloom_level_count_;
+            }
+        }
+
         if (depth_preview_active) {
             depth_preview_wait_logged_ = false;
             if (depth_preview_logged_mode_ != depth_preview_mode_) {
@@ -588,7 +662,7 @@ public:
             context_->CopyResource(scene_texture_, back_buffer);
             // errada de que o depth faltava no modo 6.
             if (depth_preview_mode_ != 0 && !ssao_preview_active &&
-                !depth_preview_wait_logged_) {
+                !bloom_preview_active && !depth_preview_wait_logged_) {
                 log_message(
                     "Diagnostico depth/SSAO aguardando candidato valido; "
                     "o passe visual normal permanece ativo.");
@@ -614,6 +688,8 @@ public:
         constants.black_lift = settings_.black_lift;
         constants.highlight_rolloff = settings_.highlight_rolloff;
         constants.tint = settings_.tint;
+        constants.bloom_enabled = bloom_active ? 1.0f : 0.0f;
+        constants.bloom_intensity = settings_.bloom_intensity;
         constants.input_needs_srgb_decode =
             scene_needs_srgb_decode_ ? 1.0f : 0.0f;
         constants.output_needs_srgb_encode =
@@ -729,7 +805,39 @@ public:
         context_->HSSetShader(nullptr, nullptr, 0);
         context_->DSSetShader(nullptr, nullptr, 0);
 
-        if (depth_preview_active) {
+        // A piramide roda ANTES do if/else de cinco ramos, e nao dentro dele.
+        // Os cinco ramos comecam todos pelo mesmo passe visual, entao gerar o
+        // bloom aqui e le-lo em t1 no PSMain faz o modulo valer para todos de
+        // uma vez -- sem multiplicar ramo nenhum. Foi por multiplicar ramos
+        // que o modulo de tracado de raios removido na 0.16.0 chegou a 377
+        // referencias neste arquivo, e por isso levou uma versao inteira para
+        // sair.
+        if (bloom_active) {
+            render_bloom_pyramid(description);
+        }
+
+        if (bloom_preview_active) {
+            // Preview do Insert: o buffer do bloom sozinho, sem cena por
+            // baixo. E o que permite julgar limiar e raio isolados, do mesmo
+            // jeito que a mascara do SSAO na posicao 5.
+            context_->OMSetRenderTargets(1, &output, nullptr);
+            context_->PSSetShader(bloom_upsample_shader_, nullptr, 0);
+            BloomConstants preview_constants = {};
+            preview_constants.source_texel_size[0] =
+                1.0f / static_cast<float>(bloom_widths_[0]);
+            preview_constants.source_texel_size[1] =
+                1.0f / static_cast<float>(bloom_heights_[0]);
+            preview_constants.threshold = settings_.bloom_threshold;
+            preview_constants.knee = settings_.bloom_knee;
+            preview_constants.output_needs_srgb_encode =
+                output_needs_srgb_encode ? 1.0f : 0.0f;
+            context_->UpdateSubresource(
+                bloom_constant_buffer_, 0, nullptr, &preview_constants, 0, 0);
+            context_->PSSetShaderResources(0, 1, &bloom_views_[0]);
+            context_->PSSetSamplers(0, 1, &sampler_state_);
+            context_->PSSetConstantBuffers(0, 1, &bloom_constant_buffer_);
+            context_->Draw(3, 0);
+        } else if (depth_preview_active) {
             context_->OMSetRenderTargets(1, &output, nullptr);
             context_->PSSetShader(depth_preview_shader_, nullptr, 0);
             context_->PSSetShaderResources(0, 1, &depth_copy_view_);
@@ -750,7 +858,9 @@ public:
         } else if (temporal_active) {
             context_->OMSetRenderTargets(1, &visual_target_, nullptr);
             context_->PSSetShader(pixel_shader_, nullptr, 0);
-            context_->PSSetShaderResources(0, 1, &scene_view_);
+            ID3D11ShaderResourceView* visual_resources[2] = {
+                scene_view_, bloom_active ? bloom_views_[0] : nullptr};
+            context_->PSSetShaderResources(0, 2, visual_resources);
             context_->PSSetSamplers(0, 1, &sampler_state_);
             context_->PSSetConstantBuffers(0, 1, &constant_buffer_);
             context_->Draw(3, 0);
@@ -808,7 +918,9 @@ public:
         } else if (ssao_active) {
             context_->OMSetRenderTargets(1, &visual_target_, nullptr);
             context_->PSSetShader(pixel_shader_, nullptr, 0);
-            context_->PSSetShaderResources(0, 1, &scene_view_);
+            ID3D11ShaderResourceView* visual_resources[2] = {
+                scene_view_, bloom_active ? bloom_views_[0] : nullptr};
+            context_->PSSetShaderResources(0, 2, visual_resources);
             context_->PSSetSamplers(0, 1, &sampler_state_);
             context_->PSSetConstantBuffers(0, 1, &constant_buffer_);
             context_->Draw(3, 0);
@@ -827,7 +939,9 @@ public:
         } else {
             context_->OMSetRenderTargets(1, &output, nullptr);
             context_->PSSetShader(pixel_shader_, nullptr, 0);
-            context_->PSSetShaderResources(0, 1, &scene_view_);
+            ID3D11ShaderResourceView* visual_resources[2] = {
+                scene_view_, bloom_active ? bloom_views_[0] : nullptr};
+            context_->PSSetShaderResources(0, 2, visual_resources);
             context_->PSSetSamplers(0, 1, &sampler_state_);
             context_->PSSetConstantBuffers(0, 1, &constant_buffer_);
             context_->Draw(3, 0);
@@ -997,6 +1111,16 @@ private:
             return false;
         }
 
+        buffer_description.ByteWidth = sizeof(BloomConstants);
+        result = device_->CreateBuffer(
+            &buffer_description, nullptr, &bloom_constant_buffer_);
+        if (FAILED(result)) {
+            log_message(
+                "Falha ao criar constant buffer bloom: 0x%08X.",
+                static_cast<unsigned>(result));
+            return false;
+        }
+
         D3D11_SAMPLER_DESC sampler_description = {};
         sampler_description.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
         sampler_description.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
@@ -1051,6 +1175,30 @@ private:
             return false;
         }
 
+        // A subida da piramide SOMA no nivel de baixo em vez de substituir; e
+        // isso que empilha as escalas num unico glow com queda suave. Sem o
+        // blend aditivo cada nivel apagaria o anterior e sobraria so o mais
+        // largo, que sozinho e uma mancha sem nucleo.
+        D3D11_BLEND_DESC additive_description = {};
+        additive_description.RenderTarget[0].BlendEnable = TRUE;
+        additive_description.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
+        additive_description.RenderTarget[0].DestBlend = D3D11_BLEND_ONE;
+        additive_description.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+        additive_description.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+        additive_description.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
+        additive_description.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+        additive_description.RenderTarget[0].RenderTargetWriteMask =
+            D3D11_COLOR_WRITE_ENABLE_ALL;
+        result = device_->CreateBlendState(
+            &additive_description, &additive_blend_state_);
+        if (FAILED(result)) {
+            log_message(
+                "Falha ao criar blend aditivo do bloom: 0x%08X; "
+                "o modulo fica indisponivel.",
+                static_cast<unsigned>(result));
+            safe_release(additive_blend_state_);
+        }
+
         initialize_gpu_timing();
 
         return compile_shaders();
@@ -1070,6 +1218,7 @@ private:
         ID3DBlob* depth_preview_blob = nullptr;
         ID3DBlob* ssao_blob = nullptr;
         ID3DBlob* temporal_blob = nullptr;
+        ID3DBlob* bloom_blobs[kBloomPassCount] = {};
         ID3DBlob* errors = nullptr;
 
         HRESULT result = compile_from_file(
@@ -1157,6 +1306,29 @@ private:
         }
         safe_release(errors);
 
+        // Os tres passes do bloom saem do mesmo arquivo e diferem apenas
+        // pelo entry point. Escrever tres blocos identicos como os de cima
+        // seria repetir quarenta linhas para trocar uma string, entao aqui a
+        // tabela faz o papel.
+        for (UINT index = 0; index < kBloomPassCount; ++index) {
+            const HRESULT bloom_compile_result = compile_from_file(
+                bloom_shader_path(),
+                nullptr,
+                D3D_COMPILE_STANDARD_FILE_INCLUDE,
+                kBloomEntryPoints[index],
+                "ps_5_0",
+                flags,
+                0,
+                &bloom_blobs[index],
+                &errors);
+            if (FAILED(bloom_compile_result)) {
+                log_compile_error(
+                    kBloomEntryPoints[index], bloom_compile_result, errors);
+                safe_release(bloom_blobs[index]);
+            }
+            safe_release(errors);
+        }
+
         ID3D11VertexShader* new_vertex_shader = nullptr;
         ID3D11PixelShader* new_pixel_shader = nullptr;
         ID3D11PixelShader* new_depth_preview_shader = nullptr;
@@ -1217,11 +1389,33 @@ private:
             }
         }
 
+        ID3D11PixelShader* new_bloom_shaders[kBloomPassCount] = {};
+        for (UINT index = 0; index < kBloomPassCount; ++index) {
+            if (bloom_blobs[index] == nullptr) {
+                continue;
+            }
+            const HRESULT bloom_create_result = device_->CreatePixelShader(
+                bloom_blobs[index]->GetBufferPointer(),
+                bloom_blobs[index]->GetBufferSize(),
+                nullptr,
+                &new_bloom_shaders[index]);
+            if (FAILED(bloom_create_result)) {
+                log_message(
+                    "Falha ao criar shader %s do bloom: 0x%08X.",
+                    kBloomEntryPoints[index],
+                    static_cast<unsigned>(bloom_create_result));
+                safe_release(new_bloom_shaders[index]);
+            }
+        }
+
         safe_release(vertex_blob);
         safe_release(pixel_blob);
         safe_release(depth_preview_blob);
         safe_release(ssao_blob);
         safe_release(temporal_blob);
+        for (UINT index = 0; index < kBloomPassCount; ++index) {
+            safe_release(bloom_blobs[index]);
+        }
         if (FAILED(result)) {
             log_message("Falha ao criar shaders D3D11: 0x%08X.", static_cast<unsigned>(result));
             safe_release(new_vertex_shader);
@@ -1229,6 +1423,9 @@ private:
             safe_release(new_depth_preview_shader);
             safe_release(new_ssao_shader);
             safe_release(new_temporal_shader);
+            for (UINT index = 0; index < kBloomPassCount; ++index) {
+                safe_release(new_bloom_shaders[index]);
+            }
             return false;
         }
 
@@ -1248,13 +1445,34 @@ private:
             safe_release(temporal_shader_);
             temporal_shader_ = new_temporal_shader;
         }
+
+        // O bloom so entra INTEIRO. Com um dos tres passes faltando a
+        // piramide fica sem um elo -- brilho limiarizado que nunca espalha, ou
+        // niveis que nunca sobem -- e o resultado e pior que nao ter bloom.
+        const bool bloom_complete =
+            new_bloom_shaders[0] != nullptr &&
+            new_bloom_shaders[1] != nullptr &&
+            new_bloom_shaders[2] != nullptr;
+        if (bloom_complete) {
+            safe_release(bloom_bright_shader_);
+            safe_release(bloom_downsample_shader_);
+            safe_release(bloom_upsample_shader_);
+            bloom_bright_shader_ = new_bloom_shaders[0];
+            bloom_downsample_shader_ = new_bloom_shaders[1];
+            bloom_upsample_shader_ = new_bloom_shaders[2];
+        } else {
+            for (UINT index = 0; index < kBloomPassCount; ++index) {
+                safe_release(new_bloom_shaders[index]);
+            }
+        }
         invalidate_temporal_history("recompilacao de shader");
         log_message(
             "Shaders Photorealism compilados: visual=ok depth_preview=%s "
-            "ssao_0.9.1=%s temporal_0.10.0=%s.",
+            "ssao_0.9.1=%s temporal_0.10.0=%s bloom_0.17.0=%s.",
             depth_preview_shader_ != nullptr ? "ok" : "indisponivel",
             ssao_shader_ != nullptr ? "ok" : "indisponivel",
-            temporal_shader_ != nullptr ? "ok" : "indisponivel");
+            temporal_shader_ != nullptr ? "ok" : "indisponivel",
+            bloom_bright_shader_ != nullptr ? "ok" : "indisponivel");
         return true;
     }
 
@@ -1287,6 +1505,7 @@ private:
         safe_release(spatial_target_);
         safe_release(spatial_view_);
         safe_release(spatial_texture_);
+        release_bloom_resources();
         release_temporal_resources();
 
         D3D11_TEXTURE2D_DESC description = source;
@@ -1422,6 +1641,218 @@ private:
             visual_target_ != nullptr ? "ok" : "indisponivel",
             spatial_target_ != nullptr ? "ok" : "indisponivel");
         return true;
+    }
+
+    // Quantos niveis a piramide precisa para o raio pedido.
+    //
+    // O alcance do glow e a resolucao do nivel mais grosseiro: com L niveis a
+    // altura dele e height>>L, e o tent da subida espalha cerca de um texel e
+    // meio dele. Invertendo, L = log2(raio * altura / 1.5).
+    //
+    // Isto e o que faz o `radius` do cfg valer em qualquer resolucao: o mesmo
+    // 0.05 pede cinco niveis em 1080p e seis em 4K, e o glow ocupa a mesma
+    // fracao da tela nas duas.
+    UINT bloom_levels_for_radius(float radius, UINT height) const {
+        if (radius <= 0.0f || height == 0) {
+            return 1;
+        }
+        const float target = radius * static_cast<float>(height) / 1.5f;
+        UINT levels = 1;
+        while (levels < kBloomMaxLevels &&
+               static_cast<float>(1u << levels) < target) {
+            ++levels;
+        }
+        return levels;
+    }
+
+    void release_bloom_resources() {
+        for (UINT index = 0; index < kBloomMaxLevels; ++index) {
+            safe_release(bloom_targets_[index]);
+            safe_release(bloom_views_[index]);
+            safe_release(bloom_textures_[index]);
+            bloom_widths_[index] = 0;
+            bloom_heights_[index] = 0;
+        }
+        bloom_level_count_ = 0;
+    }
+
+    bool ensure_bloom_resources(
+        const D3D11_TEXTURE2D_DESC& source, UINT requested_levels) {
+        if (bloom_level_count_ == requested_levels &&
+            bloom_textures_[0] != nullptr &&
+            bloom_widths_[0] == std::max(source.Width >> 1, 1u) &&
+            bloom_heights_[0] == std::max(source.Height >> 1, 1u)) {
+            return true;
+        }
+
+        release_bloom_resources();
+
+        HRESULT result = S_OK;
+        for (UINT index = 0; index < requested_levels; ++index) {
+            const UINT level_width =
+                std::max(source.Width >> (index + 1), 1u);
+            const UINT level_height =
+                std::max(source.Height >> (index + 1), 1u);
+
+            // Abaixo de oito pixels o tent da subida amostra fora da textura
+            // nos dois lados e o nivel devolve uma media chapada -- custo sem
+            // alcance. A piramide para aqui, com os niveis que couberam.
+            if (level_width < 8 || level_height < 8) {
+                break;
+            }
+
+            D3D11_TEXTURE2D_DESC description = source;
+            description.Width = level_width;
+            description.Height = level_height;
+            description.MipLevels = 1;
+            description.ArraySize = 1;
+            description.SampleDesc.Count = 1;
+            description.SampleDesc.Quality = 0;
+            description.Usage = D3D11_USAGE_DEFAULT;
+            description.BindFlags =
+                D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+            description.CPUAccessFlags = 0;
+            description.MiscFlags = 0;
+            description.Format = typeless_format(source.Format);
+
+            result = device_->CreateTexture2D(
+                &description, nullptr, &bloom_textures_[index]);
+            if (SUCCEEDED(result)) {
+                D3D11_SHADER_RESOURCE_VIEW_DESC view_description = {};
+                view_description.Format = srgb_view_format(source.Format);
+                view_description.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+                view_description.Texture2D.MostDetailedMip = 0;
+                view_description.Texture2D.MipLevels = 1;
+                result = device_->CreateShaderResourceView(
+                    bloom_textures_[index],
+                    &view_description,
+                    &bloom_views_[index]);
+            }
+            if (SUCCEEDED(result)) {
+                D3D11_RENDER_TARGET_VIEW_DESC target_description = {};
+                target_description.Format = srgb_view_format(source.Format);
+                target_description.ViewDimension =
+                    D3D11_RTV_DIMENSION_TEXTURE2D;
+                target_description.Texture2D.MipSlice = 0;
+                result = device_->CreateRenderTargetView(
+                    bloom_textures_[index],
+                    &target_description,
+                    &bloom_targets_[index]);
+            }
+            if (FAILED(result)) {
+                break;
+            }
+
+            bloom_widths_[index] = level_width;
+            bloom_heights_[index] = level_height;
+            ++bloom_level_count_;
+        }
+
+        // Um nivel so nao e piramide: o glow fica na largura de um blur de
+        // meia resolucao, uma ordem de grandeza abaixo do que as referencias
+        // mostram. Melhor desligar do que entregar um halo que ninguem pediu.
+        if (bloom_level_count_ < 2) {
+            if (!bloom_resources_failure_logged_) {
+                log_message(
+                    "Bloom 0.17.0 sem piramide utilizavel (niveis=%u, "
+                    "0x%08X); mantendo a pilha visual aprovada.",
+                    bloom_level_count_,
+                    static_cast<unsigned>(result));
+                bloom_resources_failure_logged_ = true;
+            }
+            release_bloom_resources();
+            return false;
+        }
+
+        log_message(
+            "Bloom 0.17.0 com piramide de %u niveis: %ux%u ate %ux%u.",
+            bloom_level_count_,
+            bloom_widths_[0],
+            bloom_heights_[0],
+            bloom_widths_[bloom_level_count_ - 1],
+            bloom_heights_[bloom_level_count_ - 1]);
+        return true;
+    }
+
+    // Desce a piramide limiarizando, sobe somando. O resultado fica no nivel
+    // 0, que o PSMain le em t1.
+    void render_bloom_pyramid(const D3D11_TEXTURE2D_DESC& description) {
+        BloomConstants constants = {};
+        constants.threshold = settings_.bloom_threshold;
+        constants.knee = settings_.bloom_knee;
+        constants.input_needs_srgb_decode =
+            scene_needs_srgb_decode_ ? 1.0f : 0.0f;
+        constants.filter_radius[0] = 1.0f;
+        constants.filter_radius[1] = 1.0f;
+
+        D3D11_VIEWPORT viewport = {};
+        viewport.MaxDepth = 1.0f;
+
+        // Descida. O nivel 0 vem da cena em resolucao cheia e ja sai
+        // limiarizado; os demais so reduzem, porque quem nao passou no limiar
+        // do nivel 0 nao tem como voltar.
+        for (UINT index = 0; index < bloom_level_count_; ++index) {
+            const UINT source_width =
+                index == 0 ? description.Width : bloom_widths_[index - 1];
+            const UINT source_height =
+                index == 0 ? description.Height : bloom_heights_[index - 1];
+            constants.source_texel_size[0] =
+                1.0f / static_cast<float>(source_width);
+            constants.source_texel_size[1] =
+                1.0f / static_cast<float>(source_height);
+            context_->UpdateSubresource(
+                bloom_constant_buffer_, 0, nullptr, &constants, 0, 0);
+
+            viewport.Width = static_cast<float>(bloom_widths_[index]);
+            viewport.Height = static_cast<float>(bloom_heights_[index]);
+            context_->RSSetViewports(1, &viewport);
+            context_->OMSetRenderTargets(1, &bloom_targets_[index], nullptr);
+            context_->PSSetShader(
+                index == 0 ? bloom_bright_shader_ : bloom_downsample_shader_,
+                nullptr,
+                0);
+            ID3D11ShaderResourceView* source_view =
+                index == 0 ? scene_view_ : bloom_views_[index - 1];
+            context_->PSSetShaderResources(0, 1, &source_view);
+            context_->PSSetSamplers(0, 1, &sampler_state_);
+            context_->PSSetConstantBuffers(0, 1, &bloom_constant_buffer_);
+            context_->Draw(3, 0);
+            context_->OMSetRenderTargets(0, nullptr, nullptr);
+        }
+
+        // Subida, somando. O nivel que acabou de ser lido como origem vira
+        // destino na volta, entao a textura precisa sair do slot de SRV antes
+        // -- caso contrario o runtime desliga a leitura em silencio e o nivel
+        // some do resultado.
+        context_->OMSetBlendState(
+            additive_blend_state_, nullptr, 0xFFFFFFFFu);
+        for (UINT index = bloom_level_count_ - 1; index > 0; --index) {
+            constants.source_texel_size[0] =
+                1.0f / static_cast<float>(bloom_widths_[index]);
+            constants.source_texel_size[1] =
+                1.0f / static_cast<float>(bloom_heights_[index]);
+            context_->UpdateSubresource(
+                bloom_constant_buffer_, 0, nullptr, &constants, 0, 0);
+
+            viewport.Width = static_cast<float>(bloom_widths_[index - 1]);
+            viewport.Height = static_cast<float>(bloom_heights_[index - 1]);
+            context_->RSSetViewports(1, &viewport);
+            context_->OMSetRenderTargets(
+                1, &bloom_targets_[index - 1], nullptr);
+            context_->PSSetShader(bloom_upsample_shader_, nullptr, 0);
+            context_->PSSetShaderResources(0, 1, &bloom_views_[index]);
+            context_->PSSetSamplers(0, 1, &sampler_state_);
+            context_->PSSetConstantBuffers(0, 1, &bloom_constant_buffer_);
+            context_->Draw(3, 0);
+            context_->OMSetRenderTargets(0, nullptr, nullptr);
+            ID3D11ShaderResourceView* null_view = nullptr;
+            context_->PSSetShaderResources(0, 1, &null_view);
+        }
+        context_->OMSetBlendState(blend_state_, nullptr, 0xFFFFFFFFu);
+
+        viewport.Width = static_cast<float>(description.Width);
+        viewport.Height = static_cast<float>(description.Height);
+        context_->RSSetViewports(1, &viewport);
     }
 
     bool ensure_depth_capture_resources(
@@ -1681,6 +2112,7 @@ private:
 
     void release_frame_resources() {
         release_depth_capture_resources();
+        release_bloom_resources();
         safe_release(spatial_target_);
         safe_release(spatial_view_);
         safe_release(spatial_texture_);
@@ -1696,6 +2128,8 @@ private:
         unsupported_logged_ = false;
         processed_logged_ = false;
         temporal_resources_failure_logged_ = false;
+        bloom_resources_failure_logged_ = false;
+        bloom_active_logged_levels_ = 0;
     }
 
     void initialize_gpu_timing() {
@@ -1911,15 +2345,20 @@ private:
         safe_release(depth_preview_shader_);
         safe_release(ssao_shader_);
         safe_release(temporal_shader_);
+        safe_release(bloom_bright_shader_);
+        safe_release(bloom_downsample_shader_);
+        safe_release(bloom_upsample_shader_);
         safe_release(constant_buffer_);
         safe_release(depth_constant_buffer_);
         safe_release(ssao_constant_buffer_);
         safe_release(temporal_constant_buffer_);
+        safe_release(bloom_constant_buffer_);
         safe_release(sampler_state_);
         safe_release(depth_sampler_state_);
         safe_release(rasterizer_state_);
         safe_release(depth_state_);
         safe_release(blend_state_);
+        safe_release(additive_blend_state_);
         safe_release(context_);
         safe_release(device_);
     }
@@ -1932,6 +2371,13 @@ private:
     ID3D11Texture2D* visual_texture_ = nullptr;
     ID3D11ShaderResourceView* visual_view_ = nullptr;
     ID3D11RenderTargetView* visual_target_ = nullptr;
+    static constexpr UINT kBloomMaxLevels = 6;
+    ID3D11Texture2D* bloom_textures_[kBloomMaxLevels] = {};
+    ID3D11ShaderResourceView* bloom_views_[kBloomMaxLevels] = {};
+    ID3D11RenderTargetView* bloom_targets_[kBloomMaxLevels] = {};
+    UINT bloom_widths_[kBloomMaxLevels] = {};
+    UINT bloom_heights_[kBloomMaxLevels] = {};
+    UINT bloom_level_count_ = 0;
     ID3D11Texture2D* spatial_texture_ = nullptr;
     ID3D11ShaderResourceView* spatial_view_ = nullptr;
     ID3D11RenderTargetView* spatial_target_ = nullptr;
@@ -1947,15 +2393,20 @@ private:
     ID3D11PixelShader* depth_preview_shader_ = nullptr;
     ID3D11PixelShader* ssao_shader_ = nullptr;
     ID3D11PixelShader* temporal_shader_ = nullptr;
+    ID3D11PixelShader* bloom_bright_shader_ = nullptr;
+    ID3D11PixelShader* bloom_downsample_shader_ = nullptr;
+    ID3D11PixelShader* bloom_upsample_shader_ = nullptr;
     ID3D11Buffer* constant_buffer_ = nullptr;
     ID3D11Buffer* depth_constant_buffer_ = nullptr;
     ID3D11Buffer* ssao_constant_buffer_ = nullptr;
     ID3D11Buffer* temporal_constant_buffer_ = nullptr;
+    ID3D11Buffer* bloom_constant_buffer_ = nullptr;
     ID3D11SamplerState* sampler_state_ = nullptr;
     ID3D11SamplerState* depth_sampler_state_ = nullptr;
     ID3D11RasterizerState* rasterizer_state_ = nullptr;
     ID3D11DepthStencilState* depth_state_ = nullptr;
     ID3D11BlendState* blend_state_ = nullptr;
+    ID3D11BlendState* additive_blend_state_ = nullptr;
     IDXGISwapChain* active_swap_chain_ = nullptr;
     UINT width_ = 0;
     UINT height_ = 0;
@@ -1967,6 +2418,8 @@ private:
     bool output_fallback_logged_ = false;
     bool ssao_resources_failure_logged_ = false;
     bool temporal_resources_failure_logged_ = false;
+    bool bloom_resources_failure_logged_ = false;
+    bool bloom_wait_logged_ = false;
     bool resize_in_progress_ = false;
     bool home_key_down_ = false;
     bool end_key_down_ = false;
@@ -1981,6 +2434,7 @@ private:
     std::uint64_t ssao_active_logged_generation_ = 0;
     std::uint64_t temporal_history_generation_ = 0;
     std::uint64_t temporal_active_logged_generation_ = 0;
+    UINT bloom_active_logged_levels_ = 0;
     UINT temporal_depth_width_ = 0;
     UINT temporal_depth_height_ = 0;
     bool temporal_history_valid_ = false;

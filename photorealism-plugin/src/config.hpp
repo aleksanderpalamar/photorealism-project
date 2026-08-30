@@ -44,6 +44,11 @@ struct Settings {
     float temporal_history_weight;
     float temporal_depth_rejection;
     float temporal_color_rejection;
+    bool bloom_enabled;
+    float bloom_threshold;
+    float bloom_knee;
+    float bloom_intensity;
+    float bloom_radius;
 };
 
 Settings default_settings();

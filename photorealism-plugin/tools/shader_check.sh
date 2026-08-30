@@ -49,6 +49,9 @@ shaders=(
   "depth-preview.hlsl PSDepthPreview ps_5_0"
   "ssao.hlsl PSSSAO ps_5_0"
   "temporal.hlsl PSTemporal ps_5_0"
+  "bloom.hlsl PSBloomBright ps_5_0"
+  "bloom.hlsl PSBloomDownsample ps_5_0"
+  "bloom.hlsl PSBloomUpsample ps_5_0"
 )
 
 cd "${project_dir}/shaders"

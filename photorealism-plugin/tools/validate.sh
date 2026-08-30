@@ -281,6 +281,39 @@ negativo e empurra os pretos para baixo, contra o piso de black_lift." >&2
   exit 1
 fi
 
+# Bloom 0.17.0. Os valores ainda sao PROVISORIOS -- derivacao fisica e nao
+# medicao -- e por isso o que se guarda aqui e a FORMA, e nao o numero exato:
+# o que nao pode acontecer e o modulo continuar ligado com um parametro que o
+# torna inerte ou nocivo. Quando a 0.17.1 medir as referencias, os pinos exatos
+# entram aqui, no molde dos da curva de tom acima.
+if ! grep -Fqx '[module.bloom.0.17.0]' "${cfg}"; then
+  echo "Secao do bloom 0.17.0 sumiu do cfg: o modulo cai para os defaults \
+internos de config.cpp sem ninguem notar." >&2
+  exit 1
+fi
+if grep -Eq '^intensity=0(\.0+)?$' "${cfg}"; then
+  echo "intensity do bloom em zero: a piramide inteira roda todo frame e o \
+resultado e multiplicado por zero. O log diria 'ativo' e a tela nao mudaria -- \
+que e exatamente o modo de falha que custou tres versoes na serie 0.13.x." >&2
+  exit 1
+fi
+# threshold=1.0 e o outro jeito de o modulo ficar ligado sem fazer nada: nada
+# da cena passa do limiar. O clamp de config.cpp segura em 0.98, e esta guarda
+# impede que o cfg peca isso em primeiro lugar.
+if grep -Eq '^threshold=(1(\.0+)?|[2-9])' "${cfg}"; then
+  echo "threshold do bloom em 1.0 ou acima: nenhum pixel da cena passa do \
+limiar e o modulo fica ativo sem produzir nada." >&2
+  exit 1
+fi
+# O aviso de que os numeros nao foram medidos vale enquanto nao forem. Se
+# alguem apagar o aviso sem medir, o proximo a ler o arquivo acredita neles.
+if ! grep -Fq 'OS QUATRO NUMEROS ABAIXO SAO PROVISORIOS' "${cfg}"; then
+  echo "O aviso de parametros provisorios do bloom sumiu do cfg. Se eles ja \
+foram medidos com bloom_report.py, troque o aviso pelos pinos exatos; se nao \
+foram, o aviso precisa continuar la." >&2
+  exit 1
+fi
+
 # Os hashes de depth-preview, ssao e temporal mudaram na 0.12.0: os tres
 # perderam suas copias de linearize_reversed_depth/reconstruct_view_* para o
 # header compartilhado depth_view_space.hlsli. A igualdade foi provada em
@@ -381,15 +414,58 @@ ${tone_marker}" >&2
 done
 # A ordem importa: o lift e o piso da imagem FINAL, entao vem depois da
 # vignette. Antes dela os cantos escureceriam abaixo do piso.
+#
+# O "|| true" das capturas abaixo nao e decoracao: sob "set -euo pipefail" um
+# grep que nao acha nada derruba o script SEM IMPRIMIR NADA, e a guarda que
+# existe justamente para explicar o problema morre calada. Com ele a variavel
+# fica vazia e o teste de vazio adiante e quem fala.
 visual_shader_source="${project_dir}/shaders/photorealism.hlsl"
 vignette_line="$(grep -n 'color \*= lerp(1.0, smoothstep' \
-  "${visual_shader_source}" | head -1 | cut -d: -f1)"
+  "${visual_shader_source}" | head -1 | cut -d: -f1 || true)"
 lift_call_line="$(grep -n 'color = apply_black_lift(color, BlackLift);' \
-  "${visual_shader_source}" | head -1 | cut -d: -f1)"
+  "${visual_shader_source}" | head -1 | cut -d: -f1 || true)"
 if [[ -z "${vignette_line}" || -z "${lift_call_line}" ]] ||
   (( lift_call_line < vignette_line )); then
   echo "apply_black_lift saiu de depois da vignette: os cantos voltam a \
 escurecer abaixo do piso de preto, e o piso deixa de ser piso." >&2
+  exit 1
+fi
+
+# Bloom 0.17.0: a ordem da composicao dentro do PSMain, guardada por numero de
+# linha como a do black_lift acima. As tres fronteiras importam e cada uma
+# quebra de um jeito diferente:
+#
+#   depois do sharpening -- senao o realce morde a borda do glow e devolve um
+#   halo duplo;
+#   antes de apply_tonal_controls -- para o brilho receber exposicao,
+#   temperatura e tint junto com a cena. Depois dele o flare do sol sairia
+#   cinza sobre uma imagem quente;
+#   e portanto antes de apply_highlight_rolloff, que comprime a soma. Somar
+#   luz depois do ombro seria somar depois da unica coisa que impede o estouro.
+bloom_call_line="$(grep -n 'center += bloom \* BloomIntensity;' \
+  "${visual_shader_source}" | head -1 | cut -d: -f1 || true)"
+sharpen_line="$(grep -n 'Sharpness + LocalContrast \* edge_mask' \
+  "${visual_shader_source}" | head -1 | cut -d: -f1 || true)"
+tonal_call_line="$(grep -n 'float3 color = apply_tonal_controls(center);' \
+  "${visual_shader_source}" | head -1 | cut -d: -f1 || true)"
+if [[ -z "${bloom_call_line}" || -z "${sharpen_line}" ||
+  -z "${tonal_call_line}" ]]; then
+  echo "A composicao do bloom sumiu do PSMain, ou os marcadores da ordem \
+mudaram de forma. Sem ela a piramide roda todo frame e nada e somado." >&2
+  exit 1
+fi
+if (( bloom_call_line < sharpen_line ||
+  bloom_call_line > tonal_call_line )); then
+  echo "A composicao do bloom saiu da faixa entre o sharpening e os controles \
+tonais. Antes do realce ela ganha halo duplo; depois dos controles tonais o \
+glow deixa de ser graduado com a cena e o flare quente sai cinza." >&2
+  exit 1
+fi
+# O modulo tem que continuar desligavel de verdade: sem o ramo em BloomEnabled
+# a saida com bloom desligado deixa de ser identica a 0.16.0.
+if ! grep -Fq 'if (BloomEnabled > 0.5)' "${visual_shader_source}"; then
+  echo "O ramo de BloomEnabled sumiu do PSMain: com o modulo desligado a \
+imagem deixa de ser identica a 0.16.0 pixel a pixel." >&2
   exit 1
 fi
 
@@ -398,7 +474,7 @@ fi
 # "Shader visual aprovado foi alterado" e as guardas nomeadas nunca falavam.
 # Uma guarda muda nao guarda coisa alguma.
 visual_shader="${project_dir}/shaders/photorealism.hlsl"
-expected_visual_shader_sha256="2131faa2018c960fbb2dbbe29b6150652026b7ee91439a458c7d68f2ba1f2753"
+expected_visual_shader_sha256="d500546e5100e9c409fb11764c502ce421fa5d9cfe9f3f3dba690e0438d298d5"
 actual_visual_shader_sha256="$(sha256sum "${visual_shader}" | awk '{print $1}')"
 if [[ "${actual_visual_shader_sha256}" != "${expected_visual_shader_sha256}" ]]; then
   echo "Shader visual aprovado foi alterado: ${actual_visual_shader_sha256}" >&2
@@ -414,11 +490,27 @@ entre 6 e 12): e o unico numero que sozinho separa aquele visual do nosso." >&2
   exit 1
 fi
 
+# A propriedade central do limiar, dentro do teste: contribuicao exatamente
+# zero abaixo do joelho. Sem ela o bloom vira veu cinza uniforme em vez de
+# brilho em volta de fontes.
+if ! grep -Fq 'assert(contribution(0.0, kThreshold, kKnee) == 0.0);' \
+  "${project_dir}/tests/bloom_curve_test.cpp"; then
+  echo "O teste do bloom parou de exigir contribuicao zero abaixo do joelho: \
+e o que separa brilho em volta de fontes de uma nevoa sobre a cena inteira." >&2
+  exit 1
+fi
+
 tone_curve_test="/tmp/photorealism-tone-curve-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/tests/tone_curve_test.cpp" \
   -o "${tone_curve_test}"
 "${tone_curve_test}"
+
+bloom_curve_test="/tmp/photorealism-bloom-curve-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/bloom_curve_test.cpp" \
+  -o "${bloom_curve_test}"
+"${bloom_curve_test}"
 
 screenshot_request_gate_test="/tmp/photorealism-screenshot-request-gate-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
@@ -461,7 +553,7 @@ effective_profile="$(awk -F= '
 # que importa. Uma guarda que explica uma regressao sutil so serve se for ela
 # a falar. Nesta ordem o hash continua pegando tudo que as guardas nao
 # cobrem, e so isso.
-expected_cfg_sha256="b1d07b7e1f9eccdd1ab15b5422b5af234fb84a7900cdd1ae13e9dcbf57cde470"
+expected_cfg_sha256="125e10b67cb6734c490bfaa4cf7c789a3cdb83f1d75eee8795e9f02e784c74a5"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2

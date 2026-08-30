@@ -1,8 +1,9 @@
 # Roadmap
 
-O desenvolvimento do modulo espacial FSR possui numeracao e roadmap proprios
-em `FSR_ROADMAP.md`. A fundacao FSR 0.1.0 e o observador color 0.2.0 acompanham
-o nucleo 0.10.1 sem modificar sua pilha visual.
+O modulo FSR foi removido na 0.15.0 e o de tracado de raios na 0.16.0, junto
+com o `FSR_ROADMAP.md` que este cabecalho citava. O que sobrou e o que o alvo
+visual medido usa: curva de tom, coloracao, iluminacao, TAA/AA nativo, SSAO e,
+desde a 0.17.0, bloom. As secoes historicas abaixo ficam como registro.
 
 ## 0.1.x a 0.3.x - Fundacao e calibracao visual
 
@@ -471,11 +472,13 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   era a razao de ter subido, era o RTGI e nao o SSAO. Continua valendo por si
   -- calibracao afinada sobre um buffer, rodando sobre outro -- mas sem
   sintoma reportado atras dela;
-- **0.17.0** bloom. Visivel nas referencias -- o flare do sol na golden hour, o
-  brilho na borda do para-brisa -- e exige passes e recursos novos:
-  bright-pass, blur separavel, composicao. Ficou fora da 0.14.0 de proposito:
-  somar glare sobre uma curva de tom ainda nao calibrada torna as duas coisas
-  impossiveis de julgar separadamente;
+- **0.17.1 (proxima)** medir o bloom. A versao anterior entregou a estrutura
+  com parametros derivados fisicamente, e nao medidos -- a unica parte do
+  visual hoje que nao passou por `grade_report.py` ou equivalente.
+  `tools/bloom_report.py` ja existe e esta conferido contra alvos sinteticos;
+  falta rodar sobre as cinco referencias do ATS e trocar `threshold`, `knee`,
+  `intensity` e `radius` pelo que ele medir. Enquanto isso nao acontece, o cfg
+  carrega o aviso e `validate.sh` guarda o aviso;
 - **0.18.0 (condicional)** upgrade de bind flag via hook de `CreateTexture2D`,
   na tecnica do ReShade: promover o depth a typeless com
   `BIND_SHADER_RESOURCE`, sintetizando o descritor no `CreateDepthStencilView`.

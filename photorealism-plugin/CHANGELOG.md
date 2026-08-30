@@ -1,5 +1,50 @@
 # Changelog
 
+## Pacote 0.17.0 - 2026-08-30
+
+Bloom. A estrutura esta entregue e **os parametros ainda nao foram medidos** --
+os quatro numeros do cfg sao derivacao fisica, e a calibracao contra as cinco
+referencias do ATS e a 0.17.1. Detalhe em `references/bloom-0.17.0.md`.
+
+O glare que as referencias mostram -- flare do sol na golden hour, halacao na
+borda do para-brisa, farois na contramao -- **nenhum ajuste por pixel
+alcancava**. Todo efeito de `photorealism.hlsl` mapeia um valor para outro no
+mesmo lugar; bloom e energia atravessando dezenas de pixels. Mesmo tipo de
+limite que a 0.14.0 encontrou quando `apply_temperature` so trocava R contra B:
+faltava o eixo, e aqui faltava o passe.
+
+- **`shaders/bloom.hlsl`**, tres entry points -- limiar de joelho suave na
+  descida, box na reducao, tent na subida com blend aditivo. Sem vertex shader
+  proprio: reusa o `VSMain`, como ssao e temporal ja faziam;
+- **piramide de ate seis niveis, e nao um blur maior.** Nove taps a meia
+  resolucao alcancam 0,007 da altura; o flare das referencias esta uma ordem de
+  grandeza acima, e esticar os offsets deixa buracos que viram anel. `radius` e
+  fracao da altura e vira contagem de niveis, o que faz o mesmo valor servir em
+  1080p e em 4K;
+- **a composicao acontece dentro do `PSMain`**, entre o sharpening e os
+  controles tonais. A cadeia do frame ja tem cinco ramos e todos comecam pelo
+  mesmo passe visual -- gerar a piramide antes do `if` e ler o resultado em
+  `t1` faz o modulo valer para os cinco **sem criar ramo nenhum**;
+- **`Insert` volta a sete posicoes**, a 6 mostrando o bloom isolado;
+- **`tools/bloom_report.py`** -- mede o perfil radial em volta das fontes e
+  devolve os tres parametros. Conferido contra alvos sinteticos: recupera 0,035
+  como 0,038 e 0,094 como 0,100, vies de ~7% para cima;
+- **`tests/bloom_curve_test.cpp`** prova o zero exato abaixo do joelho em cem
+  pontos. Nao basta ser pequeno: se um pixel escuro contribui, todos
+  contribuem, e o bloom vira nevoa cinza em vez de brilho em volta de fontes.
+
+**Com `enabled=false` a imagem e identica a 0.16.0.** O `PSMain` ramifica na
+constante, entao nada e somado. Os outros quatro entry points sairam
+byte-identicos; so o `PSMain` mudou, de 308 para 319 instrucoes.
+
+Uma correcao de processo encontrada ao provar as guardas novas: as capturas de
+numero de linha do `validate.sh` usam `grep | head | cut`, e sob
+`set -euo pipefail` um grep que nao acha nada **derruba o script sem imprimir
+nada**. As guardas de ordem morriam caladas -- inclusive a do `black_lift`, que
+estava assim desde a 0.14.0 e ninguem tinha notado porque a linha que ela
+procura nunca faltou. As cinco capturas ganharam `|| true`, e as sete guardas
+novas foram provadas falhando com a propria mensagem.
+
 ## Pacote 0.16.0 - 2026-08-30
 
 Remocao completa do RTGI, a pedido do usuario e pela mesma razao medida na

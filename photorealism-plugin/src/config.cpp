@@ -61,6 +61,11 @@ struct CalibrationStack {
     float temporal_history_weight;
     float temporal_depth_rejection;
     float temporal_color_rejection;
+    bool bloom_enabled;
+    float bloom_threshold;
+    float bloom_knee;
+    float bloom_intensity;
+    float bloom_radius;
 };
 
 enum class Section {
@@ -73,6 +78,7 @@ enum class Section {
     ssao_refinement_0_8_0,
     ssao_interior_0_9_0,
     temporal_0_10_0,
+    bloom_0_17_0,
     unknown,
 };
 
@@ -132,6 +138,9 @@ Section parse_section(const char* name) {
     }
     if (_stricmp(name, "module.temporal.0.10.0") == 0) {
         return Section::temporal_0_10_0;
+    }
+    if (_stricmp(name, "module.bloom.0.17.0") == 0) {
+        return Section::bloom_0_17_0;
     }
     return Section::unknown;
 }
@@ -300,6 +309,28 @@ void assign_ssao_interior_value(
     }
 }
 
+void assign_bloom_value(
+    CalibrationStack* stack, const char* key, const char* value) {
+    if (stack == nullptr || key == nullptr || value == nullptr) {
+        return;
+    }
+    if (_stricmp(key, "enabled") == 0) {
+        stack->bloom_enabled = parse_bool(value);
+        return;
+    }
+
+    const float number = static_cast<float>(std::strtod(value, nullptr));
+    if (_stricmp(key, "threshold") == 0) {
+        stack->bloom_threshold = number;
+    } else if (_stricmp(key, "knee") == 0) {
+        stack->bloom_knee = number;
+    } else if (_stricmp(key, "intensity") == 0) {
+        stack->bloom_intensity = number;
+    } else if (_stricmp(key, "radius") == 0) {
+        stack->bloom_radius = number;
+    }
+}
+
 void assign_temporal_value(
     CalibrationStack* stack, const char* key, const char* value) {
     if (stack == nullptr || key == nullptr || value == nullptr) {
@@ -426,6 +457,14 @@ CalibrationStack reference_stack() {
     stack.temporal_history_weight = 0.65f;
     stack.temporal_depth_rejection = 0.02f;
     stack.temporal_color_rejection = 0.08f;
+    // PROVISORIO -- ver o comentario do cfg. Estes quatro numeros ainda nao
+    // foram medidos contra as referencias do ATS; sao derivacao fisica, nao
+    // calibracao. A 0.17.1 os substitui pelo que bloom_report.py medir.
+    stack.bloom_enabled = true;
+    stack.bloom_threshold = 0.75f;
+    stack.bloom_knee = 0.15f;
+    stack.bloom_intensity = 0.06f;
+    stack.bloom_radius = 0.04f;
     return stack;
 }
 
@@ -498,6 +537,11 @@ Settings compose_stack(const CalibrationStack& stack) {
     settings.temporal_history_weight = stack.temporal_history_weight;
     settings.temporal_depth_rejection = stack.temporal_depth_rejection;
     settings.temporal_color_rejection = stack.temporal_color_rejection;
+    settings.bloom_enabled = stack.bloom_enabled;
+    settings.bloom_threshold = stack.bloom_threshold;
+    settings.bloom_knee = stack.bloom_knee;
+    settings.bloom_intensity = stack.bloom_intensity;
+    settings.bloom_radius = stack.bloom_radius;
 
     settings.temperature = clamp_value(settings.temperature, 3000.0f, 9000.0f);
     settings.exposure = clamp_value(settings.exposure, -2.0f, 2.0f);
@@ -561,6 +605,16 @@ Settings compose_stack(const CalibrationStack& stack) {
         clamp_value(settings.temporal_depth_rejection, 0.001f, 0.5f);
     settings.temporal_color_rejection =
         clamp_value(settings.temporal_color_rejection, 0.005f, 1.0f);
+    // O teto do limiar fica em 0.98 e nao em 1.0: em 1.0 nada da cena passa e
+    // o modulo fica ligado sem produzir nada, que e pior que desligado porque
+    // o log diz "ativo". O piso em 0.2 impede que o bloom vire veu sobre a
+    // imagem inteira.
+    settings.bloom_threshold =
+        clamp_value(settings.bloom_threshold, 0.2f, 0.98f);
+    settings.bloom_knee = clamp_value(settings.bloom_knee, 0.0f, 0.5f);
+    settings.bloom_intensity =
+        clamp_value(settings.bloom_intensity, 0.0f, 1.0f);
+    settings.bloom_radius = clamp_value(settings.bloom_radius, 0.005f, 0.2f);
     return settings;
 }
 
@@ -628,6 +682,14 @@ void log_stack(const CalibrationStack& stack, const Settings& settings) {
         settings.temporal_history_weight,
         settings.temporal_depth_rejection,
         settings.temporal_color_rejection);
+    log_message(
+        "Modulo bloom 0.17.0: %s threshold=%.3f knee=%.3f intensity=%.3f "
+        "radius=%.4f (parametros PROVISORIOS, nao medidos).",
+        settings.bloom_enabled ? "ativo" : "inativo",
+        settings.bloom_threshold,
+        settings.bloom_knee,
+        settings.bloom_intensity,
+        settings.bloom_radius);
 }
 
 }  // namespace
@@ -697,6 +759,10 @@ bool load_settings(Settings* settings) {
         }
         if (section == Section::temporal_0_10_0) {
             assign_temporal_value(&stack, key, value);
+            continue;
+        }
+        if (section == Section::bloom_0_17_0) {
+            assign_bloom_value(&stack, key, value);
             continue;
         }
         assign_layer_value(layer_for_section(&stack, section), key, value);

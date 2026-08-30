@@ -1,4 +1,5 @@
 Texture2D SceneTexture : register(t0);
+Texture2D BloomTexture : register(t1);
 SamplerState SceneSampler : register(s0);
 
 cbuffer SettingsBuffer : register(b0)
@@ -26,6 +27,11 @@ cbuffer SettingsBuffer : register(b0)
     float HighlightRolloff;
     float Tint;
     float VisualPadding;
+
+    float BloomEnabled;
+    float BloomIntensity;
+    float BloomPadding0;
+    float BloomPadding1;
 };
 
 struct VertexOutput
@@ -184,6 +190,28 @@ float4 PSMain(VertexOutput input) : SV_Target
         (1.0 - smoothstep(0.55, 0.90, center_luma));
     center += detail *
         (Sharpness + LocalContrast * edge_mask * midtone_mask);
+
+    // O bloom entra AQUI, e a posicao e as tres coisas de uma vez.
+    //
+    // Depois do realce, senao o sharpening morde a borda do glow e devolve um
+    // halo duplo -- realcar uma coisa que ja e suave por natureza.
+    //
+    // Antes dos controles tonais, para o brilho receber exposicao, contraste,
+    // temperatura e tint junto com o resto. O flare do sol na golden hour tem
+    // que sair QUENTE porque a imagem inteira e quente, e nao cinza colado por
+    // cima.
+    //
+    // E portanto antes de apply_highlight_rolloff, que comprime a soma em vez
+    // de deixar estourar. O ombro da 0.14.0 e o que torna somar luz aqui
+    // seguro; sem ele isto seria um plato branco.
+    //
+    // Com BloomEnabled em zero nada e somado e a saida e identica a 0.16.0,
+    // pixel a pixel. E o que torna o modulo desligavel de verdade.
+    if (BloomEnabled > 0.5)
+    {
+        float3 bloom = BloomTexture.Sample(SceneSampler, input.uv).rgb;
+        center += bloom * BloomIntensity;
+    }
 
     float3 color = apply_tonal_controls(center);
 
