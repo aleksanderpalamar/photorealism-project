@@ -133,7 +133,10 @@ constexpr RtgiDebugMode parse_rtgi_debug_mode(const char* name) {
 
 // Ciclo das debug views no preview, na ordem em que sao uteis para depurar a
 // marcha: primeiro a geometria, depois os raios, depois o resultado.
-// temporal_gi fica de fora ate a 0.12.3 existir, e final nao e diagnostico.
+// temporal_gi fica de fora: o preview do modo 6 re-executa a marcha em
+// resolucao cheia e nao tem historia, entao mostrar o buffer acumulado exige um
+// passe de exibicao da meia resolucao. Ele vem junto com o visualizador de que
+// o denoiser da 0.13.4 precisa. final nao e diagnostico.
 constexpr RtgiDebugMode next_rtgi_preview_debug(RtgiDebugMode mode) {
     switch (mode) {
         case RtgiDebugMode::normals:
@@ -241,6 +244,29 @@ inline std::uint32_t rtgi_samples_within(
     return found;
 }
 
+// Quanto da historia acumulada um pixel aceita neste frame -- 0.13.3.
+//
+// Espelha o produto que PSRtgiTemporal calcula, e existe aqui para virar
+// teste: o shader nao roda no Linux, esta funcao roda.
+//
+// Produto, e nao media, de proposito. As tres confiancas respondem a mesma
+// pergunta por caminhos diferentes -- "o pixel deste uv ainda e a mesma
+// superficie do frame passado?" -- e um "nao" isolado ja e resposta. Uma media
+// deixaria duas confiancas altas encobrirem a terceira, que e exatamente o
+// caso da quina do painel contra o para-brisa: mesma distancia, mesma cor,
+// outra normal. O resultado seria borrao, que e o unico defeito que a
+// acumulacao pode introduzir e nao consegue desfazer.
+constexpr float rtgi_history_alpha(
+    float history_weight,
+    float depth_confidence,
+    float normal_confidence,
+    float color_confidence) {
+    return clamp_float(history_weight, 0.0f, 1.0f) *
+        clamp_float(depth_confidence, 0.0f, 1.0f) *
+        clamp_float(normal_confidence, 0.0f, 1.0f) *
+        clamp_float(color_confidence, 0.0f, 1.0f);
+}
+
 struct RtgiSettings {
     bool enabled;
     std::uint32_t resolution_scale;
@@ -325,7 +351,7 @@ constexpr RtgiSettings default_rtgi_settings() {
         12,
         0.10f,
         15.0f,
-        0.15f,
+        0.6f,
         4.0f,
         0.25f,
         0.5f,
@@ -333,7 +359,7 @@ constexpr RtgiSettings default_rtgi_settings() {
         0.90f,
         0.015f,
         0.85f,
-        0.15f,
+        0.05f,
         RtgiDebugMode::final,
     };
 }

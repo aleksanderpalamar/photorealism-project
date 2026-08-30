@@ -529,12 +529,6 @@ for telemetry_message in \
 done
 
 cfg="${project_dir}/config/photorealism-plugin.cfg"
-expected_cfg_sha256="9000cf310dde47a4a1f40f2b68afe1030d39bb79529ad2a1159f75367d872f07"
-actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
-if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
-  echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
-  exit 1
-fi
 for section in \
   '[base.0.1.2]' \
   '[module.visual.0.2.0]' \
@@ -576,7 +570,16 @@ grep -Fqx 'ray_count=4' "${cfg}"
 grep -Fqx 'max_steps=12' "${cfg}"
 grep -Fqx 'range_min=0.10' "${cfg}"
 grep -Fqx 'range_max=15.0' "${cfg}"
-grep -Fqx 'gi_intensity=0.15' "${cfg}"
+# gi_intensity multiplica o GI inteiro na composicao, e ate a 0.13.2.1 valia
+# 0.15. Com sky_ambient tambem multiplicando, o teto do que um raio escapado
+# somava era 0,0375 linear e o raio tipico no painel ficava em ~0,008 -- cerca
+# de 5 niveis em 255. O efeito existia e nao dava para ver.
+if grep -Eq '^gi_intensity=0\.[0-2][0-9]*$' "${cfg}"; then
+  echo "gi_intensity voltou para a faixa em que o GI e invisivel: com \
+sky_ambient multiplicando junto, o painel ganha uns 5 niveis em 255." >&2
+  exit 1
+fi
+grep -Fqx 'gi_intensity=0.6' "${cfg}"
 grep -Fqx 'max_indirect_luma=4.0' "${cfg}"
 # sky_ambient e a luz de um raio que escapa sem acertar nada. Em zero (o valor
 # ate a 0.13.2.1) o shader responde preto a todo "nao sei", e dentro da cabine
@@ -588,15 +591,36 @@ a devolver preto, e na cabine escapam todos." >&2
   exit 1
 fi
 grep -Fqx 'sky_ambient=0.25' "${cfg}"
-grep -Fqx 'history_weight=0.90' "${cfg}"
-grep -Fqx 'normal_rejection=0.85' "${cfg}"
-# Os quatro parametros temporais continuam sem efeito ate a 0.13.3 e nem chegam
-# ao cbuffer. A marca da 0.13.2 saiu junto com a entrega dela.
-grep -Fq 'INERTE ate a 0.13.3' "${cfg}"
-if grep -Fq 'INERTE ate a 0.13.2' "${cfg}"; then
-  echo "cfg ainda marca como inertes valores que a 0.13.2 ligou." >&2
+# Os quatro parametros da acumulacao temporal, ativos desde a 0.13.3. As tres
+# rejeicoes sao multiplicadas em PSRtgiTemporal: qualquer uma zerada aceitaria
+# a historia de qualquer superficie, que e ghosting, e ghosting e o unico
+# defeito que a acumulacao introduz e nao consegue desfazer.
+rtgi_temporal_zero='^(history_weight|depth_rejection|normal_rejection'
+rtgi_temporal_zero="${rtgi_temporal_zero}|color_rejection)=0(\.0+)?$"
+if grep -Eq "${rtgi_temporal_zero}" "${cfg}"; then
+  echo "Parametro da acumulacao RTGI zerado: as tres rejeicoes sao \
+multiplicadas, e uma delas em zero descarta ou aceita tudo." >&2
   exit 1
 fi
+for rtgi_temporal_pin in \
+  'history_weight=0.90' \
+  'depth_rejection=0.015' \
+  'normal_rejection=0.85' \
+  'color_rejection=0.05'; do
+  if ! grep -Fqx "${rtgi_temporal_pin}" "${cfg}"; then
+    echo "Parametro da acumulacao RTGI 0.13.3 fora do valor aprovado: \
+${rtgi_temporal_pin}" >&2
+    exit 1
+  fi
+done
+# As marcas de inercia saem junto com a entrega que as consome.
+for retired_marker in 'INERTE ate a 0.13.2' 'INERTE ate a 0.13.3'; do
+  if grep -Fq "${retired_marker}" "${cfg}"; then
+    echo "cfg ainda marca como inertes valores ja ligados: \
+${retired_marker}" >&2
+    exit 1
+  fi
+done
 # Politica de AA nativa: o TAA ligado e o que expoe o depth ao shader.
 grep -Fqx '[native_aa.0.12.2]' "${cfg}"
 grep -Fqx 'manage=true' "${cfg}"
@@ -619,7 +643,11 @@ for rtgi_message in \
   'marcha geometrica, o GI e somado a cena antes do grading' \
   'hit_distance' \
   'rtgi_0.13.2=%s' \
-  'rtgi_composicao_0.13.2=%s'; do
+  'rtgi_acumulacao_0.13.3=%s' \
+  'rtgi_composicao_0.13.2=%s' \
+  'Historico RTGI 0.13.3 criado' \
+  'Falha ao criar historico RTGI 0.13.3' \
+  'Historico RTGI 0.13.3 descartado'; do
   if ! grep -Fq "${rtgi_message}" "${dxgi_strings}"; then
     echo "Modulo RTGI ausente no nucleo DXGI: ${rtgi_message}" >&2
     exit 1
@@ -773,6 +801,21 @@ effective_profile="$(awk -F= '
       total["local_contrast"], total["sharpness"], total["vignette"]
   }
 ' "${cfg}")"
+
+# O hash fecha o cfg depois das guardas por chave, e nao antes.
+#
+# Ate a 0.13.3 ele vinha primeiro, e por isso nenhuma das guardas nomeadas
+# acima chegava a falar: qualquer edicao do arquivo batia no hash e saia com
+# "Configuracao consolidada foi alterada", que nao diz o que quebrou nem por
+# que importa. Uma guarda que explica uma regressao sutil so serve se for ela
+# a falar. Nesta ordem o hash continua pegando tudo que as guardas nao
+# cobrem, e so isso.
+expected_cfg_sha256="3d98bdd4d3e24d67ff2e615250001d1801bd726dabca5c9f165c970e97c04ba0"
+actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
+if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
+  echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
+  exit 1
+fi
 expected_profile="6400.0 -0.030 1.070 0.970 0.050 0.100 -0.180 -0.060 0.080 0.240 0.200 0.030"
 if [[ "${effective_profile}" != "${expected_profile}" ]]; then
   echo "Perfil cumulativo divergiu da 0.3.0 aprovada: ${effective_profile}" >&2
@@ -893,5 +936,68 @@ grep -Fq 'sky_ambient > 0.0f' "${project_dir}/tests/rtgi_config_test.cpp"
 grep -Fq 'PSRtgiCompose' "${project_dir}/src/postprocess.cpp"
 grep -Fq 'render_rtgi_compose_pass' "${project_dir}/src/postprocess.cpp"
 grep -Fq 'rtgi_samples_within' "${project_dir}/tests/rtgi_config_test.cpp"
+
+# A 0.13.3 e o que torna quatro raios por pixel um orcamento viavel: sem
+# acumular frames, o sorteio de direcao de cada raio vai inteiro para a tela
+# como cintilacao.
+if ! grep -Fq 'float4 PSRtgiTemporal(VertexOutput input) : SV_Target' \
+  "${project_dir}/shaders/rtgi.hlsl"; then
+  echo "PSRtgiTemporal sumiu de rtgi.hlsl: o GI volta a ser composto raio a \
+raio, sem acumulacao." >&2
+  exit 1
+fi
+# O hash por raio precisa ser inteiro. O sin() que estava aqui ate a 0.13.2.1
+# perde os bits baixos conforme o argumento cresce com o frame -- degrada
+# justamente ao longo dos minutos em que a acumulacao deveria estar somando.
+if ! grep -Fq 'uint pcg_hash(uint value)' "${project_dir}/shaders/rtgi.hlsl"
+then
+  echo "pcg_hash sumiu de rtgi.hlsl: o hash por raio volta a degradar com o \
+frame, e a acumulacao soma amostras cada vez piores." >&2
+  exit 1
+fi
+if ! grep -Fq 'float2 ray_random(uint2 pixel, uint frame, uint ray_index)' \
+  "${project_dir}/shaders/rtgi.hlsl"; then
+  echo "ray_random deixou de receber pixel, frame e raio como inteiros; e por \
+ai que o hash de ponto flutuante volta." >&2
+  exit 1
+fi
+# A constante existir nao basta: o que importa e o azimute ser girado por ela a
+# cada frame. Por isso a guarda e sobre o uso, e nao sobre o nome.
+if ! grep -Fq 'random.y = frac(random.y + frame_rotation);' \
+  "${project_dir}/shaders/rtgi.hlsl"; then
+  echo "A rotacao por frame sumiu de rtgi.hlsl: sem ela a acumulacao converge \
+para a media de amostras mal distribuidas." >&2
+  exit 1
+fi
+for rtgi_temporal_marker in \
+  'rtgi_history_alpha' \
+  'ensure_rtgi_temporal_resources' \
+  'render_rtgi_temporal_pass' \
+  'invalidate_rtgi_history'; do
+  if ! grep -Fq "${rtgi_temporal_marker}" \
+    "${project_dir}/src/postprocess.cpp" \
+    "${project_dir}/src/rtgi_config.hpp"; then
+    echo "Acumulacao RTGI 0.13.3 incompleta: ${rtgi_temporal_marker}" >&2
+    exit 1
+  fi
+done
+# As duas regressoes da 0.13.3 que so o teste pode provar. Guardas nomeadas, e
+# nao greps nus: um grep nu sob `set -e` derruba a validacao sem dizer nada, e
+# uma guarda muda nao guarda coisa alguma.
+rtgi_test="${project_dir}/tests/rtgi_config_test.cpp"
+# A asserta em si, e nao o nome: com o nome bastando, a declaracao `using` no
+# topo do teste ja satisfaria a guarda com zero cobertura.
+if ! grep -Fq 'rtgi_history_alpha(0.90f, 1.0f, 0.0f, 1.0f) == 0.0f' \
+  "${rtgi_test}"; then
+  echo "O teste parou de provar que UMA rejeicao zerada descarta a historia \
+inteira: e o que separa acumular de borrar." >&2
+  exit 1
+fi
+if ! grep -Fq 'normal_rejection > 0.0f' "${rtgi_test}"; then
+  echo "O teste parou de exigir normal_rejection maior que zero: com ele em \
+zero a historia e aceita de qualquer normal, que e ghosting na quina do \
+painel contra o para-brisa." >&2
+  exit 1
+fi
 
 echo "Proxies, core Photorealism, captura Steam, draw proof FSR 0.7.1, depth, SSAO, telemetria, perfil, shaders e numeracao de versao validados."

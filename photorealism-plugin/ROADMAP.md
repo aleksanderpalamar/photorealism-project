@@ -197,10 +197,14 @@ As fases:
   preto. Os tres desfechos de nao-acerto de `march_ray` passam a compartilhar
   `ambient_escape`, e `sky_ambient` sai de `0.0`. E o que faz o RTGI alcancar
   o interior da cabine; ver **O escape do raio**, abaixo;
-- **0.13.3 (proxima)** acumulacao temporal com rotacao de raios por frame,
-  somando `normal_rejection` a rejeicao de depth e cor que ja existe;
-- **0.13.4** denoiser bilateral depth-aware e normal-aware, que nao pode
-  atravessar bordas;
+- **0.13.3 (entregue)** acumulacao temporal com rotacao de raios por frame,
+  somando `normal_rejection` a rejeicao de depth e cor que ja existia. Traz
+  junto a recalibracao de `gi_intensity`, sem a qual a versao nao teria como
+  ser avaliada; ver **A acumulacao e a escala**, abaixo. Detalhe em
+  `references/rtgi-temporal-0.13.3.md`;
+- **0.13.4 (proxima)** denoiser bilateral depth-aware e normal-aware, que nao
+  pode atravessar bordas. Leva junto o passe de exibicao da meia resolucao, que
+  e o que falta para `debug=temporal_gi` mostrar o buffer acumulado;
 - **0.13.5** traversal Hi-Z sobre mips de depth; e o ponto em que compute
   shader passa a valer o custo de introduzir UAVs no plugin;
 - **0.13.6** qualidade adaptativa e presets Low/Medium/High para a RX 6600.
@@ -288,6 +292,42 @@ esta *atras* do painel em view-space, fora do hemisferio dele, e nenhum ajuste
 de parametro alcanca isso em screen-space puro. Superficie virada para a camera
 so enxerga o que esta **ao lado dela, em profundidade parecida**.
 
+### A acumulacao e a escala
+
+A 0.13.3 tem duas metades, e a segunda entrou porque a primeira nao teria como
+ser avaliada sem ela.
+
+**A acumulacao.** Quatro raios por pixel e ruido, e ate a 0.13.2.1 esse ruido
+ia inteiro para a tela. `PSRtgiTemporal` soma o frame anterior sob tres
+rejeicoes **multiplicadas** -- profundidade, normal e cor. Produto, e nao
+media: as tres respondem a mesma pergunta por caminhos diferentes, e um "nao"
+isolado ja e resposta. Media deixaria duas confiancas altas encobrirem a
+terceira, que e exatamente a quina do painel contra o para-brisa -- mesma
+distancia, mesma cor, outra normal -- e o resultado seria borrao.
+
+**Nao ha reprojecao**, e isso e um limite medido, nao uma pendencia. Sem as
+matrizes de camera a historia e lida no mesmo uv. Para o interior da cabine
+isso e **exato**: painel, volante, bancos e portas nao se movem em relacao a
+camera enquanto o caminhao anda. Para a cena vista pelo para-brisa a historia e
+rejeitada em movimento, e em curva o exterior volta ao ruido da 0.13.2.1.
+Motion vectors exigiriam ler constant buffers do jogo -- outro projeto.
+
+**A escala.** As oito capturas com a 0.13.2.1 nao mostraram diferenca nenhuma
+no interior, e a conta explica sem precisar de A/B: `sky_ambient` e
+`gi_intensity` sao dois multiplicadores que se empilham. O teto do que um raio
+escapado podia somar era `0,25 x 0,15 = 0,0375` linear, e o raio tipico no
+painel fica bem abaixo do teto -- num hemisferio cosseno em torno de uma normal
+apontada ao motorista, `saturate(direction.y)` tem media perto de `0,21`, o que
+da `~0,008` linear. Sobre um plastico em ~0,03 linear isso e **cerca de 5
+niveis em 255**.
+
+O conserto da 0.13.2.1 existia e estava correto. Era invisivel. `gi_intensity`
+subiu para `0.6`, e o mesmo painel passa de ~49 para ~68 em 255.
+
+A licao vale para as proximas fases: **um efeito multiplicado por dois ganhos
+pequenos em serie pode estar certo e nao aparecer**, e nesse caso a debug view
+e a unica coisa que distingue "nao funciona" de "nao da para ver".
+
 ### Luz emissiva de painel e GPS
 
 A cabine a noite e iluminada pelo painel, pelo radio e pela tela do GPS. Fazer
@@ -309,10 +349,12 @@ Quatro coisas precisam existir antes de funcionar:
    raio desde a 0.13.2, mas o valor 4.0 veio do documento e nunca foi ajustado
    para tela clara contra cabine escura -- que e o caso extremo que ele existe
    para conter. Baixo demais o GPS nao contribui, alto demais ele estoura;
-3. **acumulacao temporal (0.13.3) e denoise bilateral (0.13.4).** O GPS e uma
-   fonte pequena, clara e de alta frequencia: com poucos raios, acertar ou nao
-   vira cara-ou-coroa e o resultado cintila. Sem essas duas fases o efeito e
-   pior que a ausencia dele. **E o obstaculo que resta de fato**;
+3. ~~acumulacao temporal (0.13.3)~~ **metade resolvida.** O GPS e uma fonte
+   pequena, clara e de alta frequencia: com poucos raios, acertar ou nao vira
+   cara-ou-coroa e o resultado cintila. A acumulacao da 0.13.3 resolve isso com
+   a camera parada ou em movimento suave, que e a maior parte do tempo dentro
+   da cabine -- e o interior e onde o mesmo-uv e exato. Falta o **denoise
+   bilateral (0.13.4)** para o caso em que a historia e rejeitada;
 4. **mascarar a HUD.** A cor de cena e uma copia do backbuffer no Present, ja
    com interface. De dia isso e uma limitacao conhecida; de noite piora, porque
    a HUD e proporcionalmente muito mais clara que a cabine escura e passaria a

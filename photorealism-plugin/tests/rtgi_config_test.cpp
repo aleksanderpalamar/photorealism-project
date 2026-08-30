@@ -8,6 +8,7 @@ int main() {
     using photorealism::rtgi::default_rtgi_settings;
     using photorealism::rtgi::parse_rtgi_debug_mode;
     using photorealism::rtgi::rtgi_debug_mode_name;
+    using photorealism::rtgi::rtgi_history_alpha;
     using photorealism::rtgi::rtgi_resolution;
     using photorealism::rtgi::next_rtgi_preview_debug;
     using photorealism::rtgi::rtgi_sample_distance;
@@ -129,7 +130,13 @@ int main() {
                clamped_defaults.max_steps,
                1.5f) >= 4);
     static_assert(clamped_defaults.range_max == 15.0f);
-    static_assert(clamped_defaults.gi_intensity == 0.15f);
+    // REGRESSAO 0.13.3: gi_intensity multiplica o GI inteiro na composicao,
+    // e ate a 0.13.2.1 valia 0.15. Como sky_ambient tambem e um multiplicador,
+    // os dois se empilhavam: o teto do que um raio escapado somava era
+    // 0,25*0,15 = 0,0375 linear, e o raio tipico no painel ficava em ~0,008 --
+    // cerca de 5 niveis em 255 sobre uma superficie ja escura. O conserto da
+    // 0.13.2.1 existia e era invisivel.
+    static_assert(clamped_defaults.gi_intensity == 0.6f);
 
     // REGRESSAO 0.13.2.1: sky_ambient e a luz de um raio que escapou sem
     // acertar nada, e com ele em zero o shader responde preto a todo "nao
@@ -140,7 +147,35 @@ int main() {
     // que zero nao e.
     static_assert(clamped_defaults.sky_ambient > 0.0f);
     static_assert(clamped_defaults.sky_ambient == 0.25f);
+    // REGRESSAO 0.13.3: os quatro parametros da acumulacao temporal. Ate aqui
+    // nenhum deles chegava ao cbuffer -- eram inertes por tres versoes.
+    // normal_rejection em zero aceitaria historia de qualquer normal, que e o
+    // caso da quina do painel contra o para-brisa: mesma distancia, mesma cor,
+    // outra superficie.
     static_assert(clamped_defaults.history_weight == 0.90f);
+    static_assert(clamped_defaults.depth_rejection == 0.015f);
+    static_assert(clamped_defaults.normal_rejection > 0.0f);
+    static_assert(clamped_defaults.normal_rejection == 0.85f);
+    // Menor que o 0.15 do resolve temporal da 0.10.0, e de proposito: aquele
+    // opera sobre a imagem final, este sobre um buffer de GI cujos valores
+    // vivem na casa de 0,05. Um limiar absoluto de 0,15 ali nunca dispararia,
+    // e aceitar historia sempre e ghosting.
+    static_assert(clamped_defaults.color_rejection == 0.05f);
+
+    // REGRESSAO 0.13.3: o produto que decide quanto de historia entra. Com as
+    // tres confiancas cheias o peso e exatamente history_weight; com QUALQUER
+    // uma zerada o peso e zero. E o que garante que camera em movimento
+    // descarta a historia em vez de borrar -- borrao e o unico defeito que a
+    // acumulacao introduz e nao consegue desfazer.
+    static_assert(
+        rtgi_history_alpha(0.90f, 1.0f, 1.0f, 1.0f) == 0.90f);
+    static_assert(rtgi_history_alpha(0.90f, 0.0f, 1.0f, 1.0f) == 0.0f);
+    static_assert(rtgi_history_alpha(0.90f, 1.0f, 0.0f, 1.0f) == 0.0f);
+    static_assert(rtgi_history_alpha(0.90f, 1.0f, 1.0f, 0.0f) == 0.0f);
+    static_assert(rtgi_history_alpha(0.0f, 1.0f, 1.0f, 1.0f) == 0.0f);
+    // Fora de faixa nao pode virar peso maior que um: dois frames somados com
+    // peso 1,5 divergem em vez de convergir.
+    static_assert(rtgi_history_alpha(5.0f, 2.0f, 2.0f, 2.0f) == 1.0f);
     static_assert(clamped_defaults.hit_thickness == 0.5f);
     static_assert(clamped_defaults.normal_bias == 0.05f);
     static_assert(clamped_defaults.debug == RtgiDebugMode::final);

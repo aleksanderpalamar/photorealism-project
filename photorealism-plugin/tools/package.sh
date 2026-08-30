@@ -2,7 +2,7 @@
 set -euo pipefail
 
 project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-version="0.13.2.1"
+version="0.13.3"
 fsr_version="0.7.1"
 package_name="photorealism-plugin-${version}-fsr-${fsr_version}-ets2-ats-1.60-proton"
 output_dir="${project_dir}/dist"

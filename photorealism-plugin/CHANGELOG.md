@@ -1,5 +1,55 @@
 # Changelog
 
+## Pacote 0.13.3 + Photorealism FSR/AA 0.7.1 - 2026-08-30
+
+Acumulacao temporal do GI, e a recalibracao de escala que torna a versao
+visivel. Detalhe em `references/rtgi-temporal-0.13.3.md`.
+
+- **`PSRtgiTemporal`**, terceiro entry point de `rtgi.hlsl`, roda na resolucao
+  do RTGI entre a marcha e a composicao. Os quatro parametros marcados
+  `INERTE ate a 0.13.3` desde a 0.12.0 finalmente chegam ao cbuffer:
+  `history_weight` como teto, e `depth_rejection`, `normal_rejection` e
+  `color_rejection` como confiancas **multiplicadas** -- qualquer uma delas
+  dizendo "nao e a mesma superficie" descarta a historia inteira. Media
+  deixaria duas encobrirem a terceira, que e a quina do painel contra o
+  para-brisa: mesma distancia, mesma cor, outra normal;
+- **`normal_rejection` passa a existir de fato.** E a rejeicao que a 0.13.2 nao
+  tinha. `reconstruct_view_normal` ja recebia as cinco amostras de depth por
+  parametro, entao serviu as duas texturas sem alteracao;
+- **o hash por raio saiu do `sin`.** Era `frac(sin(dot(seed, ...)))` com o
+  frame no seed, e em fp32 o `sin` de argumento grande perde exatamente os bits
+  que o `frac` usa -- o hash empobrecia ao longo dos minutos em que a
+  acumulacao deveria estar somando amostras novas. Virou PCG em inteiro;
+- **rotacao por angulo dourado e estratificacao.** O azimute gira
+  `frac(frame * 0.38196601)` por frame e `random.x` passa a percorrer faixas de
+  `1/ray_count`. Sem as duas, acumular converge para a media de amostras mal
+  distribuidas;
+- **`gi_intensity` sobe de `0.15` para `0.6`.** As oito capturas com a 0.13.2.1
+  nao mostraram diferenca no interior, e a conta explica sem A/B: `sky_ambient`
+  e `gi_intensity` se empilham, o teto do que um raio escapado somava era
+  `0,0375` linear e o raio tipico no painel ficava em `~0,008` -- cerca de **5
+  niveis em 255** sobre uma superficie ja escura. O conserto da 0.13.2.1
+  existia, estava correto, e era invisivel;
+- **`color_rejection` cai de `0.15` para `0.05`.** O `0.15` veio do resolve
+  temporal, que opera sobre a imagem final; num buffer de GI com valores na
+  casa de 0,05 um limiar absoluto de 0,15 nunca dispararia -- aceitaria
+  historia sempre, que e ghosting;
+- **limite registrado: nao ha reprojecao.** Sem matrizes de camera, a historia
+  e lida no mesmo uv. Para o interior isso e exato, porque painel, volante e
+  bancos nao se movem em relacao a camera -- e o interior e o alvo. Em curva o
+  exterior volta ao ruido da 0.13.2.1, e isso e o desenho funcionando;
+- **`validate.sh`: tres defeitos de guarda corrigidos.** O hash do cfg rodava
+  **antes** de todas as guardas por chave e as deixava mudas -- qualquer edicao
+  saia com "Configuracao consolidada foi alterada", inclusive a guarda de
+  `sky_ambient` da 0.13.2.1. O hash passou para depois. A guarda de "parametro
+  zerado" estava atras dos pinos de valor exato e era inalcancavel. E duas
+  guardas novas eram `grep` nus sob `set -e`, que derrubam a validacao sem
+  dizer nada;
+- **bytecode**: os cinco entry points aprovados sairam byte-identicos ao HEAD
+  anterior (2367 linhas). `PSRtgi` foi de 682 para 722 linhas, `PSRtgiTemporal`
+  tem 426, e `PSRtgiCompose` mudou uma unica linha -- `cb0[5]` virou `cb0[7]`,
+  pelos campos novos no cbuffer compartilhado.
+
 ## Pacote 0.13.2.1 + Photorealism FSR/AA 0.7.1 - 2026-08-30
 
 Correcao da 0.13.2. A composicao funcionou, mas a cabine continuou preta, e o
