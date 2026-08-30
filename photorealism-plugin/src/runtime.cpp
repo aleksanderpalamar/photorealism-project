@@ -64,6 +64,7 @@ BOOL CALLBACK initialize_paths(PINIT_ONCE, PVOID, PVOID*) {
     append_path(
         g_temporal_shader_path, MAX_PATH, L"\\shaders\\temporal.hlsl");
 
+
     std::wcsncpy(g_log_path, g_plugin_root, MAX_PATH - 1);
     append_path(g_log_path, MAX_PATH, L"\\photorealism-plugin.log");
     return TRUE;

@@ -4,9 +4,8 @@ set -euo pipefail
 project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 dinput_dll="${project_dir}/build/dinput8.dll"
 dxgi_dll="${project_dir}/build/dxgi.dll"
-fsr_dll="${project_dir}/build/photorealism-fsr.dll"
 
-for dll in "${dinput_dll}" "${dxgi_dll}" "${fsr_dll}"; do
+for dll in "${dinput_dll}" "${dxgi_dll}"; do
   if [[ ! -f "${dll}" ]]; then
     echo "DLL ausente: execute tools/build.sh primeiro: ${dll}" >&2
     exit 1
@@ -22,9 +21,7 @@ done
 strings_cache="$(mktemp -d)"
 trap 'rm -rf -- "${strings_cache}"' EXIT
 dxgi_strings="${strings_cache}/dxgi.txt"
-fsr_strings="${strings_cache}/photorealism-fsr.txt"
 strings "${dxgi_dll}" >"${dxgi_strings}"
-strings "${fsr_dll}" >"${fsr_strings}"
 
 dinput_metadata="$(objdump -p "${dinput_dll}")"
 expected_dinput_exports=(
@@ -73,302 +70,17 @@ if grep -Eqi 'DLL Name: dxgi\.dll' <<<"${dxgi_metadata}"; then
   exit 1
 fi
 
-if grep -Fqi 'DLL Name: photorealism-fsr.dll' <<<"${dxgi_metadata}"; then
-  echo "O nucleo possui dependencia estatica do modulo FSR opcional." >&2
-  exit 1
-fi
 
-fsr_metadata="$(objdump -p "${fsr_dll}")"
-if ! grep -Eq \
-    '\+base\[[[:space:]]*1\].*[[:space:]]PhotorealismFsrGetApi$' \
-    <<<"${fsr_metadata}"; then
-  echo "Export FSR ausente ou com ordinal incorreto: PhotorealismFsrGetApi @1" >&2
-  exit 1
-fi
-
-for forbidden_export in \
-  'CreateDXGIFactory' \
-  'CreateDXGIFactory1' \
-  'CreateDXGIFactory2' \
-  'DirectInput8Create'; do
-  if grep -Eq "[[:space:]]${forbidden_export}$" <<<"${fsr_metadata}"; then
-    echo "O modulo auxiliar FSR nao pode atuar como proxy: ${forbidden_export}" >&2
-    exit 1
-  fi
-done
-
-if grep -qi 'snowymoon' \
-    <<<"${dinput_metadata}${dxgi_metadata}${fsr_metadata}"; then
+if grep -qi 'snowymoon' <<<"${dinput_metadata}${dxgi_metadata}"; then
   echo "Dependencia inesperada de Snowymoon encontrada." >&2
   exit 1
 fi
 
-for core_fsr_message in \
-  'Photorealism FSR/AA 0.7.1: modulo auxiliar ausente ou indisponivel' \
-  'nucleo 0.11.0 continua normalmente' \
-  'PhotorealismFsrGetApi' \
-  'ABI incompativel ou incompleta' \
-  'modulo auxiliar carregado' \
-  'color_observer=%s automatic_selection=%s aa_easu_rcas=%s draw_proof=%s raster_shadow=%s' \
-  'dispositivo real do jogo entregue ao modulo' \
-  'inicializacao do dispositivo falhou' \
-  'dispositivo encerrado para reinicializacao segura'; do
-  if ! grep -Fq "${core_fsr_message}" "${dxgi_strings}"; then
-    echo "Integracao FSR ausente no nucleo DXGI: ${core_fsr_message}" >&2
-    exit 1
-  fi
-done
 
-for module_fsr_message in \
-  'Photorealism FSR/AA 0.7.1 inicializado' \
-  'ABI=v1+v2+v3+v4+v5+v6' \
-  'feature_level=%s' \
-  '12_1' \
-  'Adapter: name=' \
-  'Capacidades D3D11' \
-  'R16G16B16A16_FLOAT' \
-  'R11G11B10_FLOAT' \
-  'R8G8B8A8_UNORM' \
-  'Observador color 0.7.1 pronto' \
-  'diagnostic_queue=2 worker=%s' \
-  'Janela color 0.7.0 %s' \
-  'Relatorio color 0.7.0' \
-  'async_job_drops=%llu' \
-  'report_queue_drops=%llu' \
-  'Color target #%llu' \
-  'presentation-evidence' \
-  'probable-scene' \
-  'probable-mirror-reflection' \
-  'probable-interface' \
-  'consultas COM apenas em cache miss' \
-  'AA/FSR source selecionado' \
-  'fallback pass-through' \
-  'selecao automatica estabilizada por composicao direta' \
-  'AA Photorealism ativo antes da UI' \
-  'temporal=history-clamp+screenspace-3x3' \
-  'engine_motion_vectors=indisponiveis jitter=indisponivel' \
-  'Telemetria GPU AA/FSR 0.7.0' \
-  'Draw proof 0.7.1' \
-  'raster_seed=%llu' \
-  'Final draw proof locked 0.7.1' \
-  'Rejected draw signature' \
-  'TemporalAA_avg=%.3fms' \
-  '0.4-stops' \
-  'worker diagnostico drenado com seguranca'; do
-  if ! grep -Fq "${module_fsr_message}" "${fsr_strings}"; then
-    echo "Diagnostico ausente no modulo FSR: ${module_fsr_message}" >&2
-    exit 1
-  fi
-done
 
-build_script="${project_dir}/tools/build.sh"
-
-# A lista de TUs do photorealism-fsr.dll sai do proprio build.sh, que e a fonte
-# autoritativa: dividir o modulo em mais arquivos passa a estender as checagens
-# de fonte abaixo automaticamente, sem manutencao paralela aqui.
-mapfile -t fsr_relative_sources < <(awk '
-  /^"\$\{zig_bin\}" c\+\+/ { count = 0; next }
-  match($0, /src\/[A-Za-z0-9_.-]+\.cpp/) {
-    pending[++count] = substr($0, RSTART, RLENGTH)
-  }
-  /-o "\$\{build_dir\}\/photorealism-fsr\.dll"/ {
-    for (index_ = 1; index_ <= count; ++index_) {
-      print pending[index_]
-    }
-    exit
-  }
-' "${build_script}")
-
-if [[ "${#fsr_relative_sources[@]}" -lt 2 ]] ||
-    [[ ! " ${fsr_relative_sources[*]} " == *" src/fsr_module.cpp "* ]]; then
-  echo "Nao foi possivel extrair as fontes do photorealism-fsr.dll do build.sh." >&2
-  exit 1
-fi
-
-fsr_sources=()
-for relative in "${fsr_relative_sources[@]}"; do
-  if [[ ! -f "${project_dir}/${relative}" ]]; then
-    echo "Fonte declarada em build.sh nao existe: ${relative}" >&2
-    exit 1
-  fi
-  fsr_sources+=("${project_dir}/${relative}")
-done
-
-# Um .cpp novo que nunca foi registrado em build.sh nao seria compilado nem
-# validado; a ausencia silenciosa e exatamente o que esta checagem impede.
-for candidate in "${project_dir}"/src/fsr_*.cpp; do
-  if ! grep -Fq "src/$(basename "${candidate}")" "${build_script}"; then
-    echo "Fonte FSR ausente em build.sh: ${candidate}" >&2
-    exit 1
-  fi
-done
-
-fsr_grep() {
-  grep -Fq "$1" "${fsr_sources[@]}"
-}
-
-# Extrai o corpo de uma funcao a partir de sua assinatura. Tres defesas contra o
-# falso verde que o "sed -n /assinatura/,/^}/p" original permitia:
-#   - ancora em coluna 1, para um call site indentado nao abrir o intervalo;
-#   - rejeita declaracao forward, que abriria o intervalo e correria ate o "}"
-#     da proxima funcao, devolvendo um corpo completamente errado;
-#   - conta os acertos e reprova se != 1, para que "mudou de arquivo" ou
-#     "sumiu" viraem falha em vez de corpo vazio com checagem negativa passando.
-extract_function() {
-  local signature="$1"
-  local hits=0 body="" source found
-  for source in "${fsr_sources[@]}"; do
-    found="$(awk -v sig="${signature}" '
-      index($0, sig) == 1 && $0 !~ /;[[:space:]]*$/ { inside = 1 }
-      inside { print }
-      inside && /^}/ { exit }
-    ' "${source}")"
-    if [[ -n "${found}" ]]; then
-      hits=$((hits + 1))
-      body="${found}"
-    fi
-  done
-  if [[ "${hits}" -ne 1 ]]; then
-    echo "Assinatura FSR nao definida exatamente uma vez: ${signature} (${hits})" >&2
-    exit 1
-  fi
-  printf '%s\n' "${body}"
-}
-
-# Sentinela obrigatoria: prova que o corpo extraido e mesmo o corpo esperado,
-# para que uma extracao vazia ou mal ancorada nao passe nas checagens negativas.
-assert_body_sentinel() {
-  if ! grep -Fq "$3" <<<"$2"; then
-    echo "Sentinela ausente no corpo de ${1}: $3" >&2
-    exit 1
-  fi
-}
-
-observe_frame_source="$(extract_function 'void WINAPI observe_frame(')"
-assert_body_sentinel 'observe_frame' "${observe_frame_source}" \
-  'register_backbuffer_locked('
-for forbidden_present_work in \
-  'log_message(' \
-  'std::sort' \
-  'CreateFileW' \
-  'WriteFile' \
-  'CloseHandle'; do
-  if grep -Fq "${forbidden_present_work}" <<<"${observe_frame_source}"; then
-    echo "Trabalho bloqueante voltou ao observe_frame: ${forbidden_present_work}" >&2
-    exit 1
-  fi
-done
-
-automatic_selection_source="$(extract_function \
-  'HRESULT WINAPI update_automatic_selection(')"
-assert_body_sentinel 'update_automatic_selection' \
-  "${automatic_selection_source}" 'score_automatic_scene_candidate('
-for forbidden_hot_path_work in \
-  'log_message(' \
-  'new ' \
-  'CreateFileW' \
-  'WriteFile' \
-  'CloseHandle' \
-  'GetResource(' \
-  'QueryInterface('; do
-  if grep -Fq "${forbidden_hot_path_work}" <<<"${automatic_selection_source}"; then
-    echo "Trabalho indevido voltou a selecao automatica: ${forbidden_hot_path_work}" >&2
-    exit 1
-  fi
-done
-
-if ! fsr_grep 'kSrvReplacementRequiresDrawProof'; then
-  echo "O caminho ABI v4 deixou de falhar fechado sem prova de draw." >&2
-  exit 1
-fi
-
-for draw_proof_marker in \
-  'void WINAPI observe_pixel_shader_resources' \
-  'void WINAPI observe_rasterizer_state' \
-  'void WINAPI observe_viewports' \
-  'void WINAPI observe_scissor_rects' \
-  'void WINAPI observe_final_draw' \
-  'OMGetRenderTargets' \
-  'PSGetShaderResources' \
-  'PSGetShader' \
-  'IAGetPrimitiveTopology' \
-  'record_rejected_draw_locked' \
-  'rejected_draw_identity_matches' \
-  'samples=first-occurrence' \
-  'Rejected draw signature' \
-  'kFinalDrawProofConfirmFrames = 24' \
-  'replacement=0 dispatch=0'; do
-  if ! fsr_grep "${draw_proof_marker}"; then
-    echo "Validacao de draw final incompleta: ${draw_proof_marker}" >&2
-    exit 1
-  fi
-done
-
-observe_final_draw_source="$(extract_function 'void WINAPI observe_final_draw(')"
-assert_body_sentinel 'observe_final_draw' "${observe_final_draw_source}" \
-  'record_rejected_draw_locked('
-for forbidden_raster_query in \
-  'RSGetState' \
-  'RSGetViewports' \
-  'RSGetScissorRects'; do
-  if grep -Fq "${forbidden_raster_query}" <<<"${observe_final_draw_source}"; then
-    echo "Consulta rasterizadora ao vivo indevida na prova passiva: ${forbidden_raster_query}" >&2
-    exit 1
-  fi
-done
-
-# Espelho positivo do bloco acima: proibir os RSGet* na prova nao pode virar
-# desculpa para nao te-los em lugar nenhum. Sem a semeadura sob demanda, um
-# contexto que nunca chamou RSSetState ficaria eternamente desconhecido.
-raster_shadow_source="${project_dir}/src/fsr_rasterizer_shadow.cpp"
-for lazy_seed_marker in \
-  'RSGetState' \
-  'RSGetViewports' \
-  'RSGetScissorRects' \
-  'rasterizer_shadow_mark_stale' \
-  'seeded_from_live_state'; do
-  if ! grep -Fq "${lazy_seed_marker}" "${raster_shadow_source}"; then
-    echo "Semeadura preguicosa do shadow rasterizador ausente: ${lazy_seed_marker}" >&2
-    exit 1
-  fi
-done
-
-hook_source="${project_dir}/src/hook.cpp"
-for raster_shadow_hook in \
-  '&context_vtable[43]' \
-  '&context_vtable[44]' \
-  '&context_vtable[45]' \
-  'hooked_rs_set_state' \
-  'hooked_rs_set_viewports' \
-  'hooked_rs_set_scissor_rects'; do
-  if ! grep -Fq "${raster_shadow_hook}" "${hook_source}"; then
-    echo "Hook de shadow rasterizador ausente: ${raster_shadow_hook}" >&2
-    exit 1
-  fi
-done
-
-# "grep -Fc" conta por arquivo; com varios fontes a soma correta exige -Foh.
-uav_increments="$(grep -Foh '++g_uav_event_count;' "${fsr_sources[@]}" | wc -l)"
-if [[ "${uav_increments}" -ne 1 ]]; then
-  echo "uav_event_count deve ser incrementado exatamente uma vez por evento UAV." >&2
-  exit 1
-fi
-
-for async_architecture_marker in \
-  'kDiagnosticQueueCapacity = 2' \
-  'DWORD WINAPI diagnostic_worker' \
-  'WaitForMultipleObjects' \
-  'write_color_report(&job.snapshot' \
-  'SleepConditionVariableSRW' \
-  'take_report_snapshot(&job.snapshot)'; do
-  if ! fsr_grep "${async_architecture_marker}"; then
-    echo "Arquitetura assincrona FSR ausente: ${async_architecture_marker}" >&2
-    exit 1
-  fi
-done
 
 if ! grep -Fq \
-    'Hooks Present/Present1/ResizeBuffers/OMSetRenderTargets*/ClearDepthStencilView instalados; PSSetShaderResources=%s' \
+    'Hooks Present/Present1/ResizeBuffers/OMSetRenderTargets*/ClearDepthStencilView instalados; feature level=0x%X' \
     "${dxgi_strings}"; then
   echo "Conjunto de hooks DXGI/D3D11 incompleto no nucleo." >&2
   exit 1
@@ -392,12 +104,17 @@ for core_0110_message in \
   fi
 done
 
-if rg -n 'VK_F12|VK_PRIOR|PageUp' \
-    "${project_dir}/src" >/dev/null; then
-  echo "Atalho/captura manual proibido encontrado no core ou FSR." >&2
+# F12 e a tecla de screenshot do Steam e continua sendo dele. Quem garante
+# isso e o HookScreenshots(true) verificado mais abaixo, nao uma proibicao do
+# literal VK_F12 no codigo -- a captura e delegada ao Steam por API.
+#
+# A unica invariante necessaria aqui e que o modulo de captura nao passe a
+# disputar teclado com o Steam.
+if rg -n 'VK_|GetAsyncKeyState' \
+    "${project_dir}/src/steam_screenshots.cpp" >/dev/null; then
+  echo "A captura Steam nao pode consultar teclado." >&2
   exit 1
 fi
-
 if rg -n 'void Run\(void\* parameter, bool, std::uint64_t\).*Run\(parameter\)' \
     -U "${project_dir}/src/steam_screenshots.cpp" >/dev/null; then
   echo "Callback Steam call-result nao pode criar outra captura." >&2
@@ -439,16 +156,6 @@ if ! rg -n 'process_frame\(swap_chain\);[[:space:]]*observe_postprocessed_frame\
   echo "Fronteira pos-processada ausente depois de todos os passes visuais." >&2
   exit 1
 fi
-
-for home_gate_marker in \
-  'set_fsr_processing_enabled(settings_.enabled)' \
-  'fsr_processing_enabled()' \
-  'PHOTOREALISM_FSR_RESET_PLUGIN_DISABLED'; do
-  if ! rg -Fq "${home_gate_marker}" "${project_dir}/src"; then
-    echo "Gate Home para AA/FSR ausente: ${home_gate_marker}" >&2
-    exit 1
-  fi
-done
 
 for observer_message in \
   'Descoberta depth 0.10.1 %s' \
@@ -500,12 +207,6 @@ for telemetry_message in \
 done
 
 cfg="${project_dir}/config/photorealism-plugin.cfg"
-expected_cfg_sha256="b43b4a495d0252801c515b76e9c430848ed9bed0d5a398ed27db306b1e298cfe"
-actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
-if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
-  echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
-  exit 1
-fi
 for section in \
   '[base.0.1.2]' \
   '[module.visual.0.2.0]' \
@@ -539,16 +240,67 @@ grep -Fqx 'history_weight=0.65' "${cfg}"
 grep -Fqx 'depth_rejection=0.02' "${cfg}"
 grep -Fqx 'color_rejection=0.08' "${cfg}"
 
-visual_shader="${project_dir}/shaders/photorealism.hlsl"
-expected_visual_shader_sha256="d748d8b92645f847ce2a8431f97187b089e5aad34e349f31d6a4c87bfc2c5c95"
-actual_visual_shader_sha256="$(sha256sum "${visual_shader}" | awk '{print $1}')"
-if [[ "${actual_visual_shader_sha256}" != "${expected_visual_shader_sha256}" ]]; then
-  echo "Shader visual aprovado foi alterado: ${actual_visual_shader_sha256}" >&2
+# As guardas da curva de tom vivem AQUI, junto dos outros pinos do cfg, e nao
+# no meio das chaves de outro modulo. Na 0.14.0 elas foram colocadas logo
+# depois de max_indirect_luma, que era chave do RTGI -- e sairam junto com ele
+# na 0.16.0, silenciosamente. Guarda misturada com modulo alheio morre com o
+# modulo alheio.
+# A curva de tom da 0.14.0. black_lift e o piso do preto: em zero o shader
+# volta ao saturate() sem toe da 0.13.3, que esmaga a sombra em 0 e transforma
+# o painel em massa preta. As quatro referencias do ATS medidas para esta
+# versao tem o 1% mais escuro entre 8 e 11 de 255, e 0.0027 em linear cai
+# exatamente ali depois do encode sRGB.
+if grep -Eq '^black_lift=0(\.0+)?$' "${cfg}"; then
+  echo "black_lift voltou a zero: a sombra volta a ser esmagada em 0 e o \
+visual medido nas referencias (p1 entre 8 e 11) fica inalcancavel." >&2
+  exit 1
+fi
+for tone_pin in 'black_lift=0.0027' 'highlight_rolloff=0.35'; do
+  if ! grep -Fqx "${tone_pin}" "${cfg}"; then
+    echo "Curva de tom fora do valor aprovado: ${tone_pin}. A calibracao da \
+0.14.0 foi medida contra as referencias; mudar sem medir de novo a perde." >&2
+    exit 1
+  fi
+done
+# tint e o eixo verde-magenta. Em zero sobra so temperature, que troca R contra
+# B e nunca toca em G -- e as quatro referencias tem G como canal mais alto.
+if grep -Eq '^tint=0(\.0+)?$' "${cfg}"; then
+  echo "tint voltou a zero: sem o eixo verde-magenta nenhum ajuste de \
+temperature alcanca o balanco medido nas referencias." >&2
+  exit 1
+fi
+if ! grep -Fqx 'tint=0.35' "${cfg}"; then
+  echo "tint fora do valor aprovado (0.35)." >&2
+  exit 1
+fi
+# blacks somado das tres camadas era -0.06 e empurrava os pretos para baixo,
+# contra o alvo. A base leva 0.05 para a soma dar zero.
+if ! grep -Fqx 'blacks=0.05' "${cfg}"; then
+  echo "blacks da base saiu de 0.05: somado aos dois deltas ele volta a ser \
+negativo e empurra os pretos para baixo, contra o piso de black_lift." >&2
   exit 1
 fi
 
+# Os hashes de depth-preview, ssao e temporal mudaram na 0.12.0: os tres
+# perderam suas copias de linearize_reversed_depth/reconstruct_view_* para o
+# header compartilhado depth_view_space.hlsli. A igualdade foi provada em
+# bytecode com tools/shader_check.sh: ssao e temporal ficaram byte-identicos,
+# e depth-preview mudou apenas por +1 max (guarda do rsqrt) e +2 lt/+2 movc
+# (validade da normal, que antes nao existia).
+#
+# O header entra no pino porque agora e a unica fonte da matematica usada
+# pelos tres shaders aprovados: alterar so ele mudaria os tres em silencio.
+depth_view_space_header="${project_dir}/shaders/depth_view_space.hlsli"
+expected_depth_view_space_sha256="fda4531182a5b46b74c21eda30d679cd3952dc99a8cabba03ebf7041e24f4bd2"
+actual_depth_view_space_sha256="$(sha256sum "${depth_view_space_header}" | awk '{print $1}')"
+if [[ "${actual_depth_view_space_sha256}" != "${expected_depth_view_space_sha256}" ]]; then
+  echo "Header depth/view-space aprovado foi alterado: ${actual_depth_view_space_sha256}" >&2
+  exit 1
+fi
+
+
 depth_preview_shader="${project_dir}/shaders/depth-preview.hlsl"
-expected_depth_preview_shader_sha256="253a95e876cd8564ed4260ff461cf9deef0d25bcac2fbd1373d43fefbf9d4679"
+expected_depth_preview_shader_sha256="e12de14a45ce2781507963c8834ca53a1503aa25ed58a5e90b51ffd02c7b0f61"
 actual_depth_preview_shader_sha256="$(sha256sum "${depth_preview_shader}" | awk '{print $1}')"
 if [[ "${actual_depth_preview_shader_sha256}" != "${expected_depth_preview_shader_sha256}" ]]; then
   echo "Shader depth preview aprovado foi alterado: ${actual_depth_preview_shader_sha256}" >&2
@@ -556,7 +308,7 @@ if [[ "${actual_depth_preview_shader_sha256}" != "${expected_depth_preview_shade
 fi
 
 ssao_shader="${project_dir}/shaders/ssao.hlsl"
-expected_ssao_shader_sha256="8416e7a2338c3a945eaf3b27dd4b9414e87558611bfbd1913b9171da9f2ce96c"
+expected_ssao_shader_sha256="97e0434b739789210eb4e77896b21d55301f331309f3c89779a6bf74fe050314"
 actual_ssao_shader_sha256="$(sha256sum "${ssao_shader}" | awk '{print $1}')"
 if [[ "${actual_ssao_shader_sha256}" != "${expected_ssao_shader_sha256}" ]]; then
   echo "Shader SSAO aprovado foi alterado: ${actual_ssao_shader_sha256}" >&2
@@ -564,25 +316,32 @@ if [[ "${actual_ssao_shader_sha256}" != "${expected_ssao_shader_sha256}" ]]; the
 fi
 
 temporal_shader="${project_dir}/shaders/temporal.hlsl"
-expected_temporal_shader_sha256="437e2b68b222b2fa5d98c10e67c8f3c0054be48a77eb30ff36e29a445578b89e"
+expected_temporal_shader_sha256="999b9766bd3f391a121e70421c204ba4a3a5a8dea14f4792f81d9d71d81b7181"
 actual_temporal_shader_sha256="$(sha256sum "${temporal_shader}" | awk '{print $1}')"
 if [[ "${actual_temporal_shader_sha256}" != "${expected_temporal_shader_sha256}" ]]; then
   echo "Shader temporal aprovado foi alterado: ${actual_temporal_shader_sha256}" >&2
   exit 1
 fi
 
-declare -A fsr_official_hashes=(
-  ["third_party/fidelityfx-fsr/ffx_a.h"]="f60e2722fcd13989523b9164d776ab382b3692791767f3bf8bb19967f763f3fb"
-  ["third_party/fidelityfx-fsr/ffx_fsr1.h"]="93c3922362ea7fc99cbcc698ca30c98de4f8c246d1fbb0b09e015ddef38ce3a5"
-  ["third_party/fidelityfx-fsr/LICENSE.txt"]="db089274ce766da70f5b7d791029c3486f9f9e27c8c79c652689603d3192e802"
-)
-for relative in "${!fsr_official_hashes[@]}"; do
-  actual="$(sha256sum "${project_dir}/${relative}" | awk '{print $1}')"
-  if [[ "${actual}" != "${fsr_official_hashes[${relative}]}" ]]; then
-    echo "Fonte oficial FidelityFX-FSR alterada: ${relative} ${actual}" >&2
+
+# A elegibilidade do depth de camera: forma e veto, tamanho nativo e
+# suficiente, e o log diz por que cada candidato caiu.
+for depth_eligibility_marker in \
+  'kMinimumSceneAreaPercent' \
+  'is_plausible_scene_shape' \
+  'depth_candidate_rejection' \
+  'forma-incompativel'; do
+  if ! grep -Fq "${depth_eligibility_marker}" \
+      "${project_dir}/src/depth_scoring.hpp"; then
+    echo "Elegibilidade de depth incompleta: ${depth_eligibility_marker}" >&2
     exit 1
   fi
 done
+if ! grep -Fq 'elegibilidade=%s' \
+    "${project_dir}/src/resource_observer.cpp"; then
+  echo "Motivo de rejeicao ausente no log de recursos depth." >&2
+  exit 1
+fi
 
 depth_scoring_test="/tmp/photorealism-plugin-depth-scoring-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
@@ -590,29 +349,76 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   -o "${depth_scoring_test}"
 "${depth_scoring_test}"
 
-fsr_color_scoring_test="/tmp/photorealism-fsr-color-scoring-test"
-g++ -std=c++20 -Wall -Wextra -Werror \
-  "${project_dir}/tests/fsr_color_scoring_test.cpp" \
-  -o "${fsr_color_scoring_test}"
-"${fsr_color_scoring_test}"
-
 native_aa_config_test="/tmp/photorealism-native-aa-config-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/tests/native_aa_config_test.cpp" \
   -o "${native_aa_config_test}"
 "${native_aa_config_test}"
 
-fsr_draw_shape_test="/tmp/photorealism-fsr-draw-shape-test"
-g++ -std=c++20 -Wall -Wextra -Werror \
-  "${project_dir}/tests/fsr_draw_shape_test.cpp" \
-  -o "${fsr_draw_shape_test}"
-"${fsr_draw_shape_test}"
+# Os defaults internos de config.cpp valem quando o cfg some, e tone_curve_test
+# nao consegue ve-los: aquele arquivo e Windows-only e nao linka no Linux. A
+# igualdade entre as duas copias fica por conta destas guardas.
+for tone_default in \
+  'layer.black_lift = 0.0027f;' \
+  'layer.highlight_rolloff = 0.35f;' \
+  'layer.tint = 0.35f;'; do
+  if ! grep -Fq "${tone_default}" "${project_dir}/src/config.cpp"; then
+    echo "Default interno da curva de tom 0.14.0 divergiu do cfg: \
+${tone_default}" >&2
+    exit 1
+  fi
+done
+# A curva em si. Sem o lift o shader volta ao saturate() sem toe da 0.13.3.
+for tone_marker in \
+  'float3 apply_black_lift(float3 color, float lift)' \
+  'float3 apply_highlight_rolloff(float3 color, float strength)'; do
+  if ! grep -Fq "${tone_marker}" \
+    "${project_dir}/shaders/photorealism.hlsl"; then
+    echo "Curva de tom 0.14.0 incompleta em photorealism.hlsl: \
+${tone_marker}" >&2
+    exit 1
+  fi
+done
+# A ordem importa: o lift e o piso da imagem FINAL, entao vem depois da
+# vignette. Antes dela os cantos escureceriam abaixo do piso.
+visual_shader_source="${project_dir}/shaders/photorealism.hlsl"
+vignette_line="$(grep -n 'color \*= lerp(1.0, smoothstep' \
+  "${visual_shader_source}" | head -1 | cut -d: -f1)"
+lift_call_line="$(grep -n 'color = apply_black_lift(color, BlackLift);' \
+  "${visual_shader_source}" | head -1 | cut -d: -f1)"
+if [[ -z "${vignette_line}" || -z "${lift_call_line}" ]] ||
+  (( lift_call_line < vignette_line )); then
+  echo "apply_black_lift saiu de depois da vignette: os cantos voltam a \
+escurecer abaixo do piso de preto, e o piso deixa de ser piso." >&2
+  exit 1
+fi
 
-fsr_rejected_draw_identity_test="/tmp/photorealism-fsr-rejected-draw-identity-test"
+# O hash fecha o shader visual DEPOIS das guardas de curva de tom, pela mesma
+# razao que o do cfg: vindo antes, qualquer edicao do arquivo saia com
+# "Shader visual aprovado foi alterado" e as guardas nomeadas nunca falavam.
+# Uma guarda muda nao guarda coisa alguma.
+visual_shader="${project_dir}/shaders/photorealism.hlsl"
+expected_visual_shader_sha256="2131faa2018c960fbb2dbbe29b6150652026b7ee91439a458c7d68f2ba1f2753"
+actual_visual_shader_sha256="$(sha256sum "${visual_shader}" | awk '{print $1}')"
+if [[ "${actual_visual_shader_sha256}" != "${expected_visual_shader_sha256}" ]]; then
+  echo "Shader visual aprovado foi alterado: ${actual_visual_shader_sha256}" >&2
+  exit 1
+fi
+
+# O alvo medido, dentro do teste. Sem esta guarda alguem apaga o bloco inteiro
+# e a build segue verde sem nada provando o piso de preto.
+if ! grep -Fq 'floor_code >= 6 && floor_code <= 12' \
+  "${project_dir}/tests/tone_curve_test.cpp"; then
+  echo "O teste parou de exigir o piso de preto medido nas referencias (p1 \
+entre 6 e 12): e o unico numero que sozinho separa aquele visual do nosso." >&2
+  exit 1
+fi
+
+tone_curve_test="/tmp/photorealism-tone-curve-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
-  "${project_dir}/tests/fsr_rejected_draw_identity_test.cpp" \
-  -o "${fsr_rejected_draw_identity_test}"
-"${fsr_rejected_draw_identity_test}"
+  "${project_dir}/tests/tone_curve_test.cpp" \
+  -o "${tone_curve_test}"
+"${tone_curve_test}"
 
 screenshot_request_gate_test="/tmp/photorealism-screenshot-request-gate-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
@@ -642,9 +448,32 @@ effective_profile="$(awk -F= '
       total["saturation"], total["vibrance"], total["shadows"], \
       total["highlights"], total["blacks"], total["whites"], \
       total["local_contrast"], total["sharpness"], total["vignette"]
+    printf " %.4f %.3f %.3f", \
+      total["black_lift"], total["highlight_rolloff"], total["tint"]
   }
 ' "${cfg}")"
-expected_profile="6400.0 -0.030 1.070 0.970 0.050 0.100 -0.180 -0.060 0.080 0.240 0.200 0.030"
+
+# O hash fecha o cfg depois das guardas por chave, e nao antes.
+#
+# Ate a 0.13.3 ele vinha primeiro, e por isso nenhuma das guardas nomeadas
+# acima chegava a falar: qualquer edicao do arquivo batia no hash e saia com
+# "Configuracao consolidada foi alterada", que nao diz o que quebrou nem por
+# que importa. Uma guarda que explica uma regressao sutil so serve se for ela
+# a falar. Nesta ordem o hash continua pegando tudo que as guardas nao
+# cobrem, e so isso.
+expected_cfg_sha256="b1d07b7e1f9eccdd1ab15b5422b5af234fb84a7900cdd1ae13e9dcbf57cde470"
+actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
+if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
+  echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
+  exit 1
+fi
+# 0.14.0: blacks cumulativo saiu de -0.060 para 0.000 -- somado, empurrava os
+# pretos para baixo contra o alvo, e o piso passou a ser black_lift. Os tres
+# ultimos campos sao a curva de tom, e entraram no perfil justamente para que
+# uma mudanca neles nao passe por uma camada de delta sem ser vista.
+expected_profile="6400.0 -0.030 1.070 0.970 0.050 0.100 -0.180 0.000"
+expected_profile="${expected_profile} 0.080 0.240 0.200 0.030"
+expected_profile="${expected_profile} 0.0027 0.350 0.500"
 if [[ "${effective_profile}" != "${expected_profile}" ]]; then
   echo "Perfil cumulativo divergiu da 0.3.0 aprovada: ${effective_profile}" >&2
   exit 1
@@ -666,15 +495,6 @@ if command -v glslangValidator >/dev/null 2>&1; then
   glslangValidator -D -S frag -e PSTemporal -V \
     "${project_dir}/shaders/temporal.hlsl" \
     -o /tmp/photorealism-plugin-temporal.spv >/dev/null
-  glslangValidator -D -S comp -e CSEasu -V \
-    "${project_dir}/shaders/fsr1.hlsl" \
-    -o /tmp/photorealism-fsr-easu.spv >/dev/null
-  glslangValidator -D -S comp -e CSTemporalAa -V \
-    "${project_dir}/shaders/fsr1.hlsl" \
-    -o /tmp/photorealism-aa-temporal.spv >/dev/null
-  glslangValidator -D -S comp -e CSRcas -V \
-    "${project_dir}/shaders/fsr1.hlsl" \
-    -o /tmp/photorealism-fsr-rcas.spv >/dev/null
 fi
 
 native_aa_source="${project_dir}/src/native_aa_config.cpp"
@@ -683,15 +503,102 @@ for native_aa_marker in \
   'amtrucks.exe' \
   'config.photorealism-native-aa.backup.cfg' \
   'MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH' \
-  '"r_aa", "0"' \
-  '"r_taa_tuning", "0"' \
-  '"r_taa_luma_sharpen", "0.0"' \
-  '"r_taa_modulated_drr_strength", "0.0"' \
-  'native_fallback=disabled'; do
+  'kNativeAaSection = "native_aa.0.12.2"' \
+  'read_native_aa_policy' \
+  'policy.manage' \
+  'policy.aa.c_str()' \
+  'policy.taa_sharpen.c_str()' \
+  'plugin_config_value' \
+  'nenhuma alteracao no ' \
+  'politica=photorealism-plugin.cfg'; do
   if ! grep -Fq "${native_aa_marker}" "${native_aa_source}"; then
     echo "Gestao automatica AA nativo incompleta: ${native_aa_marker}" >&2
     exit 1
   fi
 done
 
-echo "Proxies, core Photorealism, captura Steam, draw proof FSR 0.7.1, depth, SSAO, telemetria, perfil e shaders validados."
+# O numero de versao e carimbo de chegada, nao de agenda. Duas vezes o ROADMAP
+# prometeu uma entrega num numero que um pacote ja tinha consumido -- a fase de
+# composicao do RTGI presa na 0.12.2, que virou a politica de AA nativo, e a
+# recalibracao do SSAO presa na 0.13.1, que virou o conserto do Page Down.
+# Promessa apontando para numero ja entregue e documentacao que mente.
+changelog="${project_dir}/CHANGELOG.md"
+roadmap="${project_dir}/ROADMAP.md"
+shipped_versions="$(grep -E '^## ' "${changelog}" \
+  | grep -oE '^## (Pacote |Core )?[0-9]+\.[0-9]+\.[0-9]+' \
+  | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -Vu)"
+promised_versions="$(grep -E '^- \*\*[0-9]+\.[0-9]+\.[0-9]+' "${roadmap}" \
+  | grep -v '(entregue)' \
+  | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -Vu)"
+version_collisions="$(printf '%s\n' "${promised_versions}" \
+  | grep -Fxf <(printf '%s\n' "${shipped_versions}") || true)"
+if [[ -n "${version_collisions}" ]]; then
+  echo "ROADMAP promete versao ja entregue no CHANGELOG: \
+${version_collisions//$'\n'/ }" >&2
+  echo "Renumere as fases nao entregues do ROADMAP." >&2
+  exit 1
+fi
+if ! grep -Fq 'carimbo de' "${roadmap}"; then
+  echo "ROADMAP sem a regra de renumeracao das fases nao entregues." >&2
+  exit 1
+fi
+
+# O RTGI saiu inteiro na 0.16.0, pela mesma razao medida na 0.14.0: nenhuma das
+# cinco referencias que definem o alvo visual mostra efeito que exija tracado
+# de raios -- a luz de preenchimento da cabine e uniforme e sem sangramento de
+# cor. O padrao e so 'rtgi', sem termo generico: na 0.15.0 um 'easu' no padrao
+# casou com "measure" e derrubou grade_report.py.
+rtgi_leftovers="$(grep -rli 'rtgi' \
+  "${project_dir}/src" "${project_dir}/shaders" "${project_dir}/tests" \
+  "${project_dir}/tools" "${project_dir}/config" 2>/dev/null |
+  grep -v '/tools/validate\.sh$' || true)"
+if [[ -n "${rtgi_leftovers}" ]]; then
+  echo "RTGI reapareceu no codigo: ele foi removido na 0.16.0 porque o alvo \
+visual nao precisa dele, e voltar custa 1.252 linhas e um passe por frame." >&2
+  echo "${rtgi_leftovers}" >&2
+  exit 1
+fi
+# As duas teclas que ele usava tambem nao podem voltar sozinhas.
+for retired_key in 'VK_PRIOR' 'VK_NEXT'; do
+  if grep -Fq "${retired_key}" "${project_dir}/src/postprocess.cpp"; then
+    echo "Tecla aposentada na 0.16.0 voltou: ${retired_key}. Page Up e Page \
+Down existiam so para o RTGI." >&2
+    exit 1
+  fi
+done
+
+# O FSR saiu inteiro na 0.15.0: 5.833 linhas, um DLL e oito hooks de vtable que
+# existiam so para alimenta-lo, custando uma indirecao em toda chamada de
+# desenho do jogo. Uma remocao sem guarda volta sozinha na primeira vez que
+# alguem colar um trecho antigo, e o modulo nunca substituiu um draw sequer.
+# 'easu' e 'rcas' ficam FORA do padrao de propósito: casam com "measure" e
+# derrubariam grade_report.py. E este proprio arquivo se exclui, porque uma
+# guarda precisa nomear o que proibe.
+fsr_leftovers="$(grep -rli 'fsr\|fidelityfx' \
+  "${project_dir}/src" "${project_dir}/shaders" "${project_dir}/tests" \
+  "${project_dir}/tools" 2>/dev/null | grep -v '/tools/validate\.sh$' || true)"
+if [[ -n "${fsr_leftovers}" ]]; then
+  echo "FSR reapareceu no codigo: ele foi removido na 0.15.0 por nunca ter \
+substituido um draw, e cada hook que ele exigia custa uma indirecao em toda \
+chamada de desenho do jogo." >&2
+  echo "${fsr_leftovers}" >&2
+  exit 1
+fi
+# Os oito hooks tambem nao podem voltar: o de PSSetShaderResources e os de
+# Draw*/RSSet* nao servem a mais nada agora que o depth vem de
+# OMSetRenderTargets.
+for retired_hook in \
+  'hooked_ps_set_shader_resources' \
+  'hooked_rs_set_state' \
+  'hooked_rs_set_viewports' \
+  'hooked_rs_set_scissor_rects' \
+  'hooked_draw_indexed' \
+  'hooked_draw_instanced'; do
+  if grep -Fq "${retired_hook}" "${project_dir}/src/hook.cpp"; then
+    echo "Hook aposentado na 0.15.0 voltou a hook.cpp: ${retired_hook}. Ele \
+roda em toda chamada de desenho do jogo." >&2
+    exit 1
+  fi
+done
+
+echo "Proxies, core Photorealism, captura Steam, depth, SSAO, telemetria, perfil, shaders e numeracao de versao validados."

@@ -24,6 +24,11 @@ struct CalibrationLayer {
     float local_contrast;
     float sharpness;
     float vignette;
+    // 0.14.0. black_lift e o piso do preto em linear, highlight_rolloff a
+    // forca do ombro, tint o eixo verde-magenta que faltava ao balanco.
+    float black_lift;
+    float highlight_rolloff;
+    float tint;
 };
 
 struct CalibrationStack {
@@ -199,6 +204,12 @@ void assign_layer_value(
         layer->sharpness = number;
     } else if (_stricmp(key, "vignette") == 0) {
         layer->vignette = number;
+    } else if (_stricmp(key, "black_lift") == 0) {
+        layer->black_lift = number;
+    } else if (_stricmp(key, "highlight_rolloff") == 0) {
+        layer->highlight_rolloff = number;
+    } else if (_stricmp(key, "tint") == 0) {
+        layer->tint = number;
     }
 }
 
@@ -324,6 +335,16 @@ CalibrationLayer reference_base() {
     layer.local_contrast = 0.12f;
     layer.sharpness = 0.18f;
     layer.vignette = 0.04f;
+    // 0.14.0. 0.0027 em linear leva o preto a 8,9 em 255 depois do encode
+    // sRGB, que e a faixa medida nas quatro referencias do ATS (p1 entre 8 e
+    // 11). Nao e um numero de gosto: e o alvo.
+    layer.black_lift = 0.0027f;
+    layer.highlight_rolloff = 0.35f;
+    layer.tint = 0.35f;
+    // Era -0.01f, e somado aos dois deltas dava -0.06 efetivo -- empurrava os
+    // pretos para BAIXO, contra o alvo. 0.05f zera a soma das tres camadas e
+    // deixa o piso por conta de black_lift, que e quem sabe fazer isso.
+    layer.blacks = 0.05f;
     return layer;
 }
 
@@ -342,6 +363,11 @@ CalibrationLayer visual_delta_0_2() {
     layer.local_contrast = 0.06f;
     layer.sharpness = 0.04f;
     layer.vignette = -0.005f;
+    // Os tres da 0.14.0 entram neutros aqui: a primeira rodada move so a base,
+    // para o A/B em jogo ter uma variavel de cada vez.
+    layer.black_lift = 0.0f;
+    layer.highlight_rolloff = 0.0f;
+    layer.tint = 0.0f;
     return layer;
 }
 
@@ -360,6 +386,12 @@ CalibrationLayer rain_overcast_delta_0_3() {
     layer.local_contrast = 0.06f;
     layer.sharpness = -0.02f;
     layer.vignette = -0.005f;
+    layer.black_lift = 0.0f;
+    layer.highlight_rolloff = 0.0f;
+    // A referencia de tempo encoberto e a mais verde das quatro (G/R = 1,21
+    // contra 1,11 da de dia claro), entao esta camada acrescenta tint em vez
+    // de ficar neutra como a de visual.
+    layer.tint = 0.15f;
     return layer;
 }
 
@@ -413,6 +445,9 @@ void add_layer(Settings* settings, const CalibrationLayer& layer) {
     settings->local_contrast += layer.local_contrast;
     settings->sharpness += layer.sharpness;
     settings->vignette += layer.vignette;
+    settings->black_lift += layer.black_lift;
+    settings->highlight_rolloff += layer.highlight_rolloff;
+    settings->tint += layer.tint;
 }
 
 Settings compose_stack(const CalibrationStack& stack) {
@@ -431,6 +466,9 @@ Settings compose_stack(const CalibrationStack& stack) {
         settings.local_contrast = stack.base.local_contrast;
         settings.sharpness = stack.base.sharpness;
         settings.vignette = stack.base.vignette;
+        settings.black_lift = stack.base.black_lift;
+        settings.highlight_rolloff = stack.base.highlight_rolloff;
+        settings.tint = stack.base.tint;
     }
     add_layer(&settings, stack.visual_0_2);
     add_layer(&settings, stack.rain_overcast_0_3);

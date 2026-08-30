@@ -1,5 +1,438 @@
 # Changelog
 
+## Pacote 0.16.0 - 2026-08-30
+
+Remocao completa do RTGI, a pedido do usuario e pela mesma razao medida na
+0.14.0: nenhuma das cinco referencias que definem o alvo visual mostra efeito
+que exija tracado de raios. A luz de preenchimento da cabine e uniforme e **sem
+sangramento de cor** -- nao ha verde da grama no painel nem vermelho do
+caminhao a frente -- e o brilho dos mostradores ao anoitecer nao ilumina nada em
+volta. O modulo estava desligado desde entao.
+
+Com a 0.15.0, o plugin perdeu **17.000 linhas em duas versoes** e ficou com o
+que o visual realmente usa: curva de tom, coloracao, iluminacao, TAA/AA nativo
+e SSAO.
+
+- **1.252 linhas apagadas** em tres arquivos -- `shaders/rtgi.hlsl` com seus
+  tres entry points, `src/rtgi_config.hpp` e `tests/rtgi_config_test.cpp` --
+  mais 377 referencias em `postprocess.cpp`, 47 em `config.cpp` e a secao
+  `[module.rtgi.0.12.0]` do cfg;
+- **a cadeia do frame voltou a forma pre-0.13.2.** `grading_source` existia so
+  porque o passe de composicao podia substitui-lo; sem RTGI ele era sempre
+  `scene_view_`, e os tres `PSSetShaderResources` voltaram a ler a cena
+  diretamente;
+- **`Page Up` e `Page Down` deixaram de existir.** Eram do RTGI e de mais nada.
+  `Insert` passa de sete para **seis** posicoes, terminando na mascara de
+  visibilidade do SSAO;
+- **`references/rtgi-*.md` ficam** -- os cinco. Sao registro retrospectivo de
+  medicao, diferente do `FSR_ROADMAP.md`, que era plano futuro e saiu junto com
+  o codigo na 0.15.0. Um deles carrega a conta que redirecionou o projeto;
+- **guarda de nao-retorno** para o codigo e para as duas teclas, no molde da
+  0.15.0. O padrao e so `rtgi`, sem termo generico: na 0.15.0 um `easu` no
+  padrao casou com "m**easu**re" e derrubou `grade_report.py`.
+
+**Nenhum pixel muda.** Os cinco entry points restantes sairam byte-identicos a
+0.15.0, e o modulo estava desligado.
+
+Uma correcao de processo que a 0.15.0 tinha deixado passar: as guardas da curva
+de tom da 0.14.0 estavam posicionadas logo depois de `max_indirect_luma`, que
+era **chave do RTGI** -- e sairam junto com o bloco dele, em silencio. Foram
+recuperadas e movidas para junto dos outros pinos do cfg, com um comentario
+explicando por que o lugar importa. Guarda misturada com modulo alheio morre
+com o modulo alheio.
+
+**A faixa escura horizontal fecha aqui, e nao era o SSAO.** Testada em jogo
+nesta versao: nao existe mais. O usuario esclareceu que ela so aparecia com o
+RTGI ligado, na parte inferior da tela, onde o tracado nao alcancava -- ou
+seja, era a fronteira entre a regiao que recebia GI somado e a que nao recebia
+nada. Com o modulo fora, a fronteira nao tem como existir. A hipotese do SSAO
+registrada na 0.14.0 estava errada, e o item sai do roteiro.
+
+## Pacote 0.15.0 - 2026-08-30
+
+Remocao completa do modulo FSR/AA auxiliar, a pedido do usuario. A 0.14.0
+acertou o alvo visual medido, e a conclusao foi que o foto-realismo pretendido
+sai de tonemap, coloracao, iluminacao, TAA/AA nativo e SSAO -- nenhum deles
+passa pelo FSR.
+
+O proprio log sustentava isso ha versoes: `replacement=0 dispatch=0`. O modulo
+nunca substituiu um draw nem despachou um passe.
+
+- **5.833 linhas apagadas** em 26 arquivos: os 18 de `src/fsr_*` mais a ABI e o
+  `.def`, `shaders/fsr1.hlsl`, `third_party/fidelityfx-fsr/`, os tres testes de
+  FSR e o `FSR_ROADMAP.md`. O historico do git preserva tudo, e a branch
+  `fsr-0.7.2-tiles` continua intacta;
+- **oito hooks de vtable removidos**, e este e o ganho que nao aparece no
+  diff: `PSSetShaderResources`, `RSSetState`, `RSSetViewports`,
+  `RSSetScissorRects`, `Draw`, `DrawIndexed`, `DrawIndexedInstanced` e
+  `DrawInstanced` existiam **so** para alimentar o FSR. Cada corpo era
+  `if (fsr_processing_enabled()) observe_fsr_*(...)`, e o ETS2 emite milhares
+  de draws por frame -- cada um pagava uma indirecao, um load atomico e um
+  branch para alimentar um modulo que nao fazia nada;
+- **os hooks de `OMSetRenderTargets` e da variante com UAVs ficaram**: a
+  descoberta de depth vive neles, e sem ela SSAO, resolve temporal e RTGI
+  perdem a fonte. Perderam so a chamada `observe_fsr_color_targets`;
+- **`photorealism-fsr.dll` deixa de existir.** A instalacao passa de tres
+  arquivos para dois, e o nome do pacote perde o segmento de FSR:
+  `photorealism-plugin-0.15.0-ets2-ats-1.60-proton`. `dxgi.dll` encolheu 7 KB;
+- **`native_aa` nao e FSR e ficou.** Ele administra o `r_aa` do jogo, que e o
+  TAA que o usuario quer manter -- o nome do pacote e que associava AA a FSR,
+  por historico;
+- **`validate.sh` ganhou duas guardas de nao-retorno**, uma para o codigo e
+  outra para os oito hooks. Uma remocao sem guarda volta sozinha na primeira
+  vez que alguem colar um trecho antigo. A primeira versao da guarda usava
+  `easu|rcas` no padrao e derrubava `grade_report.py`, que contem "m**easu**re";
+- **`README.md`**: as tres secoes de estado ainda descreviam a 0.11.3 e eram
+  quase inteiramente narrativa de FSR. Foram substituidas por uma secao atual.
+
+**Nenhum pixel muda.** Os sete entry points de shader sairam byte-identicos a
+0.14.0, e o modulo removido nunca executou nada. O que muda e o que deixa de
+ser executado a cada chamada de desenho.
+
+O RTGI continua no codigo, desligado. Sai numa versao propria: ele tem 377
+referencias dentro de `postprocess.cpp`, entrelacado com a cadeia que alimenta
+o grading e o SSAO, enquanto o FSR tinha 33 em dois arquivos.
+
+## Pacote 0.14.0 + Photorealism FSR/AA 0.7.1 - 2026-08-30
+
+Mudanca de direcao, motivada por medicao. O usuario mostrou cinco capturas do
+ATS com um shader de terceiros como alvo; os histogramas foram medidos em vez
+de julgados no olho, e o resultado inverte a premissa das tres versoes
+anteriores. Detalhe em `references/tone-curve-0.14.0.md`.
+
+| | p1 | mediana | canal mais alto |
+|---|---|---|---|
+| Referencia (4 imagens) | **8–11** | 11–40 | **G** |
+| Plugin 0.13.3 (3 imagens) | **0** | 47–70 | **B** |
+
+- **curva de tom em `photorealism.hlsl`, que nao tinha nenhuma.** O shader
+  terminava em `saturate()`: os altos cortavam retos e os baixos esmagavam em
+  zero. Entram `apply_black_lift` e `apply_highlight_rolloff`;
+- **`black_lift=0.0027`.** Em linear leva o preto a `0.0027 * 12.92 = 0.0349`
+  em sRGB, ou 8,9 em 255 -- exatamente a faixa medida nas quatro referencias.
+  E por isso que o painel do plugin virava massa preta enquanto o da
+  referencia, **mais escuro na mediana**, deixava ler cada manometro. A
+  0.13.2.1 e a 0.13.3 tentaram resolver isso somando luz, e o alvo tem a cabine
+  mais escura que a nossa: o problema nunca foi falta de luz;
+- **o lift e a ultima coisa antes do encode**, depois da vignette. Antes dela
+  os cantos escureceriam abaixo do piso. `validate.sh` guarda a ordem por
+  numero de linha;
+- **eixo de tint no balanco de branco.** `apply_temperature` so trocava R
+  contra B e nunca tocava em G, e as quatro referencias tem G como canal mais
+  alto -- o alvo era inalcancavel por qualquer combinacao dos valores
+  existentes;
+- **`blacks` da base de `-0.01` para `0.05`.** Somado aos dois deltas valia
+  `-0.06` e empurrava os pretos para baixo, contra o alvo. Agora soma zero;
+- **`tools/grade_report.py`.** Toda a serie 0.13.x foi calibrada no olho, e foi
+  assim que um efeito de cinco niveis em 255 sobreviveu tres versoes. A medida
+  vira ferramenta do repositorio;
+- **o RTGI para, desligado.** Nenhuma das cinco referencias mostra efeito que
+  exija tracado de raios: a luz de preenchimento da cabine e uniforme e sem
+  sangramento de cor, e o brilho dos mostradores ao anoitecer nao ilumina nada
+  em volta. O modulo nao esta descartado -- esta na direcao errada para este
+  alvo, e hoje empurra contra ele somando ruido e levantando meios-tons;
+- **`color_rejection` de `0.05` para `0.5`.** O `0.05` da 0.13.3 era erro meu: o
+  termo compara o frame atual com o historico, e num buffer de GI a diferenca
+  entre os dois e o ruido que a acumulacao existe para eliminar. A historia era
+  descartada todo frame, que e por que o granulado continuou visivel;
+- **`validate.sh`: o hash do shader visual passou para depois das guardas de
+  curva de tom**, pela mesma razao que o do cfg na 0.13.3 -- vindo antes, ele
+  saia com "Shader visual aprovado foi alterado" e as guardas nomeadas nunca
+  falavam. Quatro pinos nus viraram guardas com mensagem;
+- **bytecode**: so `PSMain` mudou (272 para 309 linhas). `VSMain` e os seis
+  outros entry points sairam byte-identicos ao HEAD anterior.
+
+Nao mudaram, de proposito: exposicao, contraste, saturacao e vibrance. A 0.13.2
+e a 0.13.3 moveram varias coisas de uma vez e nenhum A/B ficou interpretavel.
+
+Pendente: a faixa escura horizontal a ~84% da altura, presente desde a
+0.13.2.1. `PSRtgiCompose` so soma e a vignette e radial, entao nao sao eles; a
+hipotese principal e o SSAO, cuja calibracao foi aprovada sobre uma cascata de
+sombra antes de a 0.13.0 corrigir a elegibilidade do depth. Depende de teste em
+jogo.
+
+## Pacote 0.13.3 + Photorealism FSR/AA 0.7.1 - 2026-08-30
+
+Acumulacao temporal do GI, e a recalibracao de escala que torna a versao
+visivel. Detalhe em `references/rtgi-temporal-0.13.3.md`.
+
+- **`PSRtgiTemporal`**, terceiro entry point de `rtgi.hlsl`, roda na resolucao
+  do RTGI entre a marcha e a composicao. Os quatro parametros marcados
+  `INERTE ate a 0.13.3` desde a 0.12.0 finalmente chegam ao cbuffer:
+  `history_weight` como teto, e `depth_rejection`, `normal_rejection` e
+  `color_rejection` como confiancas **multiplicadas** -- qualquer uma delas
+  dizendo "nao e a mesma superficie" descarta a historia inteira. Media
+  deixaria duas encobrirem a terceira, que e a quina do painel contra o
+  para-brisa: mesma distancia, mesma cor, outra normal;
+- **`normal_rejection` passa a existir de fato.** E a rejeicao que a 0.13.2 nao
+  tinha. `reconstruct_view_normal` ja recebia as cinco amostras de depth por
+  parametro, entao serviu as duas texturas sem alteracao;
+- **o hash por raio saiu do `sin`.** Era `frac(sin(dot(seed, ...)))` com o
+  frame no seed, e em fp32 o `sin` de argumento grande perde exatamente os bits
+  que o `frac` usa -- o hash empobrecia ao longo dos minutos em que a
+  acumulacao deveria estar somando amostras novas. Virou PCG em inteiro;
+- **rotacao por angulo dourado e estratificacao.** O azimute gira
+  `frac(frame * 0.38196601)` por frame e `random.x` passa a percorrer faixas de
+  `1/ray_count`. Sem as duas, acumular converge para a media de amostras mal
+  distribuidas;
+- **`gi_intensity` sobe de `0.15` para `0.6`.** As oito capturas com a 0.13.2.1
+  nao mostraram diferenca no interior, e a conta explica sem A/B: `sky_ambient`
+  e `gi_intensity` se empilham, o teto do que um raio escapado somava era
+  `0,0375` linear e o raio tipico no painel ficava em `~0,008` -- cerca de **5
+  niveis em 255** sobre uma superficie ja escura. O conserto da 0.13.2.1
+  existia, estava correto, e era invisivel;
+- **`color_rejection` cai de `0.15` para `0.05`.** O `0.15` veio do resolve
+  temporal, que opera sobre a imagem final; num buffer de GI com valores na
+  casa de 0,05 um limiar absoluto de 0,15 nunca dispararia -- aceitaria
+  historia sempre, que e ghosting;
+- **limite registrado: nao ha reprojecao.** Sem matrizes de camera, a historia
+  e lida no mesmo uv. Para o interior isso e exato, porque painel, volante e
+  bancos nao se movem em relacao a camera -- e o interior e o alvo. Em curva o
+  exterior volta ao ruido da 0.13.2.1, e isso e o desenho funcionando;
+- **`validate.sh`: tres defeitos de guarda corrigidos.** O hash do cfg rodava
+  **antes** de todas as guardas por chave e as deixava mudas -- qualquer edicao
+  saia com "Configuracao consolidada foi alterada", inclusive a guarda de
+  `sky_ambient` da 0.13.2.1. O hash passou para depois. A guarda de "parametro
+  zerado" estava atras dos pinos de valor exato e era inalcancavel. E duas
+  guardas novas eram `grep` nus sob `set -e`, que derrubam a validacao sem
+  dizer nada;
+- **bytecode**: os cinco entry points aprovados sairam byte-identicos ao HEAD
+  anterior (2367 linhas). `PSRtgi` foi de 682 para 722 linhas, `PSRtgiTemporal`
+  tem 426, e `PSRtgiCompose` mudou uma unica linha -- `cb0[5]` virou `cb0[7]`,
+  pelos campos novos no cbuffer compartilhado.
+
+## Pacote 0.13.2.1 + Photorealism FSR/AA 0.7.1 - 2026-08-30
+
+Correcao da 0.13.2. A composicao funcionou, mas a cabine continuou preta, e o
+teste em jogo mostrou por que: um tunel de concreto branco iluminado em volta
+inteira, com o painel preto chapado e **sem nem granulado**. Ruido ausente onde
+deveria haver ruido nao e denoise faltando -- e sinal ausente.
+
+- **os raios que escapam deixam de devolver preto.** `march_ray` tem quatro
+  desfechos e so um e acerto real. Os outros tres -- saiu da tela, ceu de
+  verdade, e escape (passos esgotados ou plano proximo cruzado) -- agora
+  devolvem o mesmo termo, `ambient_escape(direction)`. Ate a 0.13.2 o terceiro
+  devolvia zero duro, e com `sky_ambient=0.0` no cfg os tres devolviam preto:
+  o shader respondia breu a todo "nao sei";
+- **`sky_ambient` passa de `0.0` para `0.25`**, no cfg e no fallback interno.
+  Nao e a radiancia de um ceu; e a de uma direcao **desconhecida**, e em jogo a
+  maioria delas esta parcialmente ocluida -- cabine, tunel, viaduto, vao entre
+  predios. Um quarto de um ceu encoberto tipico e o lado conservador dessa
+  conta;
+- **por que isso custava a cabine inteira.** `reconstruct_view_normal` forca
+  toda normal a apontar para a camera, entao o hemisferio de amostragem do
+  painel e o cone entre o painel e o olho do motorista: ar vazio. Os raios
+  tipicos andam para tras e cruzam o plano proximo; os rasantes sobem em
+  direcao ao para-brisa e voam a frente da estrada, dezenas de metros adiante,
+  esgotando os doze passos. Nenhum acerta. Os quatro devolviam exatamente
+  `0.0`, e quatro zeros tem media exatamente zero -- preto liso, sem o
+  granulado que teria denunciado o problema um mes antes;
+- **o que a 0.13.2 realmente entregou, e o que nao.** A marcha geometrica
+  consertou um ponto cego de amostragem que era real, mas ele nao era a unica
+  coisa entre o RTGI e o interior. O criterio de aceite escrito no plano --
+  "painel e bancos deixando de ser preto chapado" -- nao tinha como ser
+  atingido naquela versao;
+- **limite que continua, e agora esta medido.** Isto da a cabine um piso de
+  ambiente modulado pela direcao do raio, que e o efeito de penumbra. Nao da
+  color bleeding de verdade do exterior para dentro: a estrada esta *atras* do
+  painel em view-space, fora do hemisferio dele, e nenhum ajuste de parametro
+  alcanca isso em screen-space puro;
+- regressoes travadas em `tools/validate.sh`: `sky_ambient=0.25` pinado,
+  `sky_ambient=0.0` barrado por nome, `ambient_escape` exigido em `rtgi.hlsl` e
+  a contagem dos tres desfechos de escape verificada. Em
+  `tests/rtgi_config_test.cpp`, `clamped_defaults.sky_ambient > 0.0f`.
+
+## Pacote 0.13.2 + Photorealism FSR/AA 0.7.1 - 2026-08-29
+
+- **o RTGI passa a alterar a imagem do jogo.** Ate a 0.12.1 o buffer de GI era
+  preenchido e so as debug views o liam. `PSRtgiCompose`, segundo entry point
+  de `rtgi.hlsl`, soma o GI a cor de cena em espaco linear com `gi_intensity`,
+  antes do grading -- para que exposure, contraste e LUT alcancem tambem a luz
+  indireta, que era o requisito declarado no documento da tecnica;
+- **a marcha virou geometrica, e sem isso a composicao nao alcancaria a
+  cabine.** O passo fixo valia `(15.0-0.5)/12 = 1,21 m` e o laco somava antes
+  de amostrar, entao nada era amostrado entre 0,5 e 1,71 m -- banco (~0,5 m),
+  painel e GPS (~0,7 m) e para-brisa (~1 m) ficavam num ponto cego e um raio
+  saindo do painel pulava a cabine inteira. Com razao geometrica e
+  `range_min=0.10`, seis das doze amostras caem no interior e o exterior
+  continua alcancando 15 m, com o mesmo numero de passos;
+- `hit_thickness` deixa de ser espessura fixa e vira **teto**: a ambiguidade
+  que a marcha introduz e o proprio comprimento do passo, entao a espessura
+  usada e `min(passo, hit_thickness)`. Perto da ~0,05 m e impede a luz de vazar
+  pelo painel; longe o teto impede que uma fatia de 5 m aceite qualquer coisa;
+- **`ray_count`, `gi_intensity` e `max_indirect_luma` deixam de ser inertes.**
+  Quatro raios somados e divididos; `max_indirect_luma` aplicado **por raio**,
+  antes da media, porque e rejeicao de firefly -- depois da media o estrago de
+  uma amostra estourada ja estaria diluido em todos;
+- amostragem passa a ser cosine-weighted e o `dot(N, dir)` explicito **sai**:
+  com o peso ja no PDF ele viraria `cos²` e escureceria os bounces rasantes,
+  que sao os que carregam o color bleeding de parede e de painel;
+- `rtgi_step_size` da lugar a `rtgi_step_ratio`, `rtgi_sample_distance` e
+  `rtgi_samples_within` em `src/rtgi_config.hpp`. A ultima transforma a
+  cobertura da cabine em invariante testada:
+  `rtgi_samples_within(0.10f, 15.0f, 12, 1.5f) >= 4` devolve 3 e falha com o
+  `range_min=0.5` antigo;
+- as debug views `rays` e `hit_distance` passam a mostrar o primeiro raio --
+  sao diagnostico por raio; `raw_gi` e `confidence` mostram o acumulado;
+- **`photorealism.hlsl` nao foi tocado.** A composicao e passe proprio em vez
+  de mais um trecho do grading, e os quatro shaders aprovados sairam
+  byte-identicos ao HEAD: 2367 linhas de disassembly iguais dos dois lados,
+  verificado com `tools/shader_check.sh`;
+- custo: `PSRtgi` de 591 para 688 linhas de bytecode (o laco de raios e
+  dinamico, entao o que multiplica e a execucao) e `PSRtgiCompose` com 60. O
+  modulo continua nascendo desligado: quatro raios sem denoise ainda cintilam,
+  e e a 0.13.3 e a 0.13.4 que resolvem isso.
+
+## Pacote 0.13.1 + Photorealism FSR/AA 0.7.1 - 2026-08-28
+
+- **Page Down era engolido em silencio.** Ate a 0.13.0 ele so tinha efeito com
+  o Insert na posicao 6; fora dela `key_pressed_once` consumia a tecla e nada
+  acontecia -- sem efeito e sem linha no log. O usuario percorreu o Insert de 1
+  a 6 em seis segundos e apertou Page Down em seguida; bastou a tecla cair um
+  frame antes do modo 6 assentar para o toque sumir sem deixar rastro. Agora o
+  Page Down sempre cicla e sempre loga, e o modo do Insert decide apenas se o
+  resultado e desenhado;
+- **o modo 6 logava "aguardando candidato valido" com o depth disponivel.** A
+  condicao excluia `ssao_preview_active` e `depth_preview_active`, mas nao
+  `rtgi_preview_active`, que e o caminho do modo 6. A mensagem falsa levou a
+  leitura errada de que faltava depth no preview do RTGI quando nao faltava;
+- os dois defeitos sao da 0.12.0/0.12.1 e mascararam a verificacao do ray
+  march: o RTGI vinha rodando e custando, mas as debug views nunca chegaram a
+  ser trocadas.
+
+## Pacote 0.13.0 + Photorealism FSR/AA 0.7.1 - 2026-08-28
+
+- **o depth de camera era rejeitado por construcao.** `kMinimumScaledSceneAreaPercent`
+  exigia 110% da area da tela, regra escrita para o depth supersampleado do
+  ETS2; sem supersampling (`r_scale_x=1`, `r_scale_y=1`) o depth tem
+  exatamente 100% e nunca passava. A valvula de escape pedia 400 binds/s e ele
+  faz 291/s. Sobrava um shadow map 2048x2048 com 202% da area -- e era ele que
+  vencia a selecao;
+- por isso RTGI, SSAO e resolve temporal nunca rodaram nas sessoes de teste da
+  0.12.1: os tres estavam sem fonte, e nenhum tinha defeito. Cascata de sombra
+  deixa de ser vinculada quando nada projeta sombra em vista, e ai
+  `Depth sem atividade confirmada por 3 frames` derrubava os tres juntos;
+- **forma passa a ser veto, nao bonus.** `is_plausible_scene_shape` aceita a
+  proporcao da tela ou a tela multiplicada por fator inteiro em cada eixo, que
+  e como o Prism3D faz supersampling. O 1920x2160 do ETS2 supersampleado tem
+  proporcao 8:9, longe de 16:9, mas e 1x por 2x: legitimo. O 2048x2048 nao e
+  nem uma coisa nem outra;
+- **tamanho nativo passa a ser condicao suficiente**, via
+  `kMinimumSceneAreaPercent = 95`, ao lado das duas regras que ja existiam. Os
+  95% dao folga sem abrir a porta para meia resolucao;
+- uma assercao do teste desde a 0.6.x afirmava que um alvo do tamanho exato da
+  tela era interface e nunca cena. Era essa rigidez que excluia o depth real.
+  A elegibilidade nao precisa dessa separacao porque o score ja a faz: quando o
+  mundo supersampleado existe, ele vence. A assercao foi trocada pela
+  invariante correta;
+- `depth_candidate_rejection` passa a dizer no log **por que** cada candidato
+  caiu (`forma-incompativel`, `bindings-insuficientes`, `multisample`,
+  `menor-que-metade-da-tela`, `area-e-atividade-insuficientes`). O bug
+  sobreviveu versoes porque o log mostrava o score, nunca o motivo. Um teste
+  garante que o diagnostico e `is_scene_candidate` nunca divergem;
+- nenhum shader foi tocado: `tools/shader_check.sh` da diff zero nos seis.
+
+## Pacote 0.12.2 + Photorealism FSR/AA 0.7.1 - 2026-08-28
+
+- **o plugin deixa de desligar o AA/TAA nativo do jogo.** Ate agora ele forcava
+  `r_aa=0`, `r_taa_tuning=0`, `r_taa_luma_sharpen=0.0` e
+  `r_taa_modulated_drr_strength=0.0` no `config.cfg` do ETS2/ATS, para assumir
+  o AA integralmente. O efeito colateral so apareceu com o RTGI: **com o TAA
+  nativo desligado, o Prism3D nao precisa ler o depth num shader e o cria sem
+  `D3D11_BIND_SHADER_RESOURCE`**. Sem depth legivel, SSAO, resolve temporal e
+  RTGI ficam todos sem fonte;
+- foi isso que travou a validacao da 0.12.1: o log mostra o depth de camera
+  1920x1080 com `bind_flags=0x00000040 shader_readable=nao`, e o plugin caindo
+  num shadow map 2048x2048 -- score 800 vezes menor e proporcao 43,75% fora --
+  como unica fonte legivel. Cascata de sombra deixa de ser vinculada quando
+  nada projeta sombra em vista, e ai `Depth sem atividade confirmada por 3
+  frames` derruba os tres modulos juntos;
+- a politica passa a vir da secao `[native_aa.0.12.2]` do
+  `photorealism-plugin.cfg`, com `r_aa=6`, `r_taa_luma_sharpen=1.5`,
+  `r_taa_tuning=0` e `r_taa_modulated_drr_strength=0.0` como padrao. Da para
+  ajustar sem recompilar, e `manage=false` faz o plugin nao tocar no
+  `config.cfg` do jogo;
+- o dinput8 roda no bootstrap, antes do dxgi, e nao pode usar o `config.cpp`
+  da outra DLL. `plugin_config_value` e um leitor minimo do formato
+  `[secao]`/`chave=valor`, puro e testado, incluindo secao inexistente, chave
+  comentada, contaminacao entre secoes e casamento por prefixo;
+- o backup `config.photorealism-native-aa.backup.cfg` continua sendo feito
+  antes de qualquer escrita, e a escrita continua atomica.
+
+## Pacote 0.12.1 + Photorealism FSR/AA 0.7.1 - 2026-08-28
+
+- o SSRTGI traca raios pela primeira vez: um raio por pixel, marchado em
+  view-space e projetado de volta para a tela a cada passo, com acerto por
+  espessura, contribuicao de ceu no miss e alcance util de 0.5 a 15 m;
+- `depth_view_space.hlsli` ganha `project_view_position`, inverso exato de
+  `reconstruct_view_position`. Fica no mesmo header porque separar as duas
+  metades da mesma transformacao e como a duplicacao que a 0.12.0 desfez
+  comecou; como nenhum shader aprovado a chama, o bytecode dos quatro
+  continuou identico -- verificado com `tools/shader_check.sh`;
+- **o resultado ainda nao e composto na imagem.** O buffer RTGI_RAW e
+  preenchido e inspecionado pelas debug views; compor e 0.13.2. Nada le o
+  buffer, entao a versao continua sem poder piorar a imagem;
+- o canal alfa distingue vazio de desconhecido: acerto e ceu valem confianca
+  1.0, raio que sai da tela vale 0.0. Screen-space nao tem a informacao nas
+  bordas, e marcar isso e o que vai permitir a acumulacao temporal da 0.13.3
+  confiar mais em quem sabe;
+- `hit_thickness` e `normal_bias` entram no cfg com clamp e teste. Sem o
+  primeiro, qualquer coisa atras da geometria contaria como acerto e a luz
+  vazaria por tras das paredes;
+- `RtgiConstants` cresce de 64 para 80 bytes e ganha `InputNeedsSrgbDecode`,
+  que nao existia. Era inofensivo enquanto o shader nao lia cor; agora e
+  correcao, porque sem decodificar para linear o bounce sairia claro demais
+  nas sombras;
+- com o Insert na posicao 6, `Page Down` cicla as debug views:
+  `normals -> rays -> hit_distance -> raw_gi -> confidence`. O ciclo e a funcao
+  pura `next_rtgi_preview_debug`, testada, em vez de uma cadeia de literais;
+- com um raio e sem denoise, `raw_gi` parece ruido. E esperado: a 0.13.3 e a
+  0.13.4 sao o que tornam o sinal usavel.
+
+## Pacote 0.12.0 + Photorealism FSR/AA 0.7.1 - 2026-08-28
+
+- fundacao do Screen-Space Ray-Traced Global Illumination (SSRTGI): a tecnica
+  aproxima luz indireta de curto/medio alcance reaproveitando depth
+  linearizado, normais reconstruidas, scene color e historico temporal, para
+  produzir o `color bleeding` que tira da cena o aspecto de CG;
+- `shaders/depth_view_space.hlsli` passa a ser a fonte unica da matematica
+  depth -> view-space -> normal, que antes estava duplicada em ssao.hlsl,
+  temporal.hlsl e depth-preview.hlsl; os parametros que vinham de cbuffer
+  viraram argumentos explicitos e as amostras de depth chegam prontas, de modo
+  que o header faz matematica e cada shader faz o proprio I/O;
+- a igualdade foi provada em bytecode, nao no olho: `tools/shader_check.sh`
+  compila com o mesmo `d3dcompiler_47.dll` que o plugin resolve em tempo de
+  execucao e com os mesmos flags. `photorealism.hlsl`, `ssao.hlsl` e
+  `temporal.hlsl` ficaram byte-identicos -- inclusive as 1716 instrucoes do
+  SSAO aprovado;
+- `depth-preview.hlsl` mudou de proposito, e apenas nisso: ganhou a guarda do
+  `rsqrt` e a validade de normal que o SSAO ja tinha (+1 max, +2 lt, +2 movc no
+  histograma de opcodes). Onde o produto vetorial degenerava e o `normalize`
+  produzia NaN, o modo 4 do Insert agora mostra preto;
+- nova secao `[module.rtgi.0.12.0]` e `src/rtgi_config.hpp`, header-folha puro
+  com os sete modos de `rtgi_debug`, a derivacao de resolucao e o clamp dos
+  parametros; um cfg editado a mao nao consegue mais descrever um dispatch
+  invalido;
+- recursos em meia resolucao `R16G16B16A16_FLOAT` (960x540 em Full-HD), com
+  `RGB` = luz indireta e `A` = confianca, e o passe `PSRtgi` posicionado antes
+  do grading, para que exposure, contraste e LUT alcancem tanto a luz direta
+  quanto a indireta;
+- modo Insert 6 `rtgi-normals`, que desenha a reconstrucao pelo caminho novo e
+  deve ficar identico ao modo 4;
+- `Page Up` liga e desliga o RTGI em tempo real, para comparacao A/B sem sair
+  do jogo; `End` restaura o que o arquivo de configuracao diz;
+- a validacao proibia os literais `VK_F12`, `VK_PRIOR` e `PageUp` em todo o
+  `src/`. A proibicao de `VK_F12` era redundante: o que mantem o F12 como tecla
+  de screenshot do Steam e o `HookScreenshots(true)`, que a validacao ja
+  verifica, e nao a ausencia do literal. Ela foi removida. Restam duas regras
+  que dizem o que de fato importa -- o modulo de captura nao pode consultar
+  teclado, e `Page Up` so pode existir no passe de pos-processamento, uma
+  unica vez;
+- **nenhum raio e tracado nesta versao.** O modulo nasce com `enabled=false` e,
+  mesmo ligado, devolve luz indireta zerada e nao alimenta a composicao: compor
+  zero e neutro, entao a 0.12.0 mede o custo do andaime sem poder piorar a
+  imagem. A calibracao visual consolidada permanece intacta.
+
 ## Pacote 0.11.4 + Photorealism FSR/AA 0.7.1 - 2026-08-27
 
 - a ABI v6 observa `RSSetState`, `RSSetViewports` e `RSSetScissorRects` e mantem

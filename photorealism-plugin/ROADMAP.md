@@ -160,3 +160,325 @@ o nucleo 0.10.1 sem modificar sua pilha visual.
 
 Cada etapa so avancara apos comparacao A/B, teste de chuva, amanhecer,
 entardecer, noite e verificacao de frame time.
+
+## 0.12.0 - Screen-Space Ray-Traced Global Illumination (SSRTGI)
+
+Luz indireta em screen-space, de curto/medio alcance (0.5 m a 15 m), sobre
+cabine, caminhao, asfalto, paredes, postos, edificios e vegetacao proxima. O
+nome e deliberado: screen-space, nao hardware ray tracing. DXR/D3D12 sobre os
+RT cores da RX 6600 fica explicitamente fora do escopo.
+
+O GI roda **antes** do grading. O diagrama original da tecnica pedia
+`SSAO -> GI -> Temporal -> grading`, mas a cadeia real do plugin sempre foi
+`grading -> SSAO -> temporal`: inverte-la invalidaria a calibracao consolidada
+da base 0.1.2 + 0.2.0 + 0.3.0, os limiares de highlight do SSAO e o
+`color_rejection` do temporal. Pondo o GI antes do grading, o motivo declarado
+-- o grading alcancar tanto a luz direta quanto a indireta -- e atendido sem
+custo de recalibracao:
+
+```
+scene color -> SSRTGI -> grading -> SSAO -> temporal -> backbuffer
+```
+
+As fases:
+
+- **0.12.0 (entregue)** consolidacao da matematica depth/view-space numa fonte
+  unica, configuracao, buffers em meia resolucao e o passe inerte; nenhum raio
+  e tracado;
+- **0.12.1 (entregue)** ray march de raio unico em screen-space, com acerto por
+  espessura, contribuicao de ceu no miss e confianca separando "vazio" de
+  "desconhecido"; o resultado preenche o buffer mas ainda nao e composto;
+- **0.13.2 (entregue)** GI difusa de quatro raios, amostragem cosine-weighted,
+  rejeicao de firefly por raio e composicao com `gi_intensity`; e a versao em
+  que o RTGI passou a alterar a imagem do jogo. Inclui a **marcha geometrica**,
+  descrita abaixo, sem a qual a composicao nao alcancava a cabine. Detalhe em
+  `references/rtgi-composition-0.13.2.md`;
+- **0.13.2.1 (entregue)** o raio que escapa sem acertar nada deixa de devolver
+  preto. Os tres desfechos de nao-acerto de `march_ray` passam a compartilhar
+  `ambient_escape`, e `sky_ambient` sai de `0.0`. E o que faz o RTGI alcancar
+  o interior da cabine; ver **O escape do raio**, abaixo;
+- **0.13.3 (entregue)** acumulacao temporal com rotacao de raios por frame,
+  somando `normal_rejection` a rejeicao de depth e cor que ja existia. Traz
+  junto a recalibracao de `gi_intensity`, sem a qual a versao nao teria como
+  ser avaliada; ver **A acumulacao e a escala**, abaixo. Detalhe em
+  `references/rtgi-temporal-0.13.3.md`;
+**As tres fases seguintes de RTGI foram removidas do roteiro na 0.16.0**,
+junto com o modulo. A razao esta medida em **A medicao que parou o RTGI**,
+abaixo, e o historico fica nos cinco `references/rtgi-*.md`.
+
+### A remocao do FSR
+
+A 0.15.0 apagou o modulo de AA/FSR auxiliar inteiro: 5.833 linhas, 26
+arquivos, um DLL do pacote. A decisao foi do usuario, e a evidencia estava no
+proprio log ha versoes -- `replacement=0 dispatch=0`. O modulo nunca
+substituiu um draw nem despachou um passe.
+
+O ganho maior nao esta nas linhas apagadas. **Oito hooks de vtable existiam so
+para alimenta-lo** -- `PSSetShaderResources`, `RSSetState`, `RSSetViewports`,
+`RSSetScissorRects` e os quatro `Draw*` -- e o ETS2 emite milhares de draws por
+frame. Cada um pagava indirecao, load atomico e branch por um modulo inerte.
+
+Os hooks de `OMSetRenderTargets` e da variante com UAVs **ficaram**: a
+descoberta de depth vive neles, e sem ela SSAO, resolve temporal e RTGI ficam
+sem fonte. `native_aa` tambem ficou -- ele administra o `r_aa` do jogo, que e o
+TAA, e nunca teve relacao com FSR alem do nome do pacote.
+
+Duas guardas em `validate.sh` impedem o retorno: uma para o codigo, outra para
+os oito hooks. E a primeira versao dessa guarda usava `easu|rcas` no padrao e
+derrubava `grade_report.py`, que contem "m**easu**re" -- registrado aqui porque
+o mesmo tipo de colisao vai reaparecer na proxima guarda por substring.
+
+### A medicao que parou o RTGI
+
+A 0.14.0 mediu os histogramas de cinco capturas do ATS com um shader de
+terceiros -- o alvo visual pedido -- contra a saida da 0.13.3:
+
+| | p1 | mediana | canal mais alto |
+|---|---|---|---|
+| Referencia (4 imagens) | **8–11** | 11–40 | **G** |
+| Plugin 0.13.3 (3 imagens) | **0** | 47–70 | **B** |
+
+Tres conclusoes, e a terceira e a que para o modulo:
+
+1. **a referencia nunca chega ao preto**, e o plugin batia em 0 nas tres
+   capturas. Era o `saturate()` sem toe, nao falta de luz;
+2. **a referencia e mais escura na mediana**, nao mais clara. A 0.13.2.1 e a
+   0.13.3 foram gastas somando ambiente para clarear a cabine, na direcao
+   oposta;
+3. **nenhuma das cinco referencias mostra efeito que exija tracado de raios.**
+   A luz de preenchimento da cabine e uniforme e sem sangramento de cor -- nao
+   ha verde da grama no painel nem vermelho do caminhao a frente -- e o brilho
+   dos mostradores ao anoitecer nao ilumina nada em volta. E AO, curva de tom e
+   grading.
+
+O RTGI **nao esta descartado**. Esta na direcao errada para este alvo, e hoje
+empurra contra ele em dois eixos: soma ruido onde a referencia e limpa, e
+levanta os meios-tons que precisam descer. Fica desligado
+(`[module.rtgi.0.12.0] enabled=false`) e as fases seguintes ficam pausadas.
+
+A licao de processo, que vale para tudo daqui em diante: **toda a serie 0.13.x
+foi calibrada no olho**, e foi assim que um efeito de cinco niveis em 255
+sobreviveu tres versoes sem que ninguem percebesse que era invisivel.
+`tools/grade_report.py` existe para que isso nao se repita.
+
+### A faixa escura -- RESOLVIDA na 0.16.0, era o RTGI
+
+Linha horizontal nitida, largura inteira, a ~84% da altura, tudo abaixo mais
+escuro. Aparecia nas capturas da 0.13.2.1 e da 0.13.3.
+
+**Era o proprio RTGI.** Testado em jogo na 0.16.0: com o modulo removido a
+faixa nao existe. O usuario esclareceu que ela so aparecia com o RTGI ligado --
+a parte inferior da tela era onde o tracado nao alcancava, e a linha era a
+fronteira entre a regiao que recebia `indirect * gi_intensity` somado e a que
+nao recebia nada.
+
+**A leitura de codigo que a descartou estava errada, e o erro tem forma.**
+"`PSRtgiCompose` so soma, entao nao pode escurecer" trata a soma como se fosse
+absoluta, quando o que se ve na tela e contraste: um passe que **so soma, mas
+nao em toda parte**, desenha uma aresta tao visivel quanto um que subtrai. O
+lado escuro nao foi escurecido -- foi o unico que nao foi clareado.
+
+**E a hipotese do SSAO foi construida sem checar a evidencia mais barata.** A
+faixa aparecia exatamente nas versoes em que o RTGI executava, e havia 16
+capturas da 0.14.0 -- ja com `enabled=false` -- que teriam fechado a questao em
+um olhar. Em vez disso a investigacao foi para dentro do `ssao.hlsl` procurar
+um mecanismo. **O intervalo de versoes em que um sintoma aparece e um dado, e
+costuma chegar antes de qualquer leitura de shader.**
+
+### Marcha geometrica
+
+Os parametros do RTGI vieram do documento da tecnica com escala externa em
+mente -- asfalto, paredes, postos, edificios. Na cabine eles nao alcancavam a
+geometria nem em principio:
+
+```
+range_min=0.5   range_max=15.0   max_steps=12
+passo = (15.0 - 0.5) / 12 = 1,21 m
+
+amostras em  1,71  2,92  4,13  5,33 ... 15,0 m
+```
+
+`travelled` comecava em `range_min` e o laco somava o passo **antes** da
+primeira amostra, entao nada era amostrado entre 0,5 e 1,71 m. A cabine inteira
+vive nessa faixa: banco a ~0,5 m, painel e GPS a ~0,7 m, para-brisa a ~1 m. Um
+raio saindo do painel pulava a cabine e ia amostrar o asfalto.
+
+A saida considerada primeiro foi espelhar `[module.ssao_interior.0.9.0]`: um
+perfil de curto alcance misturado por distancia de camera. Foi **preterida** em
+favor de trocar a distribuicao dos passos por progressao geometrica:
+
+```
+razao = (range_max / range_min) ^ (1 / max_steps)
+
+com 0.10 a 15.0 em 12 passos, razao = 1,5182:
+  0,15  0,23  0,35  0,53  0,81  1,22  1,86  2,82  4,29  6,51  9,88  15,0
+         ^------ seis dentro da cabine ------^
+```
+
+Um perfil unico cobre as duas escalas, sem seccao nova no cfg e sem a heuristica
+de "isto e cabine?" -- que teria o efeito colateral de fazer um carro a 3 m na
+estrada contar como interior e perder o alcance longo. `hit_thickness` virou
+teto em vez de valor fixo, porque a ambiguidade que a marcha introduz e o
+proprio comprimento do passo.
+
+A cobertura do interior e teste, nao aritmetica de comentario:
+`rtgi_samples_within(0.10f, 15.0f, 12, 1.5f) >= 4` falha com `range_min=0.5`.
+
+### O escape do raio
+
+A marcha geometrica era necessaria e nao era suficiente. Com ela entregue, o
+teste em jogo da 0.13.2 mostrou a cabine ainda preta -- inclusive dentro de um
+tunel de concreto branco iluminado em volta inteira, que e a geometria mais
+favoravel a GI que o jogo oferece. E preta **sem granulado**, enquanto do lado
+de fora havia granulado. Ruido ausente onde deveria haver ruido nao e denoise
+faltando; e sinal ausente.
+
+`march_ray` tem quatro desfechos, e so um e acerto real:
+
+| desfecho | devolvia ate a 0.13.2 |
+|---|---|
+| acerto numa superficie | cor da cena |
+| saiu da tela | `sky_ambient * dir.y` |
+| ceu de verdade (`raw_depth == 0`) | `sky_ambient * dir.y` |
+| passos esgotados, ou plano proximo cruzado | **zero** |
+
+E `sky_ambient` valia `0.0` no cfg. Somando as duas coisas, **os quatro
+desfechos devolviam preto menos o acerto real** -- o shader respondia breu a
+todo "nao sei".
+
+Isso custa uma cabine inteira porque o acerto real e inalcancavel ali.
+`reconstruct_view_normal` termina com `if (normal.z > 0.0) normal = -normal;`:
+toda normal visivel aponta para a camera. O hemisferio de amostragem do painel
+e entao o cone **entre o painel e o olho do motorista**, que e ar vazio. Os
+raios tipicos andam para tras e caem no `break` do plano proximo por volta da
+sexta amostra; os rasantes sobem em direcao ao para-brisa, ficam na tela mas
+voam a frente da estrada -- que esta a dezenas de metros, com `delta` negativo
+nos doze passos -- e esgotam. Quatro raios devolvendo exatamente `0.0` tem
+media exatamente `0.0`: preto liso.
+
+A correcao e um termo unico, `ambient_escape(direction)`, compartilhado pelos
+tres desfechos de nao-acerto, e `sky_ambient=0.25`. O valor nao e a radiancia
+de um ceu: e a de uma direcao **desconhecida**, e em jogo a maioria delas esta
+parcialmente ocluida. A confianca continua em zero nesses desfechos, que e do
+que a rejeicao temporal da 0.13.3 precisa para confiar menos neles.
+
+**O que isso nao faz.** Da a cabine um piso de ambiente modulado pela direcao
+do raio -- a penumbra. Nao da color bleeding do exterior para dentro: a estrada
+esta *atras* do painel em view-space, fora do hemisferio dele, e nenhum ajuste
+de parametro alcanca isso em screen-space puro. Superficie virada para a camera
+so enxerga o que esta **ao lado dela, em profundidade parecida**.
+
+### A acumulacao e a escala
+
+A 0.13.3 tem duas metades, e a segunda entrou porque a primeira nao teria como
+ser avaliada sem ela.
+
+**A acumulacao.** Quatro raios por pixel e ruido, e ate a 0.13.2.1 esse ruido
+ia inteiro para a tela. `PSRtgiTemporal` soma o frame anterior sob tres
+rejeicoes **multiplicadas** -- profundidade, normal e cor. Produto, e nao
+media: as tres respondem a mesma pergunta por caminhos diferentes, e um "nao"
+isolado ja e resposta. Media deixaria duas confiancas altas encobrirem a
+terceira, que e exatamente a quina do painel contra o para-brisa -- mesma
+distancia, mesma cor, outra normal -- e o resultado seria borrao.
+
+**Nao ha reprojecao**, e isso e um limite medido, nao uma pendencia. Sem as
+matrizes de camera a historia e lida no mesmo uv. Para o interior da cabine
+isso e **exato**: painel, volante, bancos e portas nao se movem em relacao a
+camera enquanto o caminhao anda. Para a cena vista pelo para-brisa a historia e
+rejeitada em movimento, e em curva o exterior volta ao ruido da 0.13.2.1.
+Motion vectors exigiriam ler constant buffers do jogo -- outro projeto.
+
+**A escala.** As oito capturas com a 0.13.2.1 nao mostraram diferenca nenhuma
+no interior, e a conta explica sem precisar de A/B: `sky_ambient` e
+`gi_intensity` sao dois multiplicadores que se empilham. O teto do que um raio
+escapado podia somar era `0,25 x 0,15 = 0,0375` linear, e o raio tipico no
+painel fica bem abaixo do teto -- num hemisferio cosseno em torno de uma normal
+apontada ao motorista, `saturate(direction.y)` tem media perto de `0,21`, o que
+da `~0,008` linear. Sobre um plastico em ~0,03 linear isso e **cerca de 5
+niveis em 255**.
+
+O conserto da 0.13.2.1 existia e estava correto. Era invisivel. `gi_intensity`
+subiu para `0.6`, e o mesmo painel passa de ~49 para ~68 em 255.
+
+A licao vale para as proximas fases: **um efeito multiplicado por dois ganhos
+pequenos em serie pode estar certo e nao aparecer**, e nesse caso a debug view
+e a unica coisa que distingue "nao funciona" de "nao da para ver".
+
+### Luz emissiva de painel e GPS
+
+A cabine a noite e iluminada pelo painel, pelo radio e pela tela do GPS. Fazer
+essas fontes contribuirem como luz indireta **nao exige codigo novo**: o ray
+march ja amostra `scene_texture_` no ponto de acerto, e nao pergunta se aquele
+texel e emissivo. Um raio saindo do volante que atinge a tela do GPS ja pega a
+cor dela. E o caso em que screen-space e mais forte, porque a fonte esta
+visivel na tela por construcao -- ao contrario do sol, que quase nunca esta.
+
+Quatro coisas precisam existir antes de funcionar:
+
+1. ~~alcance~~ **resolvido na 0.13.2.** O GPS fica a ~0,7 m do olho, dentro da
+   faixa cega de 0,5 a 1,71 m que a marcha geometrica eliminou. Hoje ha seis
+   amostras entre 0,15 e 1,22 m. E o limite descoberto na 0.13.2.1 nao atinge
+   este caso: GPS e painel estao **lado a lado em profundidade parecida**, que
+   e exatamente a geometria que o screen-space alcanca -- diferente da estrada
+   vista pelo para-brisa, que esta atras do painel e fora do hemisferio dele;
+2. **`max_indirect_luma` calibrado para a noite.** Existe e ja e aplicado por
+   raio desde a 0.13.2, mas o valor 4.0 veio do documento e nunca foi ajustado
+   para tela clara contra cabine escura -- que e o caso extremo que ele existe
+   para conter. Baixo demais o GPS nao contribui, alto demais ele estoura;
+3. ~~acumulacao temporal (0.13.3)~~ **metade resolvida.** O GPS e uma fonte
+   pequena, clara e de alta frequencia: com poucos raios, acertar ou nao vira
+   cara-ou-coroa e o resultado cintila. A acumulacao da 0.13.3 resolve isso com
+   a camera parada ou em movimento suave, que e a maior parte do tempo dentro
+   da cabine -- e o interior e onde o mesmo-uv e exato. Falta o **denoise
+   bilateral (0.13.4)** para o caso em que a historia e rejeitada;
+4. **mascarar a HUD.** A cor de cena e uma copia do backbuffer no Present, ja
+   com interface. De dia isso e uma limitacao conhecida; de noite piora, porque
+   a HUD e proporcionalmente muito mais clara que a cabine escura e passaria a
+   injetar luz que nao existe. Depende da prova de composicao, hoje em
+   investigacao na branch `fsr-0.7.2-tiles`.
+
+`InputNeedsSrgbDecode`, que entrou na 0.12.1, ja garante que o bounce e
+calculado em espaco linear -- o que importa muito neste caso, porque sem ele
+uma fonte clara contra fundo escuro sairia clara demais.
+
+As fases do RTGI saltam de 0.12.1 para 0.13.2 porque **o numero e carimbo de
+chegada, nao de agenda**. O documento original da tecnica numerou as sete fases
+como 0.12.0 a 0.12.6 supondo que sairiam em sequencia, mas entre a 0.12.1 e a
+fase seguinte entraram dois consertos nao planejados -- a politica de AA nativo
+(0.12.2) e a elegibilidade do depth (0.13.0), mais o Page Down (0.13.1) -- e
+cada um consumiu um numero. As promessas antigas passaram a colidir com pacotes
+ja entregues e foram renumeradas.
+
+A regra, daqui para frente: **quando um pacote sai, as versoes ainda nao
+entregues deste arquivo sao renumeradas na mesma hora**, para que nenhuma
+promessa aponte para um numero ja usado. `tools/validate.sh` verifica isso.
+
+A partir da 0.13.3 o RTGI precisa ser executado uma unica vez por frame, antes
+dos quatro draws de composicao ladrilhados do Prism3D -- substituir tile a tile
+reproduziria o artefato de quadrantes corrigido na 0.11.2. Isso depende da
+prova de composicao, em investigacao na branch `fsr-0.7.2-tiles`.
+
+## 0.13.0 - Elegibilidade do depth de camera
+
+Correcao da regra que rejeitava o depth de camera por construcao, e que mantinha
+RTGI, SSAO e resolve temporal sem fonte. Detalhe em
+`references/depth-eligibility-0.13.0.md`.
+
+- **0.16.1 (proxima)** recalibrar SSAO sobre o depth certo. Se o depth de
+  camera nunca foi usado, a calibracao aprovada nas versoes 0.7.0 a 0.9.1 foi
+  feita sobre uma cascata de sombra, e `radius`, `intensity` e `fade` precisam
+  de nova rodada A/B. **Desceu de prioridade na 0.16.0**: a faixa escura, que
+  era a razao de ter subido, era o RTGI e nao o SSAO. Continua valendo por si
+  -- calibracao afinada sobre um buffer, rodando sobre outro -- mas sem
+  sintoma reportado atras dela;
+- **0.17.0** bloom. Visivel nas referencias -- o flare do sol na golden hour, o
+  brilho na borda do para-brisa -- e exige passes e recursos novos:
+  bright-pass, blur separavel, composicao. Ficou fora da 0.14.0 de proposito:
+  somar glare sobre uma curva de tom ainda nao calibrada torna as duas coisas
+  impossiveis de julgar separadamente;
+- **0.18.0 (condicional)** upgrade de bind flag via hook de `CreateTexture2D`,
+  na tecnica do ReShade: promover o depth a typeless com
+  `BIND_SHADER_RESOURCE`, sintetizando o descritor no `CreateDepthStencilView`.
+  So entra se o `CopyResource` de um depth `DEPTH_STENCIL`-only falhar sob
+  DXVK. Hoje nao ha evidencia de que falhe -- o plugin ja copia para textura
+  propria e cria o SRV sobre a copia.

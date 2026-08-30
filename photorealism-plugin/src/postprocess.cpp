@@ -1,7 +1,6 @@
 #include "postprocess.hpp"
 
 #include "config.hpp"
-#include "fsr_bridge.hpp"
 #include "resource_observer.hpp"
 #include "runtime.hpp"
 #include "steam_screenshots.hpp"
@@ -70,9 +69,13 @@ struct ShaderConstants {
     float vignette;
     float input_needs_srgb_decode;
     float output_needs_srgb_encode;
+    float black_lift;
+    float highlight_rolloff;
+    float tint;
+    float visual_padding;
 };
 
-static_assert(sizeof(ShaderConstants) == 64, "constant buffer must be aligned");
+static_assert(sizeof(ShaderConstants) == 80, "constant buffer must be aligned");
 
 struct DepthPreviewConstants {
     float preview_mode;
@@ -295,7 +298,6 @@ public:
                 depth_preview_mode_,
                 mode_name);
         }
-        set_fsr_processing_enabled(settings_.enabled);
         if (!settings_.enabled) {
             return;
         }
@@ -322,7 +324,6 @@ public:
                 safe_release(frame_device);
                 return;
             }
-            initialize_fsr_module(device_);
             log_message("Pipeline D3D11 inicializado.");
         }
         safe_release(frame_device);
@@ -353,13 +354,6 @@ public:
             safe_release(back_buffer);
             return;
         }
-
-        report_fsr_frame(
-            back_buffer,
-            description.Width,
-            description.Height,
-            description.Format,
-            description.SampleDesc.Count);
 
         update_backbuffer_signature(
             description.Width, description.Height, description.Format);
@@ -480,14 +474,6 @@ public:
         }
         safe_release(depth_candidate);
 
-        report_fsr_automatic_selection_context(
-            description.Width,
-            description.Height,
-            description.Format,
-            depth_available ? depth_description.Width : 0u,
-            depth_available ? depth_description.Height : 0u,
-            depth_available ? depth_generation : 0u);
-
         depth_preview_active =
             depth_available && depth_preview_mode_ >= 1 &&
             depth_preview_mode_ <= 4 && depth_preview_shader_ != nullptr;
@@ -597,8 +583,10 @@ public:
             temporal_wait_logged_ = true;
         }
 
+
         if (!depth_preview_active) {
             context_->CopyResource(scene_texture_, back_buffer);
+            // errada de que o depth faltava no modo 6.
             if (depth_preview_mode_ != 0 && !ssao_preview_active &&
                 !depth_preview_wait_logged_) {
                 log_message(
@@ -623,6 +611,9 @@ public:
         constants.local_contrast = settings_.local_contrast;
         constants.sharpness = settings_.sharpness;
         constants.vignette = settings_.vignette;
+        constants.black_lift = settings_.black_lift;
+        constants.highlight_rolloff = settings_.highlight_rolloff;
+        constants.tint = settings_.tint;
         constants.input_needs_srgb_decode =
             scene_needs_srgb_decode_ ? 1.0f : 0.0f;
         constants.output_needs_srgb_encode =
@@ -720,6 +711,7 @@ public:
             &temporal_constants,
             0,
             0);
+
 
         D3D11_VIEWPORT viewport = {};
         viewport.Width = static_cast<float>(description.Width);
@@ -878,7 +870,6 @@ public:
         if (swap_chain == nullptr) {
             return;
         }
-        reset_fsr_color_observation_for_resize();
         if (active_swap_chain_ == nullptr || active_swap_chain_ == swap_chain) {
             resize_in_progress_ = true;
             release_frame_resources();
@@ -1637,6 +1628,16 @@ private:
         return true;
     }
 
+
+
+
+
+
+
+
+
+
+
     void invalidate_temporal_history(const char* reason) {
         if (!temporal_history_valid_) {
             return;
@@ -1903,7 +1904,6 @@ private:
 
     void reset_device() {
         shutdown_steam_screenshots();
-        shutdown_fsr_device();
         release_frame_resources();
         release_gpu_timing();
         safe_release(vertex_shader_);
@@ -1937,6 +1937,7 @@ private:
     ID3D11RenderTargetView* spatial_target_ = nullptr;
     ID3D11Texture2D* depth_copy_texture_ = nullptr;
     ID3D11ShaderResourceView* depth_copy_view_ = nullptr;
+    // copia do depth de que as rejeicoes dependem.
     ID3D11Texture2D* temporal_history_texture_ = nullptr;
     ID3D11ShaderResourceView* temporal_history_view_ = nullptr;
     ID3D11Texture2D* temporal_depth_history_texture_ = nullptr;

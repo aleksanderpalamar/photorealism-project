@@ -156,6 +156,77 @@ bool write_atomic(const wchar_t* config_path, const std::string& contents) {
     return true;
 }
 
+// Ate a 0.12.1 o plugin zerava r_aa, r_taa_tuning, r_taa_luma_sharpen e
+// r_taa_modulated_drr_strength, para assumir integralmente o AA. Isso tem um
+// efeito colateral: com o TAA nativo desligado, o Prism3D nao precisa ler o
+// depth num shader e o cria sem D3D11_BIND_SHADER_RESOURCE. Sem depth
+// legivel, SSAO e resolve temporal ficam sem fonte.
+//
+// A politica agora vem do photorealism-plugin.cfg, para poder ser ajustada
+// sem recompilar. Os defaults abaixo valem quando a secao nao existe.
+constexpr const char* kNativeAaSection = "native_aa.0.12.2";
+constexpr const char* kDefaultAa = "6";
+constexpr const char* kDefaultTaaTuning = "0";
+constexpr const char* kDefaultTaaSharpen = "1.5";
+constexpr const char* kDefaultTaaDrr = "0.0";
+
+struct NativeAaPolicy {
+    bool manage;
+    std::string aa;
+    std::string taa_tuning;
+    std::string taa_sharpen;
+    std::string taa_drr;
+};
+
+std::string policy_value(
+    const std::string& plugin_config,
+    const char* key,
+    const char* fallback) {
+    const std::string value = photorealism::aa_config::plugin_config_value(
+        plugin_config, kNativeAaSection, key);
+    return value == "ausente" ? std::string(fallback) : value;
+}
+
+NativeAaPolicy read_native_aa_policy(HMODULE proxy_module) {
+    NativeAaPolicy policy = {
+        true, kDefaultAa, kDefaultTaaTuning, kDefaultTaaSharpen,
+        kDefaultTaaDrr};
+
+    wchar_t plugin_config_path[MAX_PATH] = {};
+    if (GetModuleFileNameW(
+            proxy_module, plugin_config_path, MAX_PATH) == 0) {
+        return policy;
+    }
+    wchar_t* separator = std::wcsrchr(plugin_config_path, L'\\');
+    if (separator == nullptr) {
+        return policy;
+    }
+    separator[1] = L'\0';
+    if (!append_path(
+            plugin_config_path,
+            MAX_PATH,
+            L"photorealism-plugin\\photorealism-plugin.cfg")) {
+        return policy;
+    }
+
+    std::string plugin_config;
+    if (!read_file(plugin_config_path, &plugin_config)) {
+        return policy;
+    }
+
+    const std::string manage = photorealism::aa_config::plugin_config_value(
+        plugin_config, kNativeAaSection, "manage");
+    policy.manage = manage != "false" && manage != "0";
+    policy.aa = policy_value(plugin_config, "r_aa", kDefaultAa);
+    policy.taa_tuning =
+        policy_value(plugin_config, "r_taa_tuning", kDefaultTaaTuning);
+    policy.taa_sharpen =
+        policy_value(plugin_config, "r_taa_luma_sharpen", kDefaultTaaSharpen);
+    policy.taa_drr = policy_value(
+        plugin_config, "r_taa_modulated_drr_strength", kDefaultTaaDrr);
+    return policy;
+}
+
 }  // namespace
 
 bool configure_native_aa_for_photorealism(HMODULE proxy_module) {
@@ -205,21 +276,37 @@ bool configure_native_aa_for_photorealism(HMODULE proxy_module) {
     const std::string taa_drr =
         photorealism::aa_config::config_value(
             contents, "r_taa_modulated_drr_strength");
-    const bool change_aa = detected_aa != "ausente" && detected_aa != "0";
+    const NativeAaPolicy policy = read_native_aa_policy(proxy_module);
+    if (!policy.manage) {
+        log_config(
+            proxy_module,
+            "AA config: game=%s detected r_aa=%s r_taa_tuning=%s "
+            "r_taa_luma_sharpen=%s r_taa_modulated_drr_strength=%s; "
+            "manage=false no photorealism-plugin.cfg; nenhuma alteracao no "
+            "config.cfg do jogo.",
+            game_name,
+            detected_aa.c_str(),
+            taa_tuning.c_str(),
+            taa_sharpen.c_str(),
+            taa_drr.c_str());
+        return true;
+    }
+
+    const bool change_aa =
+        detected_aa != "ausente" && detected_aa != policy.aa;
     const bool change_tuning =
-        taa_tuning != "ausente" && taa_tuning != "0";
+        taa_tuning != "ausente" && taa_tuning != policy.taa_tuning;
     const bool change_sharpen =
-        taa_sharpen != "ausente" && taa_sharpen != "0" &&
-        taa_sharpen != "0.0";
+        taa_sharpen != "ausente" && taa_sharpen != policy.taa_sharpen;
     const bool change_drr =
-        taa_drr != "ausente" && taa_drr != "0" && taa_drr != "0.0";
+        taa_drr != "ausente" && taa_drr != policy.taa_drr;
     if (!change_aa && !change_tuning && !change_sharpen && !change_drr) {
         log_config(
             proxy_module,
             "AA config: game=%s detected r_aa=%s r_taa_tuning=%s "
             "r_taa_luma_sharpen=%s r_taa_modulated_drr_strength=%s; "
-            "native AA/TAA/sharpen ja desativados; Photorealism assume "
-            "integralmente sem reativacao automatica do nativo.",
+            "ja em conformidade com a politica do photorealism-plugin.cfg; "
+            "nenhuma escrita necessaria.",
             game_name,
             detected_aa.c_str(),
             taa_tuning.c_str(),
@@ -246,16 +333,19 @@ bool configure_native_aa_for_photorealism(HMODULE proxy_module) {
         return true;
     }
     const bool applied_aa = change_aa &&
-        photorealism::aa_config::set_config_value(&contents, "r_aa", "0");
+        photorealism::aa_config::set_config_value(
+            &contents, "r_aa", policy.aa.c_str());
     const bool applied_tuning =
         change_tuning && photorealism::aa_config::set_config_value(
-            &contents, "r_taa_tuning", "0");
+            &contents, "r_taa_tuning", policy.taa_tuning.c_str());
     const bool applied_sharpen = change_sharpen &&
         photorealism::aa_config::set_config_value(
-            &contents, "r_taa_luma_sharpen", "0.0");
+            &contents, "r_taa_luma_sharpen", policy.taa_sharpen.c_str());
     const bool applied_drr = change_drr &&
         photorealism::aa_config::set_config_value(
-            &contents, "r_taa_modulated_drr_strength", "0.0");
+            &contents,
+            "r_taa_modulated_drr_strength",
+            policy.taa_drr.c_str());
     if (!write_atomic(documents, contents)) {
         log_config(proxy_module, "AA config: game=%s escrita atomica falhou; backup preservado.", game_name);
         return true;
@@ -267,15 +357,17 @@ bool configure_native_aa_for_photorealism(HMODULE proxy_module) {
         "r_aa=%s r_taa_tuning=%s r_taa_luma_sharpen=%s "
         "r_taa_modulated_drr_strength=%s backup="
         "config.photorealism-native-aa.backup.cfg "
-        "timing=bootstrap-before-dxgi native_fallback=disabled.",
+        "timing=bootstrap-before-dxgi politica=photorealism-plugin.cfg; "
+        "o TAA nativo ligado e o que faz o Prism3D expor o depth como shader "
+        "resource, de que SSAO e o resolve temporal dependem.",
         game_name,
         detected_aa.c_str(),
         taa_tuning.c_str(),
         taa_sharpen.c_str(),
         taa_drr.c_str(),
-        applied_aa ? "0" : "unchanged-or-absent",
-        applied_tuning ? "0" : "unchanged-or-absent",
-        applied_sharpen ? "0.0" : "unchanged-or-absent",
-        applied_drr ? "0.0" : "unchanged-or-absent");
+        applied_aa ? policy.aa.c_str() : "unchanged-or-absent",
+        applied_tuning ? policy.taa_tuning.c_str() : "unchanged-or-absent",
+        applied_sharpen ? policy.taa_sharpen.c_str() : "unchanged-or-absent",
+        applied_drr ? policy.taa_drr.c_str() : "unchanged-or-absent");
     return true;
 }

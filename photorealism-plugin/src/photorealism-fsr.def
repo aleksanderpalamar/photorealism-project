@@ -1,3 +1,0 @@
-LIBRARY "photorealism-fsr"
-EXPORTS
-    PhotorealismFsrGetApi @1

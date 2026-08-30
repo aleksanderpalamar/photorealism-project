@@ -9,84 +9,33 @@ Autor: Palamar
 O shader e compilado em tempo de execucao por `d3dcompiler_47.dll`, componente
 normalmente fornecido pelo ambiente Proton.
 
-## Estado da versao 0.11.3 + Photorealism FSR/AA 0.7.0
+## Estado da versao 0.16.0
 
-A 0.11.3/0.7.0 e a etapa diagnostica segura da integracao de AA/FSR. Ela
-observa `Draw`, `DrawIndexed`, `DrawInstanced` e `DrawIndexedInstanced`, mas
-so conta uma prova quando o estado vivo do D3D11 confirma uma composicao final
-para o backbuffer. A mesma assinatura precisa ocorrer em 24 frames para ser
-bloqueada. Esta entrega nao substitui SRVs e nao executa EASU, Temporal ou
-RCAS: o log deve registrar `replacement=0 dispatch=0`. Assim, a imagem desta
-versao deve permanecer igual a 0.11.2 enquanto coleta a prova que permitira
-ativar Temporal + RCAS automaticamente e com seguranca na etapa seguinte.
+O visual sai de cinco coisas, e so delas: curva de tom, coloracao, iluminacao,
+TAA/AA nativo e SSAO. A 0.14.0 acertou o alvo medido -- o piso do preto passou
+de 0 para 7-8 em 255, e o canal dominante de azul para verde, que e a
+assinatura das referencias usadas como alvo. `tools/grade_report.py` mede isso
+e esta no repositorio para que a calibracao nao volte a ser feita no olho.
 
-## Estado anterior: 0.11.2 + Photorealism FSR/AA 0.6.1
+A 0.15.0 removeu o **modulo de upscaling** que acompanhava o plugin desde a
+0.1.0. Ele nunca substituiu um draw nem despachou um passe -- o log registrava
+`replacement=0 dispatch=0` havia varias versoes -- e custava 5.833 linhas, um
+DLL no pacote e oito hooks de vtable. Esses oito rodavam em **toda chamada de
+desenho do jogo**, e o ETS2 emite milhares por frame. Nenhum pixel muda com a
+remocao; o que muda e o que deixa de ser executado.
 
-A 0.11.2/0.6.1 corrige uma substituicao insegura de recursos que podia causar
-uma imagem repetida em quadrantes. O modulo FSR/AA agora falha fechado: ele
-mantem a observacao diagnostica, mas nao troca nenhum scene-SRV antes de provar
-o draw final. Assim, EASU, RCAS e AA temporal auxiliares ficam em pass-through
-temporariamente. O pipeline visual principal do `dxgi.dll` continua ativo,
-incluindo as calibracoes de iluminacao, SSAO e resolve temporal ja consolidadas.
-
-## Estado historico: 0.11.0 + Photorealism FSR/AA 0.6.0
-
-Esta versao preserva byte a byte a configuracao e os quatro shaders visuais
-consolidados e acrescenta AA espacial/temporal proprio antes da interface,
-alem do FSR 1 espacial real. A instalacao contem
-duas DLLs de integracao e um modulo auxiliar:
+A instalacao passou de tres arquivos para dois:
 
 - `dinput8.dll`: bootstrap leve e proxy do DirectInput;
 - `dxgi.dll`: proxy DXGI e nucleo grafico que controla hook, shader,
   configuracao e log.
-- `photorealism-fsr.dll`: modulo auxiliar opcional, carregado explicitamente
-  pelo nucleo; nunca atua como proxy.
 
-O Photorealism FSR 0.1.0 consolidou a infraestrutura, a API C/ABI e o
-diagnostico do dispositivo D3D11 real. A 0.2.0 ampliou essa fronteira com uma
-ABI v2 retrocompativel e observa os render targets de cor vinculados pelo jogo.
-Ela cataloga texturas reais por identidade do recurso e registra resolucao,
-formato, MSAA, flags, views, slots, frequencia e ordem de atividade em janelas
-de 30 segundos.
-
-Chamadas produzidas pelo proprio passe Photorealism nao sao encaminhadas. O
-hot path usa caches fixos; consultas COM ocorrem somente quando uma RTV ainda
-nao existe no cache da janela. Ao terminar cada janela, `Present` copia apenas
-um snapshot limitado para uma fila fixa de dois slots. Um unico worker faz a
-ordenacao e toda a escrita do relatorio; nao ha I/O de disco na thread de
-`Present`. Saturacao da fila e contabilizada no relatorio, sem criar threads ou
-filas ilimitadas. Os relatorios usam rotulos conservadores por evidencia:
-apresentacao confirmada pela identidade do backbuffer e candidatos provaveis
-de cena, espelho/reflexo ou interface. Esses rotulos nao confirmam a semantica
-interna proprietaria do Prism3D.
-
-A 0.6.0 mantem a ABI v4 e observa o consumo de SRVs no pixel shader.
-Uma textura so pode ser promovida quando foi vista como render target, e
-depois consumida repetidamente como entrada enquanto o backbuffer exato esta
-ligado como saida. Essa relacao e evidencia observavel do passe de composicao;
-nao e apresentada como conhecimento privado do render graph Prism3D.
-
-O modulo aceita dinamicamente R16F, R11G11B10 e formatos UNORM/sRGB. EASU
-exige fonte menor nos dois eixos, escala 1,05x-2,00x, erro de proporcao de no
-maximo 1,5%, sample/mip/array unitarios, atividade recente, correlacao com o
-depth ativo e doze confirmacoes. Em resolucao nativa ou supersampling, o AA
-proprio exige R11, slot zero e prova forte de composicao; resolucao nao nativa
-nova exige correlacao com depth. R16F nunca e forcado.
-
-Antes de eventual upscale, o modulo executa AA espacial edge-aware e resolve
-temporal com historico ping-pong, clamp de vizinhanca, rejeicao de cor e busca
-local 3x3 de correspondencia. Nao ha jitter nem vetores de movimento do
-Prism3D: e uma reconstrucao temporal defensiva, nao reprojecao motion-vector
-completa, e ainda nao se alega superioridade ao TAA nativo sem A/B. Quando os
-gates de escala passam, executa AMD FidelityFX FSR 1 EASU e RCAS de 0,4 stop.
-Em resolucao nativa, RCAS atua diretamente depois do temporal.
-
-O SRV final substitui somente scene-color naquele passe; GPS, textos, menus e
-elementos desenhados depois permanecem nativos. Falha do hook/recurso registra
-pass-through e continua observando. Nao existe tecla, preview ou ativacao
-manual. Para R16F/R11, o shader usa SRTM reversivel; UNORM/sRGB segue direto.
-As fontes GPUOpen FidelityFX-FSR v1.0.2 e a licenca MIT original acompanham o
-pacote. A telemetria GPU registra TemporalAA, EASU e RCAS sem `Flush`.
+A 0.16.0 remove o RTGI pela mesma razao medida: as referencias visuais que
+definem o alvo nao mostram efeito que exija tracado de raios -- a luz de
+preenchimento da cabine e uniforme e sem sangramento de cor, e o brilho dos
+mostradores ao anoitecer nao ilumina nada em volta. Detalhe em
+`references/tone-curve-0.14.0.md`; o historico do modulo fica nos cinco
+documentos `references/rtgi-*.md`.
 
 O bootstrap reconhece exclusivamente `eurotrucks2.exe` e `amtrucks.exe`. Ele
 cria `config.photorealism-native-aa.backup.cfg` no Documents do jogo e altera
@@ -284,8 +233,8 @@ Nenhum codigo ou binario de terceiros faz parte deste projeto.
 
 ## Instalacao de teste
 
-Os arquivos `dinput8.dll`, `dxgi.dll`, `photorealism-fsr.dll` e a pasta
-`photorealism-plugin` devem ficar em um dos diretorios correspondentes:
+Os arquivos `dinput8.dll`, `dxgi.dll` e a pasta `photorealism-plugin` devem
+ficar em um dos diretorios correspondentes:
 
 `Euro Truck Simulator 2/bin/win_x64/`
 
@@ -308,10 +257,6 @@ O log sera criado em:
 
 `bin/win_x64/photorealism-plugin/photorealism-plugin.log`
 
-O diagnostico do dispositivo e dos alvos de cor sera criado separadamente em:
-
-`bin/win_x64/photorealism-plugin/photorealism-fsr.log`
-
 Quando o passe estiver realmente ativo, o log exibira as mensagens
 `nucleo grafico carregado via dxgi.dll`, `Camadas cumulativas` e
 `Primeiro frame processado`. A versao 0.11.0 aceita os backbuffers BGRA/RGBA
@@ -321,19 +266,15 @@ fallback.
 
 ## Limites desta fase
 
-O SSAO usa uma projecao aproximada configurada por FOV. Tanto o resolve
-consolidado 0.10.0 quanto o AA 0.6.0 nao possuem matriz de movimento, vetores
-por pixel nem jitter proprio; o novo AA busca correspondencia local 3x3 e
-rejeita historico em vez de fazer reprojecao completa. O proxy
-ainda nao reproduz funcoes NGX exportadas pelo plugin de referencia. DLSS,
-motion blur baseado em vetores, subsurface scattering, materiais de estrada,
-chuva e espelhos nao fazem parte desta etapa. O Photorealism FSR 0.6.0 executa
-EASU somente quando a engine apresenta uma fonte scene-color menor; temporal
-e RCAS tambem operam no R11 nativo/supersampled comprovado por uso direto. O
-modulo nao reduz por conta
-propria a resolucao interna escolhida pelo Prism3D; sem essa fonte menor, nao
-existe ganho de desempenho e o log registra pass-through. O roadmap esta em
-`FSR_ROADMAP.md`.
+O SSAO usa uma projecao aproximada configurada por FOV. O resolve temporal
+0.10.0 nao possui matriz de movimento, vetores por pixel nem jitter proprio:
+ele busca correspondencia local 3x3 e rejeita historico em vez de fazer
+reprojecao completa. E um limite de o plugin rodar no `Present`, sem acesso as
+matrizes de camera do jogo.
+
+DLSS, motion blur baseado em vetores, subsurface scattering, materiais de
+estrada, chuva e espelhos nao fazem parte do escopo. Bloom e a proxima etapa
+visual; o roadmap esta em `ROADMAP.md`.
 
 ## Compilacao no Linux
 
