@@ -472,13 +472,13 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   era a razao de ter subido, era o RTGI e nao o SSAO. Continua valendo por si
   -- calibracao afinada sobre um buffer, rodando sobre outro -- mas sem
   sintoma reportado atras dela;
-- **0.17.1 (proxima)** medir o bloom. A versao anterior entregou a estrutura
-  com parametros derivados fisicamente, e nao medidos -- a unica parte do
-  visual hoje que nao passou por `grade_report.py` ou equivalente.
-  `tools/bloom_report.py` ja existe e esta conferido contra alvos sinteticos;
-  falta rodar sobre as cinco referencias do ATS e trocar `threshold`, `knee`,
-  `intensity` e `radius` pelo que ele medir. Enquanto isso nao acontece, o cfg
-  carrega o aviso e `validate.sh` guarda o aviso;
+- **0.18.0 (proxima)** raios de sol. E o efeito que as referencias realmente
+  mostram, e que a medicao do bloom revelou: estriados radiais saindo do sol
+  atras da linha de arvores, projetados no teto escuro da cabine. Sao
+  **direcionais**, e nenhuma piramide gaussiana produz aquilo. Reaproveita o
+  bright-pass, a cadeia de reducao, a composicao aditiva e as guardas da
+  versao anterior -- falta um shader de blur radial e, o problema de verdade,
+  descobrir a posicao do sol na tela sem dados do motor no `Present`;
 - **0.18.0 (condicional)** upgrade de bind flag via hook de `CreateTexture2D`,
   na tecnica do ReShade: promover o depth a typeless com
   `BIND_SHADER_RESOURCE`, sintetizando o descritor no `CreateDepthStencilView`.

@@ -457,14 +457,17 @@ CalibrationStack reference_stack() {
     stack.temporal_history_weight = 0.65f;
     stack.temporal_depth_rejection = 0.02f;
     stack.temporal_color_rejection = 0.08f;
-    // PROVISORIO -- ver o comentario do cfg. Estes quatro numeros ainda nao
-    // foram medidos contra as referencias do ATS; sao derivacao fisica, nao
-    // calibracao. A 0.17.1 os substitui pelo que bloom_report.py medir.
+    // Licenca artistica, e nao o alvo medido -- ver o comentario do cfg. As
+    // referencias do ATS nao tem bloom: as bordas de alto contraste sao
+    // nitidas e o lado escuro nao tem cauda. O modulo fica ligado por decisao
+    // do usuario, com intensidade baixa. Destes quatro so o limiar e medido:
+    // 0.85 em sRGB fica acima do p95 das cinco referencias, entao o bloom pega
+    // sol, topo de nuvem e realce de capo, e nao o ceu.
     stack.bloom_enabled = true;
-    stack.bloom_threshold = 0.75f;
-    stack.bloom_knee = 0.15f;
-    stack.bloom_intensity = 0.06f;
-    stack.bloom_radius = 0.04f;
+    stack.bloom_threshold = 0.85f;
+    stack.bloom_knee = 0.06f;
+    stack.bloom_intensity = 0.02f;
+    stack.bloom_radius = 0.03f;
     return stack;
 }
 
@@ -684,7 +687,7 @@ void log_stack(const CalibrationStack& stack, const Settings& settings) {
         settings.temporal_color_rejection);
     log_message(
         "Modulo bloom 0.17.0: %s threshold=%.3f knee=%.3f intensity=%.3f "
-        "radius=%.4f (parametros PROVISORIOS, nao medidos).",
+        "radius=%.4f (licenca artistica; so o limiar e medido).",
         settings.bloom_enabled ? "ativo" : "inativo",
         settings.bloom_threshold,
         settings.bloom_knee,

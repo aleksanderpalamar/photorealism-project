@@ -305,12 +305,24 @@ if grep -Eq '^threshold=(1(\.0+)?|[2-9])' "${cfg}"; then
 limiar e o modulo fica ativo sem produzir nada." >&2
   exit 1
 fi
-# O aviso de que os numeros nao foram medidos vale enquanto nao forem. Se
-# alguem apagar o aviso sem medir, o proximo a ler o arquivo acredita neles.
-if ! grep -Fq 'OS QUATRO NUMEROS ABAIXO SAO PROVISORIOS' "${cfg}"; then
-  echo "O aviso de parametros provisorios do bloom sumiu do cfg. Se eles ja \
-foram medidos com bloom_report.py, troque o aviso pelos pinos exatos; se nao \
-foram, o aviso precisa continuar la." >&2
+# A ressalva de que o modulo contraria a medicao. Ela e o registro de que as
+# cinco referencias do ATS foram medidas e NAO tem bloom -- bordas nitidas, sem
+# cauda no lado escuro. Sem ela, o proximo a ler o arquivo assume que estes
+# numeros perseguem o alvo medido, quando na verdade se afastam dele por
+# escolha.
+if ! grep -Fq 'ESTE MODULO E LICENCA ARTISTICA, E NAO O ALVO MEDIDO' "${cfg}"; then
+  echo "A ressalva do bloom sumiu do cfg. Ela registra que as referencias \
+foram medidas e nao tem bloom; sem ela alguem vai subir intensity achando que \
+esta se aproximando do alvo, quando esta se afastando." >&2
+  exit 1
+fi
+# O limiar e o unico dos quatro que a medicao sustenta: 0.85 em sRGB fica acima
+# do p95 das cinco referencias (117 a 212). Abaixo disso o bloom passa a pegar
+# o ceu de golden hour, e nao mais o disco do sol.
+if ! grep -Fqx 'threshold=0.85' "${cfg}"; then
+  echo "threshold do bloom fora de 0.85: e o unico parametro do modulo que a \
+medicao das referencias sustenta, e abaixo dele a faixa 191-212 entra -- essa \
+faixa e o ceu nas duas capturas de golden hour, e nao uma fonte de luz." >&2
   exit 1
 fi
 
@@ -553,7 +565,7 @@ effective_profile="$(awk -F= '
 # que importa. Uma guarda que explica uma regressao sutil so serve se for ela
 # a falar. Nesta ordem o hash continua pegando tudo que as guardas nao
 # cobrem, e so isso.
-expected_cfg_sha256="125e10b67cb6734c490bfaa4cf7c789a3cdb83f1d75eee8795e9f02e784c74a5"
+expected_cfg_sha256="808bfa28e417953b7ca88e7c520a812ff79376759542bb4e1bf69c7d10a770eb"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2

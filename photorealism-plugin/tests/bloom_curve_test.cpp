@@ -34,11 +34,14 @@ double contribution(double brightness, double threshold_srgb,
     return result < 0.0 ? 0.0 : result;
 }
 
-// Os valores da secao [module.bloom.0.17.0]. PROVISORIOS: derivacao fisica,
-// nao medicao. Quando bloom_report.py medir as referencias do ATS, estes tres
-// numeros e os asserts que dependem deles mudam juntos.
-const double kThreshold = 0.75;
-const double kKnee = 0.15;
+// Os valores da secao [module.bloom.0.17.0].
+//
+// O limiar E medido: 0.85 em sRGB e o codigo 217, acima do p95 das cinco
+// referencias do ATS (117 a 212). E o que garante que o bloom pegue o disco do
+// sol e o topo das nuvens em vez do ceu inteiro -- se ele descer para 0.75, a
+// faixa 191-212 entra, e essa faixa E o ceu nas duas capturas de golden hour.
+const double kThreshold = 0.85;
+const double kKnee = 0.06;
 
 int main() {
     const double threshold_linear = srgb_to_linear(kThreshold);
@@ -88,10 +91,10 @@ int main() {
     assert(std::fabs(contribution(high, kThreshold, kKnee) - expected) < 1e-9);
 
     // A conversao sRGB e o que faz o numero do cfg ser o numero que o olho
-    // julga. 0.75 em sRGB e o codigo 191, e em linear fica perto de 0.52 --
-    // se alguem trocar a comparacao para linear direto, o limiar efetivo
-    // desliza para o codigo 128 e o bloom pega meia cena.
-    assert(std::fabs(threshold_linear - 0.5225) < 0.001);
+    // julga. 0.85 em sRGB e o codigo 217, e em linear fica em 0.6921 -- se
+    // alguem trocar a comparacao para linear direto, o limiar efetivo desliza
+    // de 217 para o codigo 237, e ai quase nada da cena passa.
+    assert(std::fabs(threshold_linear - 0.6921) < 0.001);
     assert(threshold_linear > kThreshold * 0.6);
     assert(threshold_linear < kThreshold);
 

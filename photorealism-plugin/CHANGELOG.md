@@ -2,16 +2,27 @@
 
 ## Pacote 0.17.0 - 2026-08-30
 
-Bloom. A estrutura esta entregue e **os parametros ainda nao foram medidos** --
-os quatro numeros do cfg sao derivacao fisica, e a calibracao contra as cinco
-referencias do ATS e a 0.17.1. Detalhe em `references/bloom-0.17.0.md`.
+Bloom, **e a medicao que corrigiu a premissa da propria versao**. Detalhe em
+`references/bloom-0.17.0.md`.
 
-O glare que as referencias mostram -- flare do sol na golden hour, halacao na
-borda do para-brisa, farois na contramao -- **nenhum ajuste por pixel
-alcancava**. Todo efeito de `photorealism.hlsl` mapeia um valor para outro no
-mesmo lugar; bloom e energia atravessando dezenas de pixels. Mesmo tipo de
-limite que a 0.14.0 encontrou quando `apply_temperature` so trocava R contra B:
-faltava o eixo, e aqui faltava o passe.
+A justificativa original era que as referencias do ATS mostram glare. Medidas
+depois que a estrutura ficou pronta, **elas nao tem bloom**: toda borda entre
+muito claro e muito escuro esta nitida, o perfil de borda em resolucao cheia
+mostra o lado escuro plano ate a transicao **sem cauda** -- a assinatura que
+bloom deixaria -- os mostradores noturnos nao iluminam nada em volta, e `topo%`
+e 0,00 nas cinco. A afirmacao de que havia "halacao na borda do para-brisa"
+**estava errada**: foi observacao a olho nunca conferida nos pixels.
+
+O que as referencias tem sao **raios de sol** -- estriados radiais saindo do
+sol, projetados no teto escuro da cabine. Sao direcionais, e uma piramide
+gaussiana nao produz aquilo. Isso e a 0.18.0, e reaproveita o bright-pass e a
+piramide desta versao.
+
+O modulo fica **ligado por decisao do usuario, com `intensity=0.02`** e a
+ressalva escrita no cfg e guardada por `validate.sh`. Dos quatro parametros so
+o limiar e medido: `0.85` em sRGB e o codigo 217, acima do p95 das cinco
+referencias (117 a 212), o que faz o bloom pegar o disco do sol e o topo das
+nuvens em vez do ceu.
 
 - **`shaders/bloom.hlsl`**, tres entry points -- limiar de joelho suave na
   descida, box na reducao, tent na subida com blend aditivo. Sem vertex shader

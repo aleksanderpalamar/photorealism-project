@@ -1,8 +1,37 @@
-# Bloom 0.17.0 — a estrutura, com a calibracao pendente
+# Bloom 0.17.0 — e a medicao que corrigiu a premissa
 
-Estado: **estrutura entregue, parametros NAO medidos.** Os quatro numeros do
-cfg sao derivacao fisica; a medicao contra as referencias do ATS e a 0.17.1 e
-depende das imagens.
+Estado: entregue e **medido**. A medicao contradiz o modulo, e ele fica ligado
+mesmo assim por decisao do usuario, com intensidade baixa e a ressalva escrita
+no cfg.
+
+## A medicao, e o que ela derrubou
+
+As cinco referencias do ATS foram medidas depois que a estrutura ficou pronta.
+**Elas nao tem bloom.**
+
+- toda borda entre muito claro e muito escuro esta **nitida**: o quadro do
+  para-brisa contra o ceu, as nuvens brancas contra a cabine, o capo branco
+  contra o painel;
+- o perfil de borda em resolucao cheia mostra o lado escuro **plano em 22-24
+  ate a transicao, sem cauda** -- e cauda no lado escuro e exatamente a
+  assinatura que bloom deixaria;
+- na noturna, os mostradores acesos **nao iluminam nada em volta**;
+- `topo%` e 0,00 nas cinco: nada e estourado, que e o regime em que bloom mais
+  aparece.
+
+**A afirmacao de que as referencias mostravam "halacao na borda do para-brisa"
+estava errada.** Ela foi observacao a olho, nunca conferida nos pixels, e virou
+metade da justificativa desta versao.
+
+O que as referencias tem sao **raios de sol**: estriados radiais saindo do sol
+atras da linha de arvores, projetados no teto escuro da cabine. Sao
+**direcionais**, e uma piramide gaussiana nao produz aquilo -- ela faz halo
+redondo e simetrico. Isso e a 0.18.0.
+
+Dos quatro parametros, **so o limiar e medido**: 0.85 em sRGB e o codigo 217,
+acima do p95 das cinco referencias (117 a 212), o que faz o bloom pegar o disco
+do sol, o topo das nuvens e o realce do capo em vez do ceu. Os outros tres sao
+escolha, e `intensity` fica baixo de proposito.
 
 ## O que o plugin nao conseguia fazer
 
@@ -72,13 +101,23 @@ o artefato que faz um bloom parecer amador.
 O joelho tambem e o que impede o glow de PISCAR: com corte reto, um farol que
 oscila em volta do limiar entraria e sairia inteiro a cada frame.
 
-## Pendente: a medicao
+## A ferramenta, e o limite que ela revelou
 
-`tools/bloom_report.py` mede o perfil radial em volta das fontes e devolve
-exatamente os tres parametros. Conferido contra alvos sinteticos de raio
-conhecido: recupera 0,035 como 0,038 e 0,094 como 0,100 -- vies sistematico de
-cerca de 7% para cima, porque o primeiro anel media um disco e nao um ponto.
+`tools/bloom_report.py` mede o perfil radial em volta da fonte mais brilhante.
+Contra alvos sinteticos de raio conhecido ele acerta: recupera 0,035 como 0,038
+e 0,094 como 0,100, com vies de ~7% para cima porque o primeiro anel media um
+disco e nao um ponto.
 
-Enquanto os numeros nao forem medidos, o cfg carrega o aviso e `validate.sh`
-guarda o aviso. Se alguem apagar o aviso sem medir, o proximo a ler o arquivo
-acredita nos numeros.
+**Sobre as referencias ele nao funcionou, e o aviso dele foi quem disse.** A
+coluna `fontes` veio entre 4 e 9 nas cinco, e os raios entre 0,06 e 0,19 da
+altura -- valores sem sentido para um kernel. O motivo: naquelas imagens o que
+e claro nao e uma fonte, e o **ceu visto pela janela**, uma area grande.
+Perfilar radialmente em volta dela mede o gradiente da cena, nao o
+espalhamento da luz.
+
+O que funcionou foi o perfil atravessando uma borda de alto contraste em
+resolucao cheia. O limite esta escrito no cabecalho da ferramenta, para a
+proxima pessoa nao gastar a mesma hora.
+
+`validate.sh` guarda a ressalva do cfg e o limiar medido. Sem a ressalva,
+alguem sobe `intensity` achando que se aproxima do alvo, quando se afasta.

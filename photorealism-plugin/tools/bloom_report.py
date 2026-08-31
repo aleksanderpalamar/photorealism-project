@@ -25,6 +25,19 @@ O que ele mede, e como isso vira parametro do modulo:
 O perfil e radial em volta da fonte mais brilhante de cada imagem. Se a imagem
 tiver varias fontes separadas (dois farois, sol e reflexo), a coluna `fontes`
 avisa: o perfil ali mistura as duas e o raio sai inflado.
+
+LIMITE CONHECIDO, aprendido na 0.17.0 -- ESTE METODO SO VALE PARA FONTE
+PONTUAL. Rodado sobre as cinco referencias do ATS ele devolveu `fontes` entre 4
+e 9 e raios de 0,06 a 0,19 da altura, numeros sem sentido para um kernel. O
+motivo: naquelas imagens o que e claro nao e uma fonte, e o CEU visto pela
+janela -- uma area grande. Perfilar radialmente em volta dela mede o gradiente
+geral da cena (a cabine escurece longe da janela), e nao o espalhamento da luz.
+
+Quando `fontes` vier alto, o numero NAO e um raio de bloom. O que serve nesse
+caso e medir o perfil atravessando uma borda de alto contraste em resolucao
+cheia: com bloom o lado escuro sobe suavemente antes da borda, com uma cauda;
+sem bloom ele fica plano ate a transicao. Foi assim que se estabeleceu que as
+referencias do ATS nao tem bloom.
 """
 
 import math
