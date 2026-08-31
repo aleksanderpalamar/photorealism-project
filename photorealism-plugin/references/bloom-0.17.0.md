@@ -33,6 +33,33 @@ acima do p95 das cinco referencias (117 a 212), o que faz o bloom pegar o disco
 do sol, o topo das nuvens e o realce do capo em vez do ceu. Os outros tres sao
 escolha, e `intensity` fica baixo de proposito.
 
+## Confirmado em jogo
+
+Sete capturas da 0.17.0 no ETS2, aprovadas pelo usuario. O que a medicao diz:
+
+| | p1 | mediana | topo% |
+|---|---|---|---|
+| Referencia (ATS, 5 imagens) | 8–12 | 11–40 | 0,00 |
+| Plugin 0.17.0 (ETS2, 7 capturas) | **7–8** | 33–57 | **0,00** |
+
+- **p1 no alvo.** O piso de preto da 0.14.0 aguenta o bloom somando luz por
+  cima, que era o risco real de compor antes da curva;
+- **`topo%` = 0,00 nas sete.** Somar luz nao estourou nada. E a confirmacao de
+  que compor ANTES do `apply_highlight_rolloff` funciona: o ombro comprime a
+  soma em vez de deixar bater no teto.
+
+Duas divergencias em relacao a referencia que **nao sao defeito do plugin**, e
+sim conteudo diferente: as capturas sao ETS2 com cabine Scania, e as
+referencias eram ATS. Mediana mais alta acompanha um interior mais claro; e o
+canal B dominante em quatro delas acompanha ceu encoberto de fim de tarde,
+enquanto o alvo "G mais alto" saiu de cenas de luz quente. Julgar as duas
+coisas juntas seria comparar iluminacoes diferentes.
+
+O que **nao** da para afirmar por estas capturas: quanto do resultado e o bloom.
+Nao ha par A/B no mesmo enquadramento com `enabled=false`, entao a aprovacao e
+da imagem inteira, e nao do modulo isolado. `Insert` na posicao 6 resolveria
+isso quando interessar.
+
 ## O que o plugin nao conseguia fazer
 
 Todo efeito de `photorealism.hlsl` e por pixel: pega um valor e devolve outro
