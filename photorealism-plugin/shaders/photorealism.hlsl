@@ -23,15 +23,13 @@ cbuffer SettingsBuffer : register(b0)
     float InputNeedsSrgbDecode;
     float OutputNeedsSrgbEncode;
 
-    float BlackLift;
+    float3 BlackLift;
     float HighlightRolloff;
-    float Tint;
-    float VisualPadding;
 
+    float Tint;
     float BloomEnabled;
     float BloomIntensity;
     float BloomPadding0;
-    float BloomPadding1;
 };
 
 struct VertexOutput
@@ -126,18 +124,27 @@ float3 apply_highlight_rolloff(float3 color, float strength)
     return min(color, compressed);
 }
 
-// Toe: o piso do preto.
+// Toe: o piso do preto, POR CANAL desde a 0.17.1.
 //
-// Medido nas referencias, o 1% mais escuro fica em 8-11 de 255 nas quatro --
+// Medido nas referencias, o 1% mais escuro fica em 8-11 de 255 nas cinco --
 // nada e esmagado a zero. O plugin batia em 0 nas tres capturas da 0.13.3, e
 // era por isso que o painel virava massa preta enquanto o da referencia, mais
 // escuro na mediana, deixava ler cada manometro.
 //
-// A conta e exata: em linear, lift=0.0027 leva o preto a 0.0027*12.92 =
-// 0.0349 em sRGB, ou 8,9 em 255. O alvo nao e vago, e um parametro.
-float3 apply_black_lift(float3 color, float lift)
+// Escalar, porem, o piso sai acromatico, e o alvo NAO e acromatico. O 1% mais
+// escuro das cinco referencias, em 255:
+//
+//   encoberto 2,1/5,8/5,2   crepusculo 1,6/5,7/5,1   sol 3,8/7,2/7,6
+//   neblina   5,8/9,1/10,6  neblina    5,7/9,0/10,5
+//
+// R fica entre 29% e 64% de G, e B acima de G nas de neblina. Nas capturas da
+// 0.17.0 o piso saiu 8/8/8 e 9/9/9 -- R/G e B/G exatamente 1,000 -- porque
+// este lift era um float. temperature e tint nao alcancam isso: os dois
+// multiplicam a faixa inteira, e o topo ja esta certo (R/G medido 0,955-1,002
+// na referencia contra 0,945-0,958 aqui).
+float3 apply_black_lift(float3 color, float3 lift)
 {
-    float floor_value = clamp(lift, 0.0, 0.02);
+    float3 floor_value = clamp(lift, 0.0, 0.02);
     return floor_value + (1.0 - floor_value) * color;
 }
 
@@ -156,8 +163,30 @@ float3 apply_tonal_controls(float3 color)
     color += Blacks * black_mask * 0.06;
     color += Whites * white_mask * 0.06;
 
+    // Contraste em torno do pivo, em POTENCIA e nao em reta -- 0.17.1.
+    //
+    // Ate a 0.17.0 esta linha era max((color - pivot) * Contrast + pivot, 0.0),
+    // e era ELA, e nao o black_lift, que destruia a sombra. Com Contrast acima
+    // de 1 a reta manda todo valor linear abaixo de pivot*(Contrast-1)/Contrast
+    // para negativo, e o max() grampeia o conjunto inteiro no mesmo zero. Com o
+    // perfil aprovado (pivo 0,18, Contrast 1,07) esse limiar e 0,01178 na
+    // entrada DESTE passo; contadas a exposicao e o ganho de sombra que vem
+    // antes, e 0,0147 na entrada da cadeia, ou 32 em 255 no encode -- a cabine
+    // inteira. O black_lift depois so escolhia QUAL valor essa massa
+    // receberia.
+    //
+    // Medido nas quatro capturas da 0.17.0: 72 a 90% dos pixels escuros com os
+    // tres canais EXATAMENTE iguais, e 12 a 13 niveis distintos abaixo de
+    // 12/255, contra 24 a 31 nas cinco referencias. Nao era falta de piso, era
+    // falta de estrutura para o piso sustentar.
+    //
+    // A potencia tem o mesmo pivo e praticamente a mesma inclinacao perto dele,
+    // mas manda 0 para 0 em vez de para negativo, e e monotonica em todo o
+    // dominio. O mesmo degrade de entrada 0-40 devolve 30 niveis distintos em
+    // vez de 10. O epsilon existe so para nao passar zero exato ao pow, que o
+    // compila como exp2(y*log2(x)) e faria log2(0).
     const float pivot = 0.18;
-    color = max((color - pivot) * Contrast + pivot, 0.0);
+    color = pivot * pow(max(color, 1e-6) / pivot, Contrast);
 
     float luma = luminance(color);
     color = lerp(luma.xxx, color, Saturation);

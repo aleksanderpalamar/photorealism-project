@@ -250,12 +250,26 @@ grep -Fqx 'color_rejection=0.08' "${cfg}"
 # o painel em massa preta. As quatro referencias do ATS medidas para esta
 # versao tem o 1% mais escuro entre 8 e 11 de 255, e 0.0027 em linear cai
 # exatamente ali depois do encode sRGB.
-if grep -Eq '^black_lift=0(\.0+)?$' "${cfg}"; then
-  echo "black_lift voltou a zero: a sombra volta a ser esmagada em 0 e o \
-visual medido nas referencias (p1 entre 8 e 11) fica inalcancavel." >&2
+for lift_channel in black_lift_r black_lift_g black_lift_b; do
+  if grep -Eq "^${lift_channel}=0(\.0+)?$" "${cfg}"; then
+    echo "${lift_channel} voltou a zero: a sombra volta a ser esmagada em 0 e \
+o visual medido nas referencias (p1 entre 8 e 11) fica inalcancavel." >&2
+    exit 1
+  fi
+done
+# 0.17.1: o piso tem cor. R abaixo de G nas cinco referencias -- se os tres
+# voltarem a ser iguais o piso e acromatico de novo, que foi o que as capturas
+# da 0.17.0 mostraram (8/8/8 e 9/9/9, R/G e B/G exatamente 1,000).
+lift_r="$(grep -E '^black_lift_r=' "${cfg}" | head -1 | cut -d= -f2 || true)"
+lift_g="$(grep -E '^black_lift_g=' "${cfg}" | head -1 | cut -d= -f2 || true)"
+if [[ -z "${lift_r}" || -z "${lift_g}" ]] ||
+  ! awk -v r="${lift_r}" -v g="${lift_g}" 'BEGIN { exit !(r + 0 < g + 0) }'; then
+  echo "black_lift_r nao esta abaixo de black_lift_g: o piso volta a ser \
+cinza, e o alvo medido tem R entre 29% e 64% de G nas cinco referencias." >&2
   exit 1
 fi
-for tone_pin in 'black_lift=0.0027' 'highlight_rolloff=0.35'; do
+for tone_pin in 'black_lift_r=0.000640' 'black_lift_g=0.001767' \
+  'black_lift_b=0.001590' 'highlight_rolloff=0.35'; do
   if ! grep -Fqx "${tone_pin}" "${cfg}"; then
     echo "Curva de tom fora do valor aprovado: ${tone_pin}. A calibracao da \
 0.14.0 foi medida contra as referencias; mudar sem medir de novo a perde." >&2
@@ -404,7 +418,9 @@ g++ -std=c++20 -Wall -Wextra -Werror \
 # nao consegue ve-los: aquele arquivo e Windows-only e nao linka no Linux. A
 # igualdade entre as duas copias fica por conta destas guardas.
 for tone_default in \
-  'layer.black_lift = 0.0027f;' \
+  'layer.black_lift_r = 0.000640f;' \
+  'layer.black_lift_g = 0.001767f;' \
+  'layer.black_lift_b = 0.001590f;' \
   'layer.highlight_rolloff = 0.35f;' \
   'layer.tint = 0.35f;'; do
   if ! grep -Fq "${tone_default}" "${project_dir}/src/config.cpp"; then
@@ -415,7 +431,7 @@ ${tone_default}" >&2
 done
 # A curva em si. Sem o lift o shader volta ao saturate() sem toe da 0.13.3.
 for tone_marker in \
-  'float3 apply_black_lift(float3 color, float lift)' \
+  'float3 apply_black_lift(float3 color, float3 lift)' \
   'float3 apply_highlight_rolloff(float3 color, float strength)'; do
   if ! grep -Fq "${tone_marker}" \
     "${project_dir}/shaders/photorealism.hlsl"; then
@@ -424,6 +440,28 @@ ${tone_marker}" >&2
     exit 1
   fi
 done
+# 0.17.1: o contraste em potencia. A forma antiga -- reta com max(...,0) --
+# mandava tudo abaixo de 0,01178 linear para o mesmo zero, e era ELA, e nao o
+# black_lift, que destruia a sombra. Medido nas capturas da 0.17.0: 72 a 90%
+# dos pixels escuros com os tres canais identicos e 12 a 13 niveis distintos
+# abaixo de 12/255, contra 24 a 31 nas referencias. Se alguem reescrever a
+# linha na forma afim, o platô volta em silencio.
+if ! grep -Fq 'color = pivot * pow(max(color, 1e-6) / pivot, Contrast);' \
+  "${project_dir}/shaders/photorealism.hlsl"; then
+  echo "O contraste saiu da forma em potencia: na forma afim com clamp toda \
+sombra abaixo de 0,01178 linear volta a colapsar num unico valor, e nenhum \
+black_lift recupera isso." >&2
+  exit 1
+fi
+# O sed tira os comentarios antes do grep: o proprio comentario da linha nova
+# cita a forma antiga para explicar por que ela saiu, e sem isso a guarda
+# acusaria a explicacao dela mesma.
+if sed 's|//.*||' "${project_dir}/shaders/photorealism.hlsl" |
+  grep -Fq '(color - pivot) * Contrast + pivot'; then
+  echo "A reta de contraste da 0.17.0 voltou a photorealism.hlsl." >&2
+  exit 1
+fi
+
 # A ordem importa: o lift e o piso da imagem FINAL, entao vem depois da
 # vignette. Antes dela os cantos escureceriam abaixo do piso.
 #
@@ -486,7 +524,7 @@ fi
 # "Shader visual aprovado foi alterado" e as guardas nomeadas nunca falavam.
 # Uma guarda muda nao guarda coisa alguma.
 visual_shader="${project_dir}/shaders/photorealism.hlsl"
-expected_visual_shader_sha256="d500546e5100e9c409fb11764c502ce421fa5d9cfe9f3f3dba690e0438d298d5"
+expected_visual_shader_sha256="a93788e3924ac235170816f03803d138306a212aae0290bcfc1cdc482a2ca911"
 actual_visual_shader_sha256="$(sha256sum "${visual_shader}" | awk '{print $1}')"
 if [[ "${actual_visual_shader_sha256}" != "${expected_visual_shader_sha256}" ]]; then
   echo "Shader visual aprovado foi alterado: ${actual_visual_shader_sha256}" >&2
@@ -552,8 +590,9 @@ effective_profile="$(awk -F= '
       total["saturation"], total["vibrance"], total["shadows"], \
       total["highlights"], total["blacks"], total["whites"], \
       total["local_contrast"], total["sharpness"], total["vignette"]
-    printf " %.4f %.3f %.3f", \
-      total["black_lift"], total["highlight_rolloff"], total["tint"]
+    printf " %.6f %.6f %.6f %.3f %.3f", \
+      total["black_lift_r"], total["black_lift_g"], total["black_lift_b"], \
+      total["highlight_rolloff"], total["tint"]
   }
 ' "${cfg}")"
 
@@ -565,7 +604,7 @@ effective_profile="$(awk -F= '
 # que importa. Uma guarda que explica uma regressao sutil so serve se for ela
 # a falar. Nesta ordem o hash continua pegando tudo que as guardas nao
 # cobrem, e so isso.
-expected_cfg_sha256="808bfa28e417953b7ca88e7c520a812ff79376759542bb4e1bf69c7d10a770eb"
+expected_cfg_sha256="10f008b448dd2ae5ed8f757251359aef89533791f54e5a998ae132ab0938a139"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
@@ -577,7 +616,7 @@ fi
 # uma mudanca neles nao passe por uma camada de delta sem ser vista.
 expected_profile="6400.0 -0.030 1.070 0.970 0.050 0.100 -0.180 0.000"
 expected_profile="${expected_profile} 0.080 0.240 0.200 0.030"
-expected_profile="${expected_profile} 0.0027 0.350 0.500"
+expected_profile="${expected_profile} 0.001150 0.002192 0.002313 0.350 0.500"
 if [[ "${effective_profile}" != "${expected_profile}" ]]; then
   echo "Perfil cumulativo divergiu da 0.3.0 aprovada: ${effective_profile}" >&2
   exit 1

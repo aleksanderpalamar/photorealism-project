@@ -26,7 +26,10 @@ struct CalibrationLayer {
     float vignette;
     // 0.14.0. black_lift e o piso do preto em linear, highlight_rolloff a
     // forca do ombro, tint o eixo verde-magenta que faltava ao balanco.
-    float black_lift;
+    // 0.17.1: o piso virou tres numeros, porque o alvo medido nao e cinza.
+    float black_lift_r;
+    float black_lift_g;
+    float black_lift_b;
     float highlight_rolloff;
     float tint;
 };
@@ -213,8 +216,20 @@ void assign_layer_value(
         layer->sharpness = number;
     } else if (_stricmp(key, "vignette") == 0) {
         layer->vignette = number;
+    } else if (_stricmp(key, "black_lift_r") == 0) {
+        layer->black_lift_r = number;
+    } else if (_stricmp(key, "black_lift_g") == 0) {
+        layer->black_lift_g = number;
+    } else if (_stricmp(key, "black_lift_b") == 0) {
+        layer->black_lift_b = number;
     } else if (_stricmp(key, "black_lift") == 0) {
-        layer->black_lift = number;
+        // Forma escalar da 0.14.0 ate a 0.17.0: continua aceita e escreve os
+        // tres canais com o mesmo valor, que e exatamente o piso acromatico
+        // que a 0.17.1 corrige. Um cfg antigo carrega e roda; para chegar no
+        // alvo medido ele precisa das tres chaves.
+        layer->black_lift_r = number;
+        layer->black_lift_g = number;
+        layer->black_lift_b = number;
     } else if (_stricmp(key, "highlight_rolloff") == 0) {
         layer->highlight_rolloff = number;
     } else if (_stricmp(key, "tint") == 0) {
@@ -366,10 +381,24 @@ CalibrationLayer reference_base() {
     layer.local_contrast = 0.12f;
     layer.sharpness = 0.18f;
     layer.vignette = 0.04f;
-    // 0.14.0. 0.0027 em linear leva o preto a 8,9 em 255 depois do encode
-    // sRGB, que e a faixa medida nas quatro referencias do ATS (p1 entre 8 e
-    // 11). Nao e um numero de gosto: e o alvo.
-    layer.black_lift = 0.0027f;
+    // 0.17.1. O piso do preto, por canal, em linear.
+    //
+    // Ate a 0.17.0 isto era 0.0027f escalar, derivado do p1 da LUMA das
+    // referencias (8 a 11 em 255). A magnitude estava certa e a cor nao: o p1
+    // da luma esconde que o canal R fica muito abaixo dele. O 1% mais escuro
+    // das tres referencias de tempo claro, em 255, e 2,1/5,8/5,2 (encoberto),
+    // 1,6/5,7/5,1 (crepusculo) e 3,8/7,2/7,6 (sol); a mediana por canal e a
+    // primeira, e e ela que esta aqui convertida para linear:
+    //
+    //   R  2,11/255 = 0,008275 -> /12,92 = 0,000640
+    //   G  5,82/255 = 0,022824 -> /12,92 = 0,001767
+    //   B  5,24/255 = 0,020549 -> /12,92 = 0,001590
+    //
+    // As duas de neblina tem piso mais alto e mais azul, e entram como delta
+    // na camada rain_overcast em vez de puxarem a base.
+    layer.black_lift_r = 0.000640f;
+    layer.black_lift_g = 0.001767f;
+    layer.black_lift_b = 0.001590f;
     layer.highlight_rolloff = 0.35f;
     layer.tint = 0.35f;
     // Era -0.01f, e somado aos dois deltas dava -0.06 efetivo -- empurrava os
@@ -396,7 +425,9 @@ CalibrationLayer visual_delta_0_2() {
     layer.vignette = -0.005f;
     // Os tres da 0.14.0 entram neutros aqui: a primeira rodada move so a base,
     // para o A/B em jogo ter uma variavel de cada vez.
-    layer.black_lift = 0.0f;
+    layer.black_lift_r = 0.0f;
+    layer.black_lift_g = 0.0f;
+    layer.black_lift_b = 0.0f;
     layer.highlight_rolloff = 0.0f;
     layer.tint = 0.0f;
     return layer;
@@ -417,7 +448,17 @@ CalibrationLayer rain_overcast_delta_0_3() {
     layer.local_contrast = 0.06f;
     layer.sharpness = -0.02f;
     layer.vignette = -0.005f;
-    layer.black_lift = 0.0f;
+    // 0.17.1. Esta camada esta SEMPRE somada -- nao ha deteccao de clima -- e
+    // por isso quem tem que cair no alvo e a SOMA, nao a base sozinha. O alvo
+    // da soma e a mediana por canal das cinco referencias, que e a de sol:
+    // 3,8/7,2/7,6 em 255, ou 0,001150/0,002192/0,002313 em linear. A base leva
+    // o piso de tempo claro (2,1/5,8/5,2) e estes deltas completam ate la.
+    //
+    // Mirar a soma nas duas de neblina (5,8/9,1/10,6) poria o piso permanente
+    // no extremo da faixa medida em vez do centro dela.
+    layer.black_lift_r = 0.000510f;
+    layer.black_lift_g = 0.000425f;
+    layer.black_lift_b = 0.000723f;
     layer.highlight_rolloff = 0.0f;
     // A referencia de tempo encoberto e a mais verde das quatro (G/R = 1,21
     // contra 1,11 da de dia claro), entao esta camada acrescenta tint em vez
@@ -487,7 +528,9 @@ void add_layer(Settings* settings, const CalibrationLayer& layer) {
     settings->local_contrast += layer.local_contrast;
     settings->sharpness += layer.sharpness;
     settings->vignette += layer.vignette;
-    settings->black_lift += layer.black_lift;
+    settings->black_lift_r += layer.black_lift_r;
+    settings->black_lift_g += layer.black_lift_g;
+    settings->black_lift_b += layer.black_lift_b;
     settings->highlight_rolloff += layer.highlight_rolloff;
     settings->tint += layer.tint;
 }
@@ -508,7 +551,9 @@ Settings compose_stack(const CalibrationStack& stack) {
         settings.local_contrast = stack.base.local_contrast;
         settings.sharpness = stack.base.sharpness;
         settings.vignette = stack.base.vignette;
-        settings.black_lift = stack.base.black_lift;
+        settings.black_lift_r = stack.base.black_lift_r;
+        settings.black_lift_g = stack.base.black_lift_g;
+        settings.black_lift_b = stack.base.black_lift_b;
         settings.highlight_rolloff = stack.base.highlight_rolloff;
         settings.tint = stack.base.tint;
     }

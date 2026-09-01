@@ -21,6 +21,22 @@ double apply_black_lift(double color, double lift) {
     return floor_value + (1.0 - floor_value) * color;
 }
 
+// Contraste em torno do pivo, espelhado de photorealism.hlsl desde a 0.17.1.
+// Manda 0 para 0 em vez de para negativo, e e monotonico em todo o dominio.
+double apply_contrast(double color, double contrast) {
+    const double pivot = 0.18;
+    const double floored = color < 1e-6 ? 1e-6 : color;
+    return pivot * std::pow(floored / pivot, contrast);
+}
+
+// A forma da 0.14.0 ate a 0.17.0. Nao roda mais no shader; existe aqui so para
+// que o assert abaixo mostre POR QUE ela saiu, em numero e nao em prosa.
+double apply_contrast_affine(double color, double contrast) {
+    const double pivot = 0.18;
+    const double value = (color - pivot) * contrast + pivot;
+    return value < 0.0 ? 0.0 : value;
+}
+
 double apply_highlight_rolloff(double color, double strength) {
     const double amount =
         strength < 0.0 ? 0.0 : (strength > 1.0 ? 1.0 : strength);
@@ -45,7 +61,16 @@ int output_code(double linear) {
 // arquivo e Windows-only (usa _stricmp) e nao linka aqui, entao a igualdade
 // entre as duas copias e garantida por guarda em validate.sh, e nao pelo
 // compilador.
-const double kApprovedBlackLift = 0.0027;
+// 0.17.1: o piso e por canal, medido no 1% mais escuro das referencias. A
+// base leva o piso de tempo claro; o EFETIVO e a soma das tres camadas, que
+// estao sempre ligadas, e mira a mediana por canal das cinco.
+const double kApprovedBlackLiftR = 0.000640;
+const double kApprovedBlackLiftG = 0.001767;
+const double kApprovedBlackLiftB = 0.001590;
+const double kEffectiveBlackLiftR = 0.001150;
+const double kEffectiveBlackLiftG = 0.002192;
+const double kEffectiveBlackLiftB = 0.002313;
+const double kApprovedContrast = 1.07;
 const double kApprovedHighlightRolloff = 0.35;
 
 int main() {
@@ -68,6 +93,104 @@ int main() {
     assert(apply_black_lift(0.0, 0.0027) < apply_black_lift(0.1, 0.0027));
     // E nao mexe no topo de forma perceptivel.
     assert(output_code(apply_black_lift(1.0, 0.0027)) == 255);
+
+    // REGRESSAO 0.17.1: o piso tem COR.
+    //
+    // O 1% mais escuro das cinco referencias tem R entre 29% e 64% de G, e nas
+    // duas de neblina B passa de G. As quatro capturas da 0.17.0 sairam com
+    // piso 8/8/8 e 9/9/9 -- R/G e B/G exatamente 1,000 -- porque o lift era um
+    // escalar, e escalar e acromatico por construcao. temperature e tint nao
+    // corrigem isso: multiplicam a faixa inteira, e o topo ja esta certo.
+    assert(output_code(apply_black_lift(0.0, kApprovedBlackLiftR)) == 2);
+    assert(output_code(apply_black_lift(0.0, kApprovedBlackLiftG)) == 6);
+    assert(output_code(apply_black_lift(0.0, kApprovedBlackLiftB)) == 5);
+    // O piso EFETIVO, que e o que a tela mostra: as tres camadas estao sempre
+    // somadas, entao a base sozinha nunca roda. 4/7/8 e a mediana por canal
+    // das cinco referencias, e nao o extremo de nenhuma delas.
+    assert(output_code(apply_black_lift(0.0, kEffectiveBlackLiftR)) == 4);
+    assert(output_code(apply_black_lift(0.0, kEffectiveBlackLiftG)) == 7);
+    assert(output_code(apply_black_lift(0.0, kEffectiveBlackLiftB)) == 8);
+    // Dentro da faixa medida nas cinco: R/G entre 0,287 e 0,638, B/G entre
+    // 0,898 e 1,164.
+    assert(kEffectiveBlackLiftR / kEffectiveBlackLiftG > 0.287);
+    assert(kEffectiveBlackLiftR / kEffectiveBlackLiftG < 0.638);
+    assert(kEffectiveBlackLiftB / kEffectiveBlackLiftG > 0.898);
+    assert(kEffectiveBlackLiftB / kEffectiveBlackLiftG < 1.164);
+    // R abaixo de G nos dois -- e o que separa o piso medido de um cinza. Se
+    // alguem reigualar os tres, isto reclama.
+    assert(kApprovedBlackLiftR < kApprovedBlackLiftG);
+    assert(kEffectiveBlackLiftR < kEffectiveBlackLiftG);
+
+    // REGRESSAO 0.17.1: o contraste nao pode esmagar a sombra.
+    //
+    // Ate a 0.17.0 o contraste era uma reta com max(...,0) no fim. Com
+    // Contrast acima de 1 ela manda todo valor abaixo de
+    // pivot*(Contrast-1)/Contrast para negativo, e o clamp junta o conjunto
+    // inteiro no mesmo zero. Com o perfil aprovado esse limiar e
+    // 0,18*0,07/1,07 = 0,01178 na entrada DESTE passo -- que, contadas a
+    // exposicao e o ganho de sombra que vem antes, corresponde a 0,0147 na
+    // entrada da cadeia, ou 32 em 255 no encode: a cabine inteira.
+    //
+    // Medido nas quatro capturas da 0.17.0: 72 a 90% dos pixels escuros com os
+    // tres canais identicos, e 12 a 13 niveis distintos abaixo de 12/255,
+    // contra 24 a 31 nas cinco referencias. O black_lift nao tinha como
+    // resolver: ele so escolhia QUAL valor a massa esmagada receberia.
+    const double affine_crush_limit =
+        0.18 * (kApprovedContrast - 1.0) / kApprovedContrast;
+    assert(affine_crush_limit > 0.0117 && affine_crush_limit < 0.0118);
+    assert(apply_contrast_affine(0.002, kApprovedContrast) == 0.0);
+    assert(apply_contrast_affine(0.010, kApprovedContrast) == 0.0);
+    assert(apply_contrast_affine(0.002, kApprovedContrast) ==
+           apply_contrast_affine(0.010, kApprovedContrast));
+    // E logo acima do limiar ela volta a distinguir, o que mostra que o
+    // problema era o clamp e nao a inclinacao.
+    assert(apply_contrast_affine(0.012, kApprovedContrast) > 0.0);
+
+    // A potencia mantem os dois separados, e nessa ordem.
+    assert(apply_contrast(0.002, kApprovedContrast) > 0.0);
+    assert(apply_contrast(0.002, kApprovedContrast) <
+           apply_contrast(0.010, kApprovedContrast));
+    // Depois do lift eles continuam separados no codigo de saida de 8 bits,
+    // que e onde a diferenca vira ou nao vira imagem.
+    assert(output_code(apply_black_lift(
+               apply_contrast(0.002, kApprovedContrast),
+               kApprovedBlackLiftG)) <
+           output_code(apply_black_lift(
+               apply_contrast(0.010, kApprovedContrast),
+               kApprovedBlackLiftG)));
+
+    // O pivo continua sendo o pivo, e o preto continua indo para o preto --
+    // as duas propriedades que fazem a troca ser uma correcao e nao um novo
+    // visual.
+    assert(std::fabs(apply_contrast(0.18, kApprovedContrast) - 0.18) < 1e-9);
+    assert(apply_contrast(0.0, kApprovedContrast) < 1e-6);
+
+    // Monotonico em toda a faixa: mais luz nunca produz menos codigo.
+    for (int i = 1; i < 512; ++i) {
+        const double lo = static_cast<double>(i - 1) / 512.0;
+        const double hi = static_cast<double>(i) / 512.0;
+        assert(apply_contrast(lo, kApprovedContrast) <=
+               apply_contrast(hi, kApprovedContrast));
+    }
+
+    // O alvo em numero: o degrade de entrada 0-40 em 255 tem que devolver pelo
+    // menos 24 codigos distintos, que e o piso do que as referencias mostram
+    // abaixo de 12/255 (24 a 31). A 0.17.0 devolvia 10.
+    int distinct = 0;
+    int previous = -1;
+    for (int code = 0; code <= 40; ++code) {
+        const double srgb = static_cast<double>(code) / 255.0;
+        const double linear = srgb <= 0.04045
+                                  ? srgb / 12.92
+                                  : std::pow((srgb + 0.055) / 1.055, 2.4);
+        const int out = output_code(apply_black_lift(
+            apply_contrast(linear, kApprovedContrast), kApprovedBlackLiftG));
+        if (out != previous) {
+            ++distinct;
+            previous = out;
+        }
+    }
+    assert(distinct >= 24);
 
     // Fora de faixa nao vira um piso cinza: o clamp segura em 0.02, que ja e
     // um preto levantado agressivo (cerca de 50 em 255).
@@ -104,7 +227,6 @@ int main() {
     // O valor aprovado e o que cai na faixa medida. Se alguem o mover em
     // config.cpp, a guarda de validate.sh reclama; se mover aqui, este assert
     // reclama.
-    assert(output_code(apply_black_lift(0.0, kApprovedBlackLift)) == 9);
     assert(output_code(
                apply_highlight_rolloff(1.06, kApprovedHighlightRolloff)) < 255);
     return 0;

@@ -16,7 +16,12 @@ struct Settings {
     float local_contrast;
     float sharpness;
     float vignette;
-    float black_lift;
+    // 0.17.1: o piso do preto e por canal. O 1% mais escuro das cinco
+    // referencias tem R entre 29% e 64% de G; um piso escalar sai acromatico e
+    // nao alcanca isso.
+    float black_lift_r;
+    float black_lift_g;
+    float black_lift_b;
     float highlight_rolloff;
     float tint;
     float depth_near_plane;

@@ -70,13 +70,15 @@ struct ShaderConstants {
     float vignette;
     float input_needs_srgb_decode;
     float output_needs_srgb_encode;
-    float black_lift;
+    // 0.17.1: piso do preto por canal. A linha de 16 bytes cabe float3 + um
+    // float, entao highlight_rolloff fica aqui e tint desce para a linha do
+    // bloom -- o buffer continua com 96 bytes e a ordem espelha o cbuffer.
+    float black_lift[3];
     float highlight_rolloff;
     float tint;
-    float visual_padding;
     float bloom_enabled;
     float bloom_intensity;
-    float bloom_padding[2];
+    float bloom_padding;
 };
 
 static_assert(sizeof(ShaderConstants) == 96, "constant buffer must be aligned");
@@ -685,7 +687,9 @@ public:
         constants.local_contrast = settings_.local_contrast;
         constants.sharpness = settings_.sharpness;
         constants.vignette = settings_.vignette;
-        constants.black_lift = settings_.black_lift;
+        constants.black_lift[0] = settings_.black_lift_r;
+        constants.black_lift[1] = settings_.black_lift_g;
+        constants.black_lift[2] = settings_.black_lift_b;
         constants.highlight_rolloff = settings_.highlight_rolloff;
         constants.tint = settings_.tint;
         constants.bloom_enabled = bloom_active ? 1.0f : 0.0f;

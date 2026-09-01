@@ -1,5 +1,70 @@
 # Changelog
 
+## Pacote 0.17.1 - 2026-08-31
+
+O piso do preto, e **a medicao que mostrou que o culpado era o contraste**.
+Detalhe em `references/tone-floor-0.17.1.md`.
+
+Quatro capturas da 0.17.0 medidas contra as cinco referencias do ATS. Pelos
+tres criterios do `grade_report.py` a 0.17.0 **passa**: p1 entre 7 e 8, dentro
+da faixa 6-12; G como canal mais alto; `topo%` 0,00. Os dois defeitos maiores
+estavam presentes assim mesmo.
+
+**O piso nao era um piso, era um plato.** O 1% mais escuro das quatro capturas
+saiu 8/8/8 e 9/9/9 -- exatos, nao aproximados. Abaixo de 12/255 sobravam 12 a
+13 niveis distintos contra 24 a 31 nas referencias, o desvio-padrao era 0,70 a
+1,19 contra 3,10 a 4,01, e **72 a 90% dos pixels escuros tinham os tres canais
+identicos** contra 0,00 a 0,77% nas referencias. Era por isso que o interior da
+cabine lia como plastico cinza chapado em vez de preto profundo.
+
+**A causa nao era o `black_lift`.** Era
+`max((color - pivot) * Contrast + pivot, 0.0)`: com `Contrast` acima de 1 a
+reta manda todo valor abaixo de `pivot*(Contrast-1)/Contrast` para negativo e o
+clamp junta o conjunto inteiro no mesmo zero. Com o perfil aprovado esse limiar
+e 0,01178 na entrada do passo, ou 0,0147 na entrada da cadeia -- **32 em 255**,
+a cabine inteira. O `black_lift` vinha depois e so escolhia QUAL valor a massa
+esmagada receberia. Trocar so ele nao mudaria nada.
+
+- **contraste em potencia**, `pivot * pow(max(color, 1e-6) / pivot, Contrast)`.
+  Mesmo pivo, praticamente a mesma inclinacao perto dele, manda 0 para 0 em vez
+  de para negativo e e monotonica em todo o dominio. O degrade de entrada 0-40
+  em 255 devolve **30 niveis distintos em vez de 10**;
+- **`black_lift` por canal.** O p1 da luma (8 a 11) tinha a magnitude certa e
+  escondia a cor: o 1% mais escuro das referencias e 2,1/5,8/5,2 encoberto,
+  1,6/5,7/5,1 crepusculo, 3,8/7,2/7,6 sol, 5,8/9,1/10,6 e 5,7/9,0/10,5
+  neblina. R fica entre 29% e 64% de G nas cinco. Um lift escalar e acromatico
+  por construcao, e `temperature`/`tint` nao alcancam isso -- os dois
+  multiplicam a faixa inteira, e o topo ja estava certo (R/G 0,955-1,002 na
+  referencia contra 0,945-0,958 na 0.17.0). As tres camadas estao **sempre
+  somadas** -- nao ha deteccao de clima -- entao quem tem que cair no alvo e a
+  soma: a base leva o piso de tempo claro (2,1/5,8/5,2) e `rain_overcast`
+  completa ate a mediana por canal das cinco, **4/7/8**. Mirar a soma nas duas
+  de neblina (5,8/9,1/10,6) poria o piso permanente no extremo da faixa medida
+  em vez do centro;
+- **`black_lift_r/g/b` no cfg**, com `_delta` nas duas camadas. A forma escalar
+  `black_lift=` continua aceita e escreve os tres canais iguais -- ou seja,
+  reproduz exatamente o piso acromatico que esta versao corrige;
+- **o cbuffer continua com 96 bytes.** `float3 BlackLift` mais
+  `HighlightRolloff` fecham uma linha de 16, e `Tint` desce para a linha do
+  bloom;
+- **`tests/tone_curve_test.cpp`** ganhou a regressao das duas coisas: que a
+  forma afim junta 0,002 e 0,010 no mesmo zero e a potencia nao, e que o piso
+  sai 2/6/5 na base e 4/7/8 efetivo, com R/G e B/G dentro da faixa das cinco.
+  O contador de niveis distintos exige pelo menos 24, que e o piso do que as
+  referencias mostram;
+- **duas guardas novas em `validate.sh`** -- a linha do contraste em potencia e
+  `black_lift_r < black_lift_g`. A segunda existe porque o modo de falha nao e
+  alguem zerar o lift, e alguem reigualar os tres.
+
+O que **nao** muda nesta versao, e que a mesma medicao mostrou faltar: o grao.
+As referencias tem 0,95 a 1,14 niveis de ruido por canal em regioes claras e
+lisas, e as capturas tem 0,16 a 0,32.
+
+Uma correcao de processo: os tres criterios do `grade_report.py` passaram com
+os dois defeitos presentes. `p1` nao distingue um piso com estrutura de um
+plato no mesmo valor. Faltam ali niveis distintos abaixo de 12/255, fracao de
+pixels escuros com R=G=B exato, e a razao R/G do piso.
+
 ## Pacote 0.17.0 - 2026-08-30
 
 Bloom, **e a medicao que corrigiu a premissa da propria versao**. Detalhe em
