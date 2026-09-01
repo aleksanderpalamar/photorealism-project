@@ -1,5 +1,62 @@
 # Changelog
 
+## Pacote 0.17.2 - 2026-09-01
+
+O piso do preto de novo, porque **o estimador que fixou a 0.17.1 tinha vies**.
+Detalhe em `references/tone-floor-0.17.2.md`.
+
+A 0.17.1 foi confirmada em jogo com doze capturas no ETS2 e o defeito central
+sumiu: o plato de crush nao existe mais, o cinza exato na sombra caiu de 72-90%
+para 0,00-0,15% e nada estoura no teto nem com o sol no horizonte. Isso esta
+registrado em `references/tone-floor-confirmation-0.17.1.md`.
+
+O que esta versao corrige e o alvo, nao a implementacao.
+
+**O estimador de cauda tem vies quando a imagem tem grao.** A media do 1% mais
+escuro escolhe os pixels ordenando por LUMINANCIA, que pesa G em 0,7152, R em
+0,2126 e B em 0,0722. Numa imagem com grao, o que faz um pixel entrar nessa
+amostra e ruido negativo no canal G. So o G desce.
+
+Medido por injecao, e nao por argumento: somando grao gaussiano de desvio 2,1
+-- o das referencias -- as doze capturas limpas do plugin, a cauda se desloca
+**-0,18 / -1,83 / +0,43 codigos**. O mesmo teste valida o estimador no caso
+limpo: ele recupera o piso conhecido do plugin, que e o proprio `black_lift`,
+dentro de 0,35 codigo.
+
+As referencias tem grao de desvio 2,1 e as capturas 0,18. A 0.17.1 comparou os
+dois com o mesmo estimador sem corrigir nada.
+
+**A primeira simulacao desta versao pedia a correcao ao contrario.** Sobre os
+numeros crus, o alvo dava `black_lift_g` **24% menor**. Corrigido o vies, da
+**13% maior** -- 37 pontos percentuais de diferenca, e uma troca de sinal.
+
+Alvo novo, mediana por canal das cinco referencias corrigidas: 4,78/7,84/7,82
+em 255, contra 4,60/6,01/8,25 sem correcao.
+
+**Os tres numeros nao sao a conversao direta do alvo.** O piso medido numa
+captura e o lift mais o que a cena poe por cima, cerca de 0,6 codigo. Entao
+eles saem de resolver o lift que POE a cauda no alvo: invertendo a etapa afim
+do shader pixel a pixel nas doze capturas -- `out = lift + (1-lift)*c` e
+exatamente inversivel -- e bisseccionando por canal.
+
+    efetivo   0.001150/0.002192/0.002313  ->  0.001398/0.002480/0.002268
+    base      0.000640/0.001767/0.001590  ->  0.001017/0.001982/0.001888
+    piso      4/7/8 em 255                ->  5/8/7 em 255
+
+Cada canal do piso novo cai dentro da faixa das cinco corrigidas: R de 2,86 a
+7,64, G de 6,15 a 9,67, B de 6,03 a 10,78.
+
+**`tests/tone_curve_test.cpp`** ganhou a regressao dos codigos novos e a nota
+de que a razao do LIFT nao e a razao do PISO: a cena soma a mesma parcela nos
+tres canais, o que puxa a razao do piso na direcao de 1,0. B/G da 0,915 no lift
+e 0,997 no piso simulado. As duas faixas do teste diferem por isso, e nao por
+folga arbitraria.
+
+**O que nao mudou.** O shader nao foi tocado -- contraste em potencia e
+`apply_black_lift` por canal continuam como saíram da 0.17.1. Falta grao na
+sombra, ~7x abaixo da referencia ja descontado o downsample do gamescope, e
+esse e o proximo item.
+
 ## Pacote 0.17.1 - 2026-08-31
 
 O piso do preto, e **a medicao que mostrou que o culpado era o contraste**.

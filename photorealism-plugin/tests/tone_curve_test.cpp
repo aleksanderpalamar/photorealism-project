@@ -64,12 +64,14 @@ int output_code(double linear) {
 // 0.17.1: o piso e por canal, medido no 1% mais escuro das referencias. A
 // base leva o piso de tempo claro; o EFETIVO e a soma das tres camadas, que
 // estao sempre ligadas, e mira a mediana por canal das cinco.
-const double kApprovedBlackLiftR = 0.000640;
-const double kApprovedBlackLiftG = 0.001767;
-const double kApprovedBlackLiftB = 0.001590;
-const double kEffectiveBlackLiftR = 0.001150;
-const double kEffectiveBlackLiftG = 0.002192;
-const double kEffectiveBlackLiftB = 0.002313;
+// 0.17.2: as mesmas referencias, agora corrigidas do vies do grao sobre o
+// estimador de cauda.
+const double kApprovedBlackLiftR = 0.001017;
+const double kApprovedBlackLiftG = 0.001982;
+const double kApprovedBlackLiftB = 0.001888;
+const double kEffectiveBlackLiftR = 0.001398;
+const double kEffectiveBlackLiftG = 0.002480;
+const double kEffectiveBlackLiftB = 0.002268;
 const double kApprovedContrast = 1.07;
 const double kApprovedHighlightRolloff = 0.35;
 
@@ -101,21 +103,35 @@ int main() {
     // piso 8/8/8 e 9/9/9 -- R/G e B/G exatamente 1,000 -- porque o lift era um
     // escalar, e escalar e acromatico por construcao. temperature e tint nao
     // corrigem isso: multiplicam a faixa inteira, e o topo ja esta certo.
-    assert(output_code(apply_black_lift(0.0, kApprovedBlackLiftR)) == 2);
-    assert(output_code(apply_black_lift(0.0, kApprovedBlackLiftG)) == 6);
-    assert(output_code(apply_black_lift(0.0, kApprovedBlackLiftB)) == 5);
+    assert(output_code(apply_black_lift(0.0, kApprovedBlackLiftR)) == 3);
+    assert(output_code(apply_black_lift(0.0, kApprovedBlackLiftG)) == 7);
+    assert(output_code(apply_black_lift(0.0, kApprovedBlackLiftB)) == 6);
     // O piso EFETIVO, que e o que a tela mostra: as tres camadas estao sempre
-    // somadas, entao a base sozinha nunca roda. 4/7/8 e a mediana por canal
-    // das cinco referencias, e nao o extremo de nenhuma delas.
-    assert(output_code(apply_black_lift(0.0, kEffectiveBlackLiftR)) == 4);
-    assert(output_code(apply_black_lift(0.0, kEffectiveBlackLiftG)) == 7);
-    assert(output_code(apply_black_lift(0.0, kEffectiveBlackLiftB)) == 8);
-    // Dentro da faixa medida nas cinco: R/G entre 0,287 e 0,638, B/G entre
-    // 0,898 e 1,164.
-    assert(kEffectiveBlackLiftR / kEffectiveBlackLiftG > 0.287);
-    assert(kEffectiveBlackLiftR / kEffectiveBlackLiftG < 0.638);
-    assert(kEffectiveBlackLiftB / kEffectiveBlackLiftG > 0.898);
-    assert(kEffectiveBlackLiftB / kEffectiveBlackLiftG < 1.164);
+    // somadas, entao a base sozinha nunca roda.
+    //
+    // REGRESSAO 0.17.2: 5/8/7, e nao mais 4/7/8. A 0.17.1 leu as referencias
+    // com o estimador de cauda sem corrigir o vies que o grao impoe a ele.
+    // Ordenar por luminancia para achar o 1% mais escuro e ordenar por um peso
+    // que e 72% G, entao ruido negativo NO CANAL G e o que faz um pixel entrar
+    // na amostra, e so o G desce. Medido por injecao de grao de desvio 2,1 nas
+    // capturas limpas: -0,18 / -1,83 / +0,43 codigos.
+    //
+    // Cada um destes tres esta dentro da faixa por canal das cinco referencias
+    // corrigidas -- R de 2,86 a 7,64, G de 6,15 a 9,67, B de 6,03 a 10,78.
+    assert(output_code(apply_black_lift(0.0, kEffectiveBlackLiftR)) == 5);
+    assert(output_code(apply_black_lift(0.0, kEffectiveBlackLiftG)) == 8);
+    assert(output_code(apply_black_lift(0.0, kEffectiveBlackLiftB)) == 7);
+    // As razoes das cinco corrigidas: R/G de 0,465 a 0,790, B/G de 0,924 a
+    // 1,137. Essas sao razoes de PISO, e o lift e o piso menos o que a cena
+    // poe por cima -- cerca de 0,6 codigo em cada canal. Somar a mesma parcela
+    // aos tres puxa a razao na direcao de 1,0, entao a razao do LIFT fica mais
+    // longe de 1,0 que a do piso que ele produz: B/G 0,915 aqui contra 0,997
+    // no piso simulado. A faixa abaixo e a medida alargada por essa parcela, e
+    // e por isso que ela nao e igual a de cima.
+    assert(kEffectiveBlackLiftR / kEffectiveBlackLiftG > 0.44);
+    assert(kEffectiveBlackLiftR / kEffectiveBlackLiftG < 0.80);
+    assert(kEffectiveBlackLiftB / kEffectiveBlackLiftG > 0.87);
+    assert(kEffectiveBlackLiftB / kEffectiveBlackLiftG < 1.16);
     // R abaixo de G nos dois -- e o que separa o piso medido de um cinza. Se
     // alguem reigualar os tres, isto reclama.
     assert(kApprovedBlackLiftR < kApprovedBlackLiftG);

@@ -268,8 +268,8 @@ if [[ -z "${lift_r}" || -z "${lift_g}" ]] ||
 cinza, e o alvo medido tem R entre 29% e 64% de G nas cinco referencias." >&2
   exit 1
 fi
-for tone_pin in 'black_lift_r=0.000640' 'black_lift_g=0.001767' \
-  'black_lift_b=0.001590' 'highlight_rolloff=0.35'; do
+for tone_pin in 'black_lift_r=0.001017' 'black_lift_g=0.001982' \
+  'black_lift_b=0.001888' 'highlight_rolloff=0.35'; do
   if ! grep -Fqx "${tone_pin}" "${cfg}"; then
     echo "Curva de tom fora do valor aprovado: ${tone_pin}. A calibracao da \
 0.14.0 foi medida contra as referencias; mudar sem medir de novo a perde." >&2
@@ -418,9 +418,9 @@ g++ -std=c++20 -Wall -Wextra -Werror \
 # nao consegue ve-los: aquele arquivo e Windows-only e nao linka no Linux. A
 # igualdade entre as duas copias fica por conta destas guardas.
 for tone_default in \
-  'layer.black_lift_r = 0.000640f;' \
-  'layer.black_lift_g = 0.001767f;' \
-  'layer.black_lift_b = 0.001590f;' \
+  'layer.black_lift_r = 0.001017f;' \
+  'layer.black_lift_g = 0.001982f;' \
+  'layer.black_lift_b = 0.001888f;' \
   'layer.highlight_rolloff = 0.35f;' \
   'layer.tint = 0.35f;'; do
   if ! grep -Fq "${tone_default}" "${project_dir}/src/config.cpp"; then
@@ -604,7 +604,7 @@ effective_profile="$(awk -F= '
 # que importa. Uma guarda que explica uma regressao sutil so serve se for ela
 # a falar. Nesta ordem o hash continua pegando tudo que as guardas nao
 # cobrem, e so isso.
-expected_cfg_sha256="10f008b448dd2ae5ed8f757251359aef89533791f54e5a998ae132ab0938a139"
+expected_cfg_sha256="8b20246f03777a1518ea84987094262f4a3aab638a9f3e7b768c94d8433cf73e"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
@@ -616,7 +616,7 @@ fi
 # uma mudanca neles nao passe por uma camada de delta sem ser vista.
 expected_profile="6400.0 -0.030 1.070 0.970 0.050 0.100 -0.180 0.000"
 expected_profile="${expected_profile} 0.080 0.240 0.200 0.030"
-expected_profile="${expected_profile} 0.001150 0.002192 0.002313 0.350 0.500"
+expected_profile="${expected_profile} 0.001398 0.002480 0.002268 0.350 0.500"
 if [[ "${effective_profile}" != "${expected_profile}" ]]; then
   echo "Perfil cumulativo divergiu da 0.3.0 aprovada: ${effective_profile}" >&2
   exit 1

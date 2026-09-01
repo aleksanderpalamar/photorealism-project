@@ -381,24 +381,34 @@ CalibrationLayer reference_base() {
     layer.local_contrast = 0.12f;
     layer.sharpness = 0.18f;
     layer.vignette = 0.04f;
-    // 0.17.1. O piso do preto, por canal, em linear.
+    // 0.17.2. O piso do preto, por canal, em linear.
     //
-    // Ate a 0.17.0 isto era 0.0027f escalar, derivado do p1 da LUMA das
-    // referencias (8 a 11 em 255). A magnitude estava certa e a cor nao: o p1
-    // da luma esconde que o canal R fica muito abaixo dele. O 1% mais escuro
-    // das tres referencias de tempo claro, em 255, e 2,1/5,8/5,2 (encoberto),
-    // 1,6/5,7/5,1 (crepusculo) e 3,8/7,2/7,6 (sol); a mediana por canal e a
-    // primeira, e e ela que esta aqui convertida para linear:
+    // A 0.17.1 leu as referencias com o estimador de cauda -- media do 1% mais
+    // escuro -- sem corrigir o vies que o grao impoe a ele. A cauda e escolhida
+    // ordenando por LUMINANCIA, que e 72% G, entao ruido negativo no canal G e
+    // o que faz um pixel entrar na amostra. O resultado e que so o G desce.
     //
-    //   R  2,11/255 = 0,008275 -> /12,92 = 0,000640
-    //   G  5,82/255 = 0,022824 -> /12,92 = 0,001767
-    //   B  5,24/255 = 0,020549 -> /12,92 = 0,001590
+    // Medido por injecao: somando grao de desvio 2,1 -- o das referencias -- as
+    // capturas limpas do plugin, a cauda se desloca -0,18 / -1,83 / +0,43
+    // codigos. R e B quase nao se movem porque pesam 0,21 e 0,07 na luminancia.
+    //
+    // O mesmo teste valida o estimador: nas capturas limpas ele recupera o piso
+    // conhecido do plugin, que e o proprio lift, dentro de 0,35 codigo.
+    //
+    // Corrigidas do vies, as tres referencias de tempo claro tem piso
+    // 3,35/6,53/6,03, 2,86/6,15/6,22 e 4,78/7,84/7,82 em 255. A mediana por
+    // canal esta aqui convertida para linear pelo mesmo caminho da 0.14.0,
+    // codigo/255/12,92:
+    //
+    //   R  3,35/255 = 0,013137 -> /12,92 = 0,001017
+    //   G  6,53/255 = 0,025608 -> /12,92 = 0,001982
+    //   B  6,22/255 = 0,024392 -> /12,92 = 0,001888
     //
     // As duas de neblina tem piso mais alto e mais azul, e entram como delta
     // na camada rain_overcast em vez de puxarem a base.
-    layer.black_lift_r = 0.000640f;
-    layer.black_lift_g = 0.001767f;
-    layer.black_lift_b = 0.001590f;
+    layer.black_lift_r = 0.001017f;
+    layer.black_lift_g = 0.001982f;
+    layer.black_lift_b = 0.001888f;
     layer.highlight_rolloff = 0.35f;
     layer.tint = 0.35f;
     // Era -0.01f, e somado aos dois deltas dava -0.06 efetivo -- empurrava os
@@ -448,17 +458,23 @@ CalibrationLayer rain_overcast_delta_0_3() {
     layer.local_contrast = 0.06f;
     layer.sharpness = -0.02f;
     layer.vignette = -0.005f;
-    // 0.17.1. Esta camada esta SEMPRE somada -- nao ha deteccao de clima -- e
+    // 0.17.2. Esta camada esta SEMPRE somada -- nao ha deteccao de clima -- e
     // por isso quem tem que cair no alvo e a SOMA, nao a base sozinha. O alvo
-    // da soma e a mediana por canal das cinco referencias, que e a de sol:
-    // 3,8/7,2/7,6 em 255, ou 0,001150/0,002192/0,002313 em linear. A base leva
-    // o piso de tempo claro (2,1/5,8/5,2) e estes deltas completam ate la.
+    // da soma e a mediana por canal das cinco referencias CORRIGIDAS do vies do
+    // grao (ver a base): 4,78/7,84/7,82 em 255.
     //
-    // Mirar a soma nas duas de neblina (5,8/9,1/10,6) poria o piso permanente
-    // no extremo da faixa medida em vez do centro dela.
-    layer.black_lift_r = 0.000510f;
-    layer.black_lift_g = 0.000425f;
-    layer.black_lift_b = 0.000723f;
+    // A soma nao e a conversao direta desse alvo. O piso medido numa captura e
+    // lift mais o que a cena poe por cima -- cerca de 0,6 codigo -- entao os
+    // tres numeros saem de resolver o lift que POE a cauda no alvo, invertendo
+    // a etapa afim do shader pixel a pixel nas doze capturas da 0.17.1 e
+    // bisseccionando por canal. Da 0,001398 / 0,002480 / 0,002268, que e o que
+    // estes deltas completam a partir da base.
+    //
+    // Mirar a soma nas duas de neblina (7,6/9,7/10,8 corrigidas) poria o piso
+    // permanente no extremo da faixa medida em vez do centro dela.
+    layer.black_lift_r = 0.000381f;
+    layer.black_lift_g = 0.000498f;
+    layer.black_lift_b = 0.000380f;
     layer.highlight_rolloff = 0.0f;
     // A referencia de tempo encoberto e a mais verde das quatro (G/R = 1,21
     // contra 1,11 da de dia claro), entao esta camada acrescenta tint em vez
