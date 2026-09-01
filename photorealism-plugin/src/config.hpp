@@ -54,6 +54,12 @@ struct Settings {
     float bloom_knee;
     float bloom_intensity;
     float bloom_radius;
+    // 0.18.0. O observador nao muda pixel nenhum: ele mede o frame pre-grade e
+    // registra as features que separam as condicoes. E a fonte de dados da
+    // adaptacao por clima, que entra depois e em cima destes numeros.
+    bool scene_observer_enabled;
+    float scene_observer_interval_frames;
+    float scene_observer_log_seconds;
 };
 
 Settings default_settings();

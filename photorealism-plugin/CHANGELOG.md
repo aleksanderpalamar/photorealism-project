@@ -1,5 +1,63 @@
 # Changelog
 
+## Pacote 0.18.0 - 2026-09-01
+
+Observador de cena. **Este modulo nao altera um pixel** -- ele mede o frame
+antes do grade e escreve quatro numeros no log. Detalhe em
+`references/scene-observer-0.18.0.md`.
+
+Ele existe por causa de um achado que muda a premissa da calibracao de cor.
+
+**As cinco referencias nao sao cinco fotos da mesma coisa.** Foram abertas e
+medidas aqui pela primeira vez, e sao cinco condicoes diferentes: encoberto
+(23-33-14), anoitecer com farois (23-47-51), sol baixo com neblina (11-12-15 e
+11-12-25) e dia claro (15-56-22). A calibracao de cor de hoje e a media das
+cinco. O `tint` efetivo de 0,50 nao esta errado por descuido -- e o unico
+numero possivel quando se tenta cobrir cinco condicoes com um so, e por isso
+cai entre o alvo de dia claro e o de encoberto errando os dois.
+
+Quatro features separam as cinco. Medidas pelo mesmo caminho do observador
+(media de area ate ~80 px de largura):
+
+| ref      | condicao    | ceu R/B | mediana | p90-p10 | saturacao |
+| -------- | ----------- | ------- | ------- | ------- | --------- |
+| 23-47-51 | anoitecer   | 0,915   | 13,1    | 55,0    | 0,421     |
+| 23-33-14 | encoberto   | 0,967   | 21,2    | 131,2   | 0,338     |
+| 11-12-25 | sol/neblina | 1,005   | 21,0    | 102,4   | 0,260     |
+| 11-12-15 | sol/neblina | 1,000   | 30,3    | 95,2    | 0,212     |
+| 15-56-22 | dia claro   | 0,938   | 43,9    | 157,7   | 0,183     |
+
+Nenhuma separa sozinha e cada uma desempata um par que as outras confundem. O
+par de condicoes diferentes mais proximo fica a 1,65 no espaco normalizado; o
+par mais proximo de todos e `11-12-15 x 11-12-25`, a 1,07, que e a **mesma**
+condicao dez segundos depois com a camera para outro lado. A dispersao dentro
+da condicao e menor que a distancia entre condicoes, que e a propriedade
+necessaria -- e a margem de 1,5x e apertada, o que ja decide que a adaptacao
+tera de interpolar continuamente em vez de classificar em classe dura.
+
+`tests/scene_features_test.cpp` guarda os dois numeros e inclui
+`src/scene_features.hpp` direto, sem espelhar a implementacao.
+
+Nesta versao:
+
+- `src/scene_features.hpp`, novo: a matematica das features, sem D3D11, para
+  poder ser testada;
+- `src/scene_observer.{hpp,cpp}`, novo: `GenerateMips` sobre uma copia da cena,
+  leitura assincrona com `D3D11_QUERY_EVENT` e `DONOTFLUSH`, dois slots de
+  staging, amostra descartada em vez de esperar;
+- a medicao acontece colada no `CopyResource(scene_texture_, back_buffer)`, e
+  `tools/validate.sh` verifica essa linha: medir a saida fecharia uma
+  realimentacao entre a cor e as features;
+- `[module.scene_observer.0.18.0]` no cfg, ligado por padrao com
+  `interval_frames=30` e `log_seconds=30`;
+- **a linha `Perfil efetivo` do log ganhou `tint`, `highlight_rolloff` e os
+  tres `black_lift`.** Estavam fora desde a 0.14.0, e sem eles nao havia como
+  confirmar em runtime qual cor estava rodando -- o que custou uma sessao
+  inteira de analise para descobrir que o verde vinha do `tint`.
+
+Nao ha detector ainda, nao ha adaptacao ainda, e nenhuma das cinco referencias
+tem chuva -- a camada que leva o nome `rain_overcast` continua sem alvo medido.
+
 ## Pacote 0.17.2 - 2026-09-01
 
 O piso do preto de novo, porque **o estimador que fixou a 0.17.1 tinha vies**.

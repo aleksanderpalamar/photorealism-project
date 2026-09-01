@@ -197,6 +197,24 @@ for observer_message in \
   fi
 done
 
+# 0.18.0. A linha 'Cena 0.18.0:' e o produto inteiro deste modulo -- e dela,
+# colhida jogando ETS2 em climas e horarios diferentes, que sai a calibracao da
+# adaptacao por condicao. Sem ela o modulo gasta GPU e nao entrega nada.
+#
+# 'Perfil efetivo (cor)' entra aqui junto porque tint, rolloff e black_lift
+# ficaram fora do log desde a 0.14.0, e nao havia como confirmar em runtime
+# qual cor estava rodando.
+for scene_observer_message in \
+  'Observador de cena 0.18.0 ativo' \
+  'Modulo observador de cena 0.18.0' \
+  'Cena 0.18.0: ceu_R/B=%.3f mediana=%.1f faixa_p90-p10=%.1f' \
+  'Perfil efetivo (cor): tint=%.3f'; do
+  if ! grep -Fq "${scene_observer_message}" "${dxgi_strings}"; then
+    echo "Observador de cena 0.18.0 incompleto: ${scene_observer_message}" >&2
+    exit 1
+  fi
+done
+
 for telemetry_message in \
   'Telemetria GPU inicializada' \
   'Custo GPU do passe'; do
@@ -568,6 +586,23 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   -o "${screenshot_request_gate_test}"
 "${screenshot_request_gate_test}"
 
+# O observador tem que medir o frame PRE-grade. Medir a saida fecharia uma
+# realimentacao: a cor seria funcao das features e as features funcao da cor, e
+# a imagem caminharia sozinha sem que nada no cfg mudasse. A chamada tem que
+# ficar colada no CopyResource que enche scene_texture_.
+if ! grep -Fq 'scene_observer_.observe(device_, context_, scene_texture_);' \
+  "${project_dir}/src/postprocess.cpp"; then
+  echo "O observador de cena parou de medir scene_texture_: medir a saida do \
+grade fecha uma realimentacao entre a cor e as features." >&2
+  exit 1
+fi
+
+scene_features_test="/tmp/photorealism-scene-features-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/scene_features_test.cpp" \
+  -o "${scene_features_test}"
+"${scene_features_test}"
+
 effective_profile="$(awk -F= '
   /^\[/ { section=$0; next }
   /^[[:space:]]*(#|;|$)/ { next }
@@ -604,7 +639,7 @@ effective_profile="$(awk -F= '
 # que importa. Uma guarda que explica uma regressao sutil so serve se for ela
 # a falar. Nesta ordem o hash continua pegando tudo que as guardas nao
 # cobrem, e so isso.
-expected_cfg_sha256="8b20246f03777a1518ea84987094262f4a3aab638a9f3e7b768c94d8433cf73e"
+expected_cfg_sha256="5491d9c98e7e66e474cfafd4ed8ca876636f7942310d4b47b2255d11d04c2579"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2

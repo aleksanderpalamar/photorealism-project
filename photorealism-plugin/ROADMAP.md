@@ -472,14 +472,29 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   era a razao de ter subido, era o RTGI e nao o SSAO. Continua valendo por si
   -- calibracao afinada sobre um buffer, rodando sobre outro -- mas sem
   sintoma reportado atras dela;
-- **0.18.0 (proxima)** raios de sol. E o efeito que as referencias realmente
+- **0.19.0 (proxima)** adaptacao de cor por condicao, em cima do observador da
+  0.18.0. A calibracao de hoje e a media de cinco condicoes diferentes, e um
+  `tint` unico nao alcanca as cinco: e por isso que o valor efetivo de 0,50
+  cai entre o alvo de dia claro e o de encoberto errando os dois. Precisa,
+  nesta ordem: limiares medidos no ETS2 a partir das linhas `Cena 0.18.0:` do
+  log; ancoras de `temperature`/`tint` por condicao; interpolacao **continua**
+  entre elas, porque a margem entre condicoes e de so 1,5x sobre a dispersao
+  interna e classe dura saltaria a cor ao virar a cabine; e suavizacao com
+  constante de tempo de segundos mais histerese. Cuidado central: o jogo ja
+  renderiza a cor da hora -- a referencia de anoitecer tem ceu R/B 0,906 na
+  saida crua do ATS. Somar uma rampa de relogio por cima conta duas vezes e se
+  afasta do fotorrealismo. O alvo e o ajuste que **falta** em cada condicao,
+  nao uma rampa artistica;
+- **0.20.0** raios de sol. E o efeito que as referencias realmente
   mostram, e que a medicao do bloom revelou: estriados radiais saindo do sol
   atras da linha de arvores, projetados no teto escuro da cabine. Sao
   **direcionais**, e nenhuma piramide gaussiana produz aquilo. Reaproveita o
   bright-pass, a cadeia de reducao, a composicao aditiva e as guardas da
-  versao anterior -- falta um shader de blur radial e, o problema de verdade,
-  descobrir a posicao do sol na tela sem dados do motor no `Present`;
-- **0.18.0 (condicional)** upgrade de bind flag via hook de `CreateTexture2D`,
+  0.17.0 -- falta um shader de blur radial e, o problema de verdade,
+  descobrir a posicao do sol na tela sem dados do motor no `Present`.
+  **Desceu de prioridade na 0.18.0**: cor errada em toda condicao pesa mais
+  que um efeito ausente;
+- **0.21.0 (condicional)** upgrade de bind flag via hook de `CreateTexture2D`,
   na tecnica do ReShade: promover o depth a typeless com
   `BIND_SHADER_RESOURCE`, sintetizando o descritor no `CreateDepthStencilView`.
   So entra se o `CopyResource` de um depth `DEPTH_STENCIL`-only falhar sob

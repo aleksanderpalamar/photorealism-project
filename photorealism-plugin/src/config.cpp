@@ -69,6 +69,9 @@ struct CalibrationStack {
     float bloom_knee;
     float bloom_intensity;
     float bloom_radius;
+    bool scene_observer_enabled;
+    float scene_observer_interval_frames;
+    float scene_observer_log_seconds;
 };
 
 enum class Section {
@@ -82,6 +85,7 @@ enum class Section {
     ssao_interior_0_9_0,
     temporal_0_10_0,
     bloom_0_17_0,
+    scene_observer_0_18_0,
     unknown,
 };
 
@@ -144,6 +148,9 @@ Section parse_section(const char* name) {
     }
     if (_stricmp(name, "module.bloom.0.17.0") == 0) {
         return Section::bloom_0_17_0;
+    }
+    if (_stricmp(name, "module.scene_observer.0.18.0") == 0) {
+        return Section::scene_observer_0_18_0;
     }
     return Section::unknown;
 }
@@ -346,6 +353,24 @@ void assign_bloom_value(
     }
 }
 
+void assign_scene_observer_value(
+    CalibrationStack* stack, const char* key, const char* value) {
+    if (stack == nullptr || key == nullptr || value == nullptr) {
+        return;
+    }
+    if (_stricmp(key, "enabled") == 0) {
+        stack->scene_observer_enabled = parse_bool(value);
+        return;
+    }
+
+    const float number = static_cast<float>(std::strtod(value, nullptr));
+    if (_stricmp(key, "interval_frames") == 0) {
+        stack->scene_observer_interval_frames = number;
+    } else if (_stricmp(key, "log_seconds") == 0) {
+        stack->scene_observer_log_seconds = number;
+    }
+}
+
 void assign_temporal_value(
     CalibrationStack* stack, const char* key, const char* value) {
     if (stack == nullptr || key == nullptr || value == nullptr) {
@@ -525,6 +550,14 @@ CalibrationStack reference_stack() {
     stack.bloom_knee = 0.06f;
     stack.bloom_intensity = 0.02f;
     stack.bloom_radius = 0.03f;
+    // 0.18.0. Ligado por padrao porque ele nao muda um pixel: o unico efeito e
+    // acrescentar uma linha ao log a cada 30s. E dessas linhas, colhidas
+    // jogando ETS2 em tempos e climas diferentes, que sai a calibracao da
+    // adaptacao. 30 frames sao ~0,5s; condicao de tempo muda em minutos, entao
+    // amostrar mais rapido so gastaria banda.
+    stack.scene_observer_enabled = true;
+    stack.scene_observer_interval_frames = 30.0f;
+    stack.scene_observer_log_seconds = 30.0f;
     return stack;
 }
 
@@ -606,6 +639,10 @@ Settings compose_stack(const CalibrationStack& stack) {
     settings.bloom_knee = stack.bloom_knee;
     settings.bloom_intensity = stack.bloom_intensity;
     settings.bloom_radius = stack.bloom_radius;
+    settings.scene_observer_enabled = stack.scene_observer_enabled;
+    settings.scene_observer_interval_frames =
+        stack.scene_observer_interval_frames;
+    settings.scene_observer_log_seconds = stack.scene_observer_log_seconds;
 
     settings.temperature = clamp_value(settings.temperature, 3000.0f, 9000.0f);
     settings.exposure = clamp_value(settings.exposure, -2.0f, 2.0f);
@@ -679,6 +716,13 @@ Settings compose_stack(const CalibrationStack& stack) {
     settings.bloom_intensity =
         clamp_value(settings.bloom_intensity, 0.0f, 1.0f);
     settings.bloom_radius = clamp_value(settings.bloom_radius, 0.005f, 0.2f);
+    // O piso de 1 frame existe para o valor 0 nao virar cadencia degenerada; o
+    // teto de 600 (~10s a 60fps) porque acima disso o observador deixa de
+    // acompanhar uma transicao de tempo dentro do jogo.
+    settings.scene_observer_interval_frames =
+        clamp_value(settings.scene_observer_interval_frames, 1.0f, 600.0f);
+    settings.scene_observer_log_seconds =
+        clamp_value(settings.scene_observer_log_seconds, 0.0f, 3600.0f);
     return settings;
 }
 
@@ -706,6 +750,18 @@ void log_stack(const CalibrationStack& stack, const Settings& settings) {
         settings.local_contrast,
         settings.sharpness,
         settings.vignette);
+    // Estes cinco ficaram de fora da linha acima desde a 0.14.0. tint e a
+    // maior decisao de cor da cadeia -- sozinho responde por 70% do deficit de
+    // vermelho que o plugin introduz -- e nao havia como confirmar em runtime
+    // qual valor estava rodando.
+    log_message(
+        "Perfil efetivo (cor): tint=%.3f highlight_rolloff=%.3f "
+        "black_lift=%.6f/%.6f/%.6f.",
+        settings.tint,
+        settings.highlight_rolloff,
+        settings.black_lift_r,
+        settings.black_lift_g,
+        settings.black_lift_b);
     log_message(
         "Depth linearization 0.6.4: reversed_z=sim near_plane=%.4f "
         "preview_distance=%.1f vertical_fov=%.1f.",
@@ -754,6 +810,12 @@ void log_stack(const CalibrationStack& stack, const Settings& settings) {
         settings.bloom_knee,
         settings.bloom_intensity,
         settings.bloom_radius);
+    log_message(
+        "Modulo observador de cena 0.18.0: %s intervalo=%.0f frames "
+        "log=%.0fs (mede o frame pre-grade; nao altera a imagem).",
+        settings.scene_observer_enabled ? "ativo" : "inativo",
+        settings.scene_observer_interval_frames,
+        settings.scene_observer_log_seconds);
 }
 
 }  // namespace
@@ -827,6 +889,10 @@ bool load_settings(Settings* settings) {
         }
         if (section == Section::bloom_0_17_0) {
             assign_bloom_value(&stack, key, value);
+            continue;
+        }
+        if (section == Section::scene_observer_0_18_0) {
+            assign_scene_observer_value(&stack, key, value);
             continue;
         }
         assign_layer_value(layer_for_section(&stack, section), key, value);

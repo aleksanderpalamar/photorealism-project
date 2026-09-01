@@ -3,6 +3,7 @@
 #include "config.hpp"
 #include "resource_observer.hpp"
 #include "runtime.hpp"
+#include "scene_observer.hpp"
 #include "steam_screenshots.hpp"
 
 #include <d3d11.h>
@@ -299,6 +300,7 @@ public:
         }
         if (key_pressed_once(VK_END, &end_key_down_)) {
             load_settings(&settings_);
+            apply_scene_observer_settings();
             if (device_ != nullptr) {
                 compile_shaders();
             }
@@ -354,6 +356,7 @@ public:
             device_->AddRef();
             device_->GetImmediateContext(&context_);
             load_settings(&settings_);
+            apply_scene_observer_settings();
             if (!initialize_pipeline()) {
                 safe_release(frame_device);
                 return;
@@ -662,6 +665,12 @@ public:
 
         if (!depth_preview_active) {
             context_->CopyResource(scene_texture_, back_buffer);
+            // 0.18.0. Aqui, e so aqui: scene_texture_ acabou de receber o
+            // frame do jogo e nenhum passe nosso escreveu nele ainda. Medir
+            // depois do grade fecharia uma realimentacao -- a cor seria funcao
+            // das features e as features funcao da cor -- e a imagem
+            // caminharia sozinha sem que nada no cfg tivesse mudado.
+            scene_observer_.observe(device_, context_, scene_texture_);
             // errada de que o depth faltava no modo 6.
             if (depth_preview_mode_ != 0 && !ssao_preview_active &&
                 !bloom_preview_active && !depth_preview_wait_logged_) {
@@ -2114,9 +2123,20 @@ private:
         }
     }
 
+    void apply_scene_observer_settings() {
+        scene_observer_.configure(
+            settings_.scene_observer_enabled,
+            static_cast<unsigned>(settings_.scene_observer_interval_frames),
+            settings_.scene_observer_log_seconds);
+    }
+
     void release_frame_resources() {
         release_depth_capture_resources();
         release_bloom_resources();
+        // A piramide e o staging do observador acompanham a resolucao da cena;
+        // sem soltar aqui, um ResizeBuffers deixaria a amostra presa no
+        // tamanho antigo e as features passariam a medir outra coisa.
+        scene_observer_.release();
         safe_release(spatial_target_);
         safe_release(spatial_view_);
         safe_release(spatial_texture_);
@@ -2368,6 +2388,7 @@ private:
     }
 
     Settings settings_;
+    SceneObserver scene_observer_;
     ID3D11Device* device_ = nullptr;
     ID3D11DeviceContext* context_ = nullptr;
     ID3D11Texture2D* scene_texture_ = nullptr;
