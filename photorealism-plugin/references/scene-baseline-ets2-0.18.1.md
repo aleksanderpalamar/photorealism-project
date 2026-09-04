@@ -132,3 +132,109 @@ nao e uma constante do jogo -- depende da escala de tempo do perfil. E as
 condicoes nao estao rotuladas: sabe-se que a cor esquentou, nao *o que* estava
 na tela. Sem rotulo, isto calibra a suavizacao e a porta de jogo, mas nao as
 ancoras de `temperature`/`tint` por condicao.
+
+---
+
+# Segunda sessao, 61 minutos, 0.18.2 - 2026-09-04
+
+119 amostras de jogo contra as 36 da primeira. Ela **corrige duas conclusoes**
+tiradas da sessao curta, e por isso vale mais que o triplo de dados.
+
+Confirmacoes primeiro: `ganho_luma=1.000000 (+0.0000 EV)` no runtime, SSAO e
+resolve temporal ativos, zero `incompativel com copia`, custo 1,748 ms de media
+em 368 janelas (pico 6,169 ms, zero descartadas), e o "Perfil efetivo" agora
+diz `exposure=0.011`, que e a exposicao de verdade.
+
+## As faixas eram estreitas demais
+
+| feature   | 61 min: min - p25 - mediana - p75 - max | 20 min |
+| --------- | --------------------------------------- | ------ |
+| ceu R/B   | 0,566 · 0,852 · 0,975 · 1,147 · **1,503** | 0,695 a 1,075 |
+| mediana   | 11,8 · 23,7 · 30,8 · 39,5 · 84,2         | 28,3 a 72,8 |
+| p90-p10   | 45,1 · 60,6 · 74,4 · 103,3 · 215,5       | 68,0 a 200,6 |
+| saturacao | 0,135 · 0,197 · 0,240 · 0,293 · 0,361    | 0,110 a 0,338 |
+
+A amplitude do ceu R/B passou de 0,380 para **0,937**. A primeira sessao era um
+recorte estreito, e qualquer limiar tirado so dela estaria errado. Contra o ATS
+(0,090) a diferenca agora e de **10x**, nao 4x.
+
+## CORRECAO 1: a tendencia de hora do dia nao se sustenta
+
+|                | 20 min          | 61 min          |
+| -------------- | --------------- | --------------- |
+| inclinacao     | +0,0152 /min    | **-0,0024 /min**|
+| r2             | 0,581           | **0,040**       |
+
+A primeira sessao dizia que a hora do dia explicava 58% da variacao de cor. Na
+segunda ela explica **4%**. O documento acima ja alertava que "a tendencia e a
+desta sessao e nao e uma constante do jogo" -- estava certo em alertar, e o
+alerta virou fato. **Nao ha rampa de relogio a modelar.** O que a 0.19.0 tem de
+seguir e a condicao, nao o horario; a cor da hora o jogo ja renderiza e nao
+precisa de ajuda nossa.
+
+## CORRECAO 2: o residuo nao e ruido de camera
+
+Autocorrelacao do residuo:
+
+```
+20 min:  30s=+0,26  60s=+0,09  120s=-0,06  180s=-0,25     -> some em <1 min
+61 min:  30s=+0,65  60s=+0,45  120s=+0,38  180s=+0,45  240s=+0,41  -> persiste
+```
+
+Na sessao curta o que sobrava era a camera virando e descorrelacionava em menos
+de um minuto. Na longa ele ainda vale +0,41 aos quatro minutos: **e condicao
+mudando, e e sinal, nao ruido.** Decompondo, 44% da variancia e rapida
+(sd 0,138) e o resto e lenta (sd 0,147). As duas sao grandes.
+
+## A janela, medida sem circularidade
+
+Uma primeira tentativa deu "8 minutos", e estava errada por construcao: eu
+definira o sinal lento como a propria media de 8 minutos, entao a janela de 8
+minutos nao perdia nada. O criterio honesto e o **erro de previsao causal** --
+estimar a condicao a partir so do passado e ser julgado pela amostra seguinte,
+que e exatamente o que o detector faz.
+
+| janela | erro, 20 min | erro, 61 min |
+| ------ | ------------ | ------------ |
+| 0,5 min| 0,0774       | 0,1698       |
+| 1,5 min| **0,0667**   | 0,1629       |
+| 3 min  | 0,0765       | 0,1647       |
+| 4 min  | 0,0818       | **0,1605**   |
+| 8 min  | 0,1042       | 0,1795       |
+
+O minimo cai em 1,5 min numa e 4 min na outra, e a curva e **rasa** entre as
+duas: na sessao longa a diferenca entre 0,5 e 6 minutos e de 6%. A recomendacao
+de **2 a 3 minutos** sobrevive, agora por ser o meio de uma regiao chata e nao
+por um minimo agudo.
+
+O numero desconfortavel e o piso: **o erro fica em 17-18% da amplitude nas duas
+sessoes**, independentemente da janela. Uma feature suavizada nao determina a
+condicao melhor que isso. As quatro juntas precisam fazer melhor, e isso ainda
+nao foi medido.
+
+## A porta de jogo pegou 4 de 123, de novo
+
+```
+14:33:14  R/B=1,596  mediana= 0,0  faixa=  0,0  sat=0,021   quadro preto
+14:39:17  R/B=0,890  mediana= 0,0  faixa=  2,0  sat=0,156   quase preto
+15:31:04  R/B=0,981  mediana=59,1  faixa=103,7  sat=0,076   mapa/menu
+15:34:35  R/B=0,981  mediana=65,0  faixa=120,1  sat=0,068   mapa/menu
+```
+
+Mesma proporcao (3,3%) e mesmo pior caso: **um quadro preto devolvendo R/B =
+1,596, o valor mais quente da sessao**, agora acima do maximo de jogo (1,503).
+Duas sessoes, duas vezes. A porta `p90-p10 > 20 e saturacao > 0,09` e
+necessaria.
+
+Fica uma duvida em aberto: `14:39:17` tem saturacao 0,156, que e valor de jogo.
+Se aquilo era um tunel ou noite fechada e nao um fade, a porta esta descartando
+uma condicao real em vez de lixo. **So o rotulo do usuario resolve.**
+
+## O que continua faltando
+
+O mesmo de antes, e agora e o unico bloqueio: **as linhas rotuladas pela
+condicao na tela.** Ha 155 amostras de jogo somando as duas sessoes, cobrindo
+ceu R/B de 0,566 a 1,503, e nao se sabe qual delas era sol, chuva, tunel ou
+anoitecer. Sem isso da para calibrar a suavizacao e a porta -- e foi o que se
+fez -- mas nao as ancoras de `temperature`/`tint` por condicao, que sao o
+produto da 0.19.0.
