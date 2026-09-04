@@ -3,6 +3,7 @@
 #include "runtime.hpp"
 
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -26,7 +27,10 @@ struct CalibrationLayer {
     float vignette;
     // 0.14.0. black_lift e o piso do preto em linear, highlight_rolloff a
     // forca do ombro, tint o eixo verde-magenta que faltava ao balanco.
-    float black_lift;
+    // 0.17.1: o piso virou tres numeros, porque o alvo medido nao e cinza.
+    float black_lift_r;
+    float black_lift_g;
+    float black_lift_b;
     float highlight_rolloff;
     float tint;
 };
@@ -61,6 +65,14 @@ struct CalibrationStack {
     float temporal_history_weight;
     float temporal_depth_rejection;
     float temporal_color_rejection;
+    bool bloom_enabled;
+    float bloom_threshold;
+    float bloom_knee;
+    float bloom_intensity;
+    float bloom_radius;
+    bool scene_observer_enabled;
+    float scene_observer_interval_frames;
+    float scene_observer_log_seconds;
 };
 
 enum class Section {
@@ -73,6 +85,8 @@ enum class Section {
     ssao_refinement_0_8_0,
     ssao_interior_0_9_0,
     temporal_0_10_0,
+    bloom_0_17_0,
+    scene_observer_0_18_0,
     unknown,
 };
 
@@ -132,6 +146,12 @@ Section parse_section(const char* name) {
     }
     if (_stricmp(name, "module.temporal.0.10.0") == 0) {
         return Section::temporal_0_10_0;
+    }
+    if (_stricmp(name, "module.bloom.0.17.0") == 0) {
+        return Section::bloom_0_17_0;
+    }
+    if (_stricmp(name, "module.scene_observer.0.18.0") == 0) {
+        return Section::scene_observer_0_18_0;
     }
     return Section::unknown;
 }
@@ -204,8 +224,20 @@ void assign_layer_value(
         layer->sharpness = number;
     } else if (_stricmp(key, "vignette") == 0) {
         layer->vignette = number;
+    } else if (_stricmp(key, "black_lift_r") == 0) {
+        layer->black_lift_r = number;
+    } else if (_stricmp(key, "black_lift_g") == 0) {
+        layer->black_lift_g = number;
+    } else if (_stricmp(key, "black_lift_b") == 0) {
+        layer->black_lift_b = number;
     } else if (_stricmp(key, "black_lift") == 0) {
-        layer->black_lift = number;
+        // Forma escalar da 0.14.0 ate a 0.17.0: continua aceita e escreve os
+        // tres canais com o mesmo valor, que e exatamente o piso acromatico
+        // que a 0.17.1 corrige. Um cfg antigo carrega e roda; para chegar no
+        // alvo medido ele precisa das tres chaves.
+        layer->black_lift_r = number;
+        layer->black_lift_g = number;
+        layer->black_lift_b = number;
     } else if (_stricmp(key, "highlight_rolloff") == 0) {
         layer->highlight_rolloff = number;
     } else if (_stricmp(key, "tint") == 0) {
@@ -300,6 +332,46 @@ void assign_ssao_interior_value(
     }
 }
 
+void assign_bloom_value(
+    CalibrationStack* stack, const char* key, const char* value) {
+    if (stack == nullptr || key == nullptr || value == nullptr) {
+        return;
+    }
+    if (_stricmp(key, "enabled") == 0) {
+        stack->bloom_enabled = parse_bool(value);
+        return;
+    }
+
+    const float number = static_cast<float>(std::strtod(value, nullptr));
+    if (_stricmp(key, "threshold") == 0) {
+        stack->bloom_threshold = number;
+    } else if (_stricmp(key, "knee") == 0) {
+        stack->bloom_knee = number;
+    } else if (_stricmp(key, "intensity") == 0) {
+        stack->bloom_intensity = number;
+    } else if (_stricmp(key, "radius") == 0) {
+        stack->bloom_radius = number;
+    }
+}
+
+void assign_scene_observer_value(
+    CalibrationStack* stack, const char* key, const char* value) {
+    if (stack == nullptr || key == nullptr || value == nullptr) {
+        return;
+    }
+    if (_stricmp(key, "enabled") == 0) {
+        stack->scene_observer_enabled = parse_bool(value);
+        return;
+    }
+
+    const float number = static_cast<float>(std::strtod(value, nullptr));
+    if (_stricmp(key, "interval_frames") == 0) {
+        stack->scene_observer_interval_frames = number;
+    } else if (_stricmp(key, "log_seconds") == 0) {
+        stack->scene_observer_log_seconds = number;
+    }
+}
+
 void assign_temporal_value(
     CalibrationStack* stack, const char* key, const char* value) {
     if (stack == nullptr || key == nullptr || value == nullptr) {
@@ -335,10 +407,34 @@ CalibrationLayer reference_base() {
     layer.local_contrast = 0.12f;
     layer.sharpness = 0.18f;
     layer.vignette = 0.04f;
-    // 0.14.0. 0.0027 em linear leva o preto a 8,9 em 255 depois do encode
-    // sRGB, que e a faixa medida nas quatro referencias do ATS (p1 entre 8 e
-    // 11). Nao e um numero de gosto: e o alvo.
-    layer.black_lift = 0.0027f;
+    // 0.17.2. O piso do preto, por canal, em linear.
+    //
+    // A 0.17.1 leu as referencias com o estimador de cauda -- media do 1% mais
+    // escuro -- sem corrigir o vies que o grao impoe a ele. A cauda e escolhida
+    // ordenando por LUMINANCIA, que e 72% G, entao ruido negativo no canal G e
+    // o que faz um pixel entrar na amostra. O resultado e que so o G desce.
+    //
+    // Medido por injecao: somando grao de desvio 2,1 -- o das referencias -- as
+    // capturas limpas do plugin, a cauda se desloca -0,18 / -1,83 / +0,43
+    // codigos. R e B quase nao se movem porque pesam 0,21 e 0,07 na luminancia.
+    //
+    // O mesmo teste valida o estimador: nas capturas limpas ele recupera o piso
+    // conhecido do plugin, que e o proprio lift, dentro de 0,35 codigo.
+    //
+    // Corrigidas do vies, as tres referencias de tempo claro tem piso
+    // 3,35/6,53/6,03, 2,86/6,15/6,22 e 4,78/7,84/7,82 em 255. A mediana por
+    // canal esta aqui convertida para linear pelo mesmo caminho da 0.14.0,
+    // codigo/255/12,92:
+    //
+    //   R  3,35/255 = 0,013137 -> /12,92 = 0,001017
+    //   G  6,53/255 = 0,025608 -> /12,92 = 0,001982
+    //   B  6,22/255 = 0,024392 -> /12,92 = 0,001888
+    //
+    // As duas de neblina tem piso mais alto e mais azul, e entram como delta
+    // na camada rain_overcast em vez de puxarem a base.
+    layer.black_lift_r = 0.001017f;
+    layer.black_lift_g = 0.001982f;
+    layer.black_lift_b = 0.001888f;
     layer.highlight_rolloff = 0.35f;
     layer.tint = 0.35f;
     // Era -0.01f, e somado aos dois deltas dava -0.06 efetivo -- empurrava os
@@ -365,7 +461,9 @@ CalibrationLayer visual_delta_0_2() {
     layer.vignette = -0.005f;
     // Os tres da 0.14.0 entram neutros aqui: a primeira rodada move so a base,
     // para o A/B em jogo ter uma variavel de cada vez.
-    layer.black_lift = 0.0f;
+    layer.black_lift_r = 0.0f;
+    layer.black_lift_g = 0.0f;
+    layer.black_lift_b = 0.0f;
     layer.highlight_rolloff = 0.0f;
     layer.tint = 0.0f;
     return layer;
@@ -386,7 +484,23 @@ CalibrationLayer rain_overcast_delta_0_3() {
     layer.local_contrast = 0.06f;
     layer.sharpness = -0.02f;
     layer.vignette = -0.005f;
-    layer.black_lift = 0.0f;
+    // 0.17.2. Esta camada esta SEMPRE somada -- nao ha deteccao de clima -- e
+    // por isso quem tem que cair no alvo e a SOMA, nao a base sozinha. O alvo
+    // da soma e a mediana por canal das cinco referencias CORRIGIDAS do vies do
+    // grao (ver a base): 4,78/7,84/7,82 em 255.
+    //
+    // A soma nao e a conversao direta desse alvo. O piso medido numa captura e
+    // lift mais o que a cena poe por cima -- cerca de 0,6 codigo -- entao os
+    // tres numeros saem de resolver o lift que POE a cauda no alvo, invertendo
+    // a etapa afim do shader pixel a pixel nas doze capturas da 0.17.1 e
+    // bisseccionando por canal. Da 0,001398 / 0,002480 / 0,002268, que e o que
+    // estes deltas completam a partir da base.
+    //
+    // Mirar a soma nas duas de neblina (7,6/9,7/10,8 corrigidas) poria o piso
+    // permanente no extremo da faixa medida em vez do centro dela.
+    layer.black_lift_r = 0.000381f;
+    layer.black_lift_g = 0.000498f;
+    layer.black_lift_b = 0.000380f;
     layer.highlight_rolloff = 0.0f;
     // A referencia de tempo encoberto e a mais verde das quatro (G/R = 1,21
     // contra 1,11 da de dia claro), entao esta camada acrescenta tint em vez
@@ -426,6 +540,25 @@ CalibrationStack reference_stack() {
     stack.temporal_history_weight = 0.65f;
     stack.temporal_depth_rejection = 0.02f;
     stack.temporal_color_rejection = 0.08f;
+    // Licenca artistica, e nao o alvo medido -- ver o comentario do cfg. As
+    // referencias do ATS nao tem bloom: as bordas de alto contraste sao
+    // nitidas e o lado escuro nao tem cauda. O modulo fica ligado por decisao
+    // do usuario, com intensidade baixa. Destes quatro so o limiar e medido:
+    // 0.85 em sRGB fica acima do p95 das cinco referencias, entao o bloom pega
+    // sol, topo de nuvem e realce de capo, e nao o ceu.
+    stack.bloom_enabled = true;
+    stack.bloom_threshold = 0.85f;
+    stack.bloom_knee = 0.06f;
+    stack.bloom_intensity = 0.02f;
+    stack.bloom_radius = 0.03f;
+    // 0.18.0. Ligado por padrao porque ele nao muda um pixel: o unico efeito e
+    // acrescentar uma linha ao log a cada 30s. E dessas linhas, colhidas
+    // jogando ETS2 em tempos e climas diferentes, que sai a calibracao da
+    // adaptacao. 30 frames sao ~0,5s; condicao de tempo muda em minutos, entao
+    // amostrar mais rapido so gastaria banda.
+    stack.scene_observer_enabled = true;
+    stack.scene_observer_interval_frames = 30.0f;
+    stack.scene_observer_log_seconds = 30.0f;
     return stack;
 }
 
@@ -445,7 +578,9 @@ void add_layer(Settings* settings, const CalibrationLayer& layer) {
     settings->local_contrast += layer.local_contrast;
     settings->sharpness += layer.sharpness;
     settings->vignette += layer.vignette;
-    settings->black_lift += layer.black_lift;
+    settings->black_lift_r += layer.black_lift_r;
+    settings->black_lift_g += layer.black_lift_g;
+    settings->black_lift_b += layer.black_lift_b;
     settings->highlight_rolloff += layer.highlight_rolloff;
     settings->tint += layer.tint;
 }
@@ -466,7 +601,9 @@ Settings compose_stack(const CalibrationStack& stack) {
         settings.local_contrast = stack.base.local_contrast;
         settings.sharpness = stack.base.sharpness;
         settings.vignette = stack.base.vignette;
-        settings.black_lift = stack.base.black_lift;
+        settings.black_lift_r = stack.base.black_lift_r;
+        settings.black_lift_g = stack.base.black_lift_g;
+        settings.black_lift_b = stack.base.black_lift_b;
         settings.highlight_rolloff = stack.base.highlight_rolloff;
         settings.tint = stack.base.tint;
     }
@@ -498,6 +635,15 @@ Settings compose_stack(const CalibrationStack& stack) {
     settings.temporal_history_weight = stack.temporal_history_weight;
     settings.temporal_depth_rejection = stack.temporal_depth_rejection;
     settings.temporal_color_rejection = stack.temporal_color_rejection;
+    settings.bloom_enabled = stack.bloom_enabled;
+    settings.bloom_threshold = stack.bloom_threshold;
+    settings.bloom_knee = stack.bloom_knee;
+    settings.bloom_intensity = stack.bloom_intensity;
+    settings.bloom_radius = stack.bloom_radius;
+    settings.scene_observer_enabled = stack.scene_observer_enabled;
+    settings.scene_observer_interval_frames =
+        stack.scene_observer_interval_frames;
+    settings.scene_observer_log_seconds = stack.scene_observer_log_seconds;
 
     settings.temperature = clamp_value(settings.temperature, 3000.0f, 9000.0f);
     settings.exposure = clamp_value(settings.exposure, -2.0f, 2.0f);
@@ -561,6 +707,23 @@ Settings compose_stack(const CalibrationStack& stack) {
         clamp_value(settings.temporal_depth_rejection, 0.001f, 0.5f);
     settings.temporal_color_rejection =
         clamp_value(settings.temporal_color_rejection, 0.005f, 1.0f);
+    // O teto do limiar fica em 0.98 e nao em 1.0: em 1.0 nada da cena passa e
+    // o modulo fica ligado sem produzir nada, que e pior que desligado porque
+    // o log diz "ativo". O piso em 0.2 impede que o bloom vire veu sobre a
+    // imagem inteira.
+    settings.bloom_threshold =
+        clamp_value(settings.bloom_threshold, 0.2f, 0.98f);
+    settings.bloom_knee = clamp_value(settings.bloom_knee, 0.0f, 0.5f);
+    settings.bloom_intensity =
+        clamp_value(settings.bloom_intensity, 0.0f, 1.0f);
+    settings.bloom_radius = clamp_value(settings.bloom_radius, 0.005f, 0.2f);
+    // O piso de 1 frame existe para o valor 0 nao virar cadencia degenerada; o
+    // teto de 600 (~10s a 60fps) porque acima disso o observador deixa de
+    // acompanhar uma transicao de tempo dentro do jogo.
+    settings.scene_observer_interval_frames =
+        clamp_value(settings.scene_observer_interval_frames, 1.0f, 600.0f);
+    settings.scene_observer_log_seconds =
+        clamp_value(settings.scene_observer_log_seconds, 0.0f, 3600.0f);
     return settings;
 }
 
@@ -588,6 +751,51 @@ void log_stack(const CalibrationStack& stack, const Settings& settings) {
         settings.local_contrast,
         settings.sharpness,
         settings.vignette);
+    // Estes cinco ficaram de fora da linha acima desde a 0.14.0. tint e a
+    // maior decisao de cor da cadeia -- sozinho responde por 70% do deficit de
+    // vermelho que o plugin introduz -- e nao havia como confirmar em runtime
+    // qual valor estava rodando.
+    log_message(
+        "Perfil efetivo (cor): tint=%.3f highlight_rolloff=%.3f "
+        "black_lift=%.6f/%.6f/%.6f.",
+        settings.tint,
+        settings.highlight_rolloff,
+        settings.black_lift_r,
+        settings.black_lift_g,
+        settings.black_lift_b);
+
+    // 0.18.2. O vetor de balanco vai para o log com a luminancia que ele
+    // carrega, e nao so com os tres fatores.
+    //
+    // Ate a 0.18.1 esse ganho era invisivel: o cfg dizia exposure=-0,030, o
+    // log repetia, e o balanco somava +0,0411 EV por fora, entao a exposicao
+    // real era +0,0111 -- com o sinal trocado. O shader agora normaliza, de
+    // modo que ganho_luma tem que sair 1,000000 e ganho_EV +0,0000. Se um
+    // perfil futuro fizer esse numero sair de 1, e porque alguem devolveu
+    // exposicao escondida ao balanco, e a linha diz isso na hora.
+    const float wb_shift =
+        clamp_value((settings.temperature - 6500.0f) / 3500.0f, -1.0f, 1.0f);
+    const float wb_tint = clamp_value(settings.tint, -1.0f, 1.0f);
+    const float wb_r = 1.0f - 0.08f * wb_shift - 0.05f * wb_tint;
+    const float wb_g = 1.0f + 0.10f * wb_tint;
+    const float wb_b = 1.0f + 0.10f * wb_shift - 0.05f * wb_tint;
+    const float wb_luma = 0.2126f * wb_r + 0.7152f * wb_g + 0.0722f * wb_b;
+    const float wb_norm = wb_luma > 1e-4f ? wb_luma : 1e-4f;
+    log_message(
+        "Balanco de branco 0.18.2: bruto=%.4f/%.4f/%.4f luma_bruta=%.6f "
+        "(%+.4f EV) normalizado=%.4f/%.4f/%.4f ganho_luma=%.6f (%+.4f EV).",
+        static_cast<double>(wb_r),
+        static_cast<double>(wb_g),
+        static_cast<double>(wb_b),
+        static_cast<double>(wb_luma),
+        static_cast<double>(std::log2(wb_luma)),
+        static_cast<double>(wb_r / wb_norm),
+        static_cast<double>(wb_g / wb_norm),
+        static_cast<double>(wb_b / wb_norm),
+        static_cast<double>(
+            (0.2126f * wb_r + 0.7152f * wb_g + 0.0722f * wb_b) / wb_norm),
+        static_cast<double>(std::log2(
+            (0.2126f * wb_r + 0.7152f * wb_g + 0.0722f * wb_b) / wb_norm)));
     log_message(
         "Depth linearization 0.6.4: reversed_z=sim near_plane=%.4f "
         "preview_distance=%.1f vertical_fov=%.1f.",
@@ -628,6 +836,20 @@ void log_stack(const CalibrationStack& stack, const Settings& settings) {
         settings.temporal_history_weight,
         settings.temporal_depth_rejection,
         settings.temporal_color_rejection);
+    log_message(
+        "Modulo bloom 0.17.0: %s threshold=%.3f knee=%.3f intensity=%.3f "
+        "radius=%.4f (licenca artistica; so o limiar e medido).",
+        settings.bloom_enabled ? "ativo" : "inativo",
+        settings.bloom_threshold,
+        settings.bloom_knee,
+        settings.bloom_intensity,
+        settings.bloom_radius);
+    log_message(
+        "Modulo observador de cena 0.18.0: %s intervalo=%.0f frames "
+        "log=%.0fs (mede o frame pre-grade; nao altera a imagem).",
+        settings.scene_observer_enabled ? "ativo" : "inativo",
+        settings.scene_observer_interval_frames,
+        settings.scene_observer_log_seconds);
 }
 
 }  // namespace
@@ -697,6 +919,14 @@ bool load_settings(Settings* settings) {
         }
         if (section == Section::temporal_0_10_0) {
             assign_temporal_value(&stack, key, value);
+            continue;
+        }
+        if (section == Section::bloom_0_17_0) {
+            assign_bloom_value(&stack, key, value);
+            continue;
+        }
+        if (section == Section::scene_observer_0_18_0) {
+            assign_scene_observer_value(&stack, key, value);
             continue;
         }
         assign_layer_value(layer_for_section(&stack, section), key, value);

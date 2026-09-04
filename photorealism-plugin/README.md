@@ -251,7 +251,9 @@ Atalhos:
   depth; nao e necessario para ativar SSAO ou temporal.
 - `Insert`: e a unica tecla do diagnostico; cada toque percorre `normal`,
   `raw`, `reversed-Z realcado`, `distancia linear`, `normais reconstruidas`,
-  `mascara de visibilidade SSAO` e volta ao normal com SSAO.
+  `mascara de visibilidade SSAO`, `bloom isolado` e volta ao normal com SSAO.
+  A posicao do bloom mostra a piramide antes da composicao, sem cena por
+  baixo: e como julgar limiar e raio sem a imagem por cima confundindo.
 
 O log sera criado em:
 

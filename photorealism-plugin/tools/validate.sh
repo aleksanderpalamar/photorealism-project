@@ -197,6 +197,25 @@ for observer_message in \
   fi
 done
 
+# 0.18.0. A linha 'Cena 0.18.0:' e o produto inteiro deste modulo -- e dela,
+# colhida jogando ETS2 em climas e horarios diferentes, que sai a calibracao da
+# adaptacao por condicao. Sem ela o modulo gasta GPU e nao entrega nada.
+#
+# 'Perfil efetivo (cor)' entra aqui junto porque tint, rolloff e black_lift
+# ficaram fora do log desde a 0.14.0, e nao havia como confirmar em runtime
+# qual cor estava rodando.
+for scene_observer_message in \
+  'Observador de cena 0.18.0 ativo' \
+  'Modulo observador de cena 0.18.0' \
+  'Cena 0.18.0: ceu_R/B=%.3f mediana=%.1f faixa_p90-p10=%.1f' \
+  'Perfil efetivo (cor): tint=%.3f' \
+  'Balanco de branco 0.18.2: bruto=%.4f/%.4f/%.4f luma_bruta=%.6f'; do
+  if ! grep -Fq "${scene_observer_message}" "${dxgi_strings}"; then
+    echo "Observador de cena 0.18.0 incompleto: ${scene_observer_message}" >&2
+    exit 1
+  fi
+done
+
 for telemetry_message in \
   'Telemetria GPU inicializada' \
   'Custo GPU do passe'; do
@@ -250,12 +269,26 @@ grep -Fqx 'color_rejection=0.08' "${cfg}"
 # o painel em massa preta. As quatro referencias do ATS medidas para esta
 # versao tem o 1% mais escuro entre 8 e 11 de 255, e 0.0027 em linear cai
 # exatamente ali depois do encode sRGB.
-if grep -Eq '^black_lift=0(\.0+)?$' "${cfg}"; then
-  echo "black_lift voltou a zero: a sombra volta a ser esmagada em 0 e o \
-visual medido nas referencias (p1 entre 8 e 11) fica inalcancavel." >&2
+for lift_channel in black_lift_r black_lift_g black_lift_b; do
+  if grep -Eq "^${lift_channel}=0(\.0+)?$" "${cfg}"; then
+    echo "${lift_channel} voltou a zero: a sombra volta a ser esmagada em 0 e \
+o visual medido nas referencias (p1 entre 8 e 11) fica inalcancavel." >&2
+    exit 1
+  fi
+done
+# 0.17.1: o piso tem cor. R abaixo de G nas cinco referencias -- se os tres
+# voltarem a ser iguais o piso e acromatico de novo, que foi o que as capturas
+# da 0.17.0 mostraram (8/8/8 e 9/9/9, R/G e B/G exatamente 1,000).
+lift_r="$(grep -E '^black_lift_r=' "${cfg}" | head -1 | cut -d= -f2 || true)"
+lift_g="$(grep -E '^black_lift_g=' "${cfg}" | head -1 | cut -d= -f2 || true)"
+if [[ -z "${lift_r}" || -z "${lift_g}" ]] ||
+  ! awk -v r="${lift_r}" -v g="${lift_g}" 'BEGIN { exit !(r + 0 < g + 0) }'; then
+  echo "black_lift_r nao esta abaixo de black_lift_g: o piso volta a ser \
+cinza, e o alvo medido tem R entre 29% e 64% de G nas cinco referencias." >&2
   exit 1
 fi
-for tone_pin in 'black_lift=0.0027' 'highlight_rolloff=0.35'; do
+for tone_pin in 'black_lift_r=0.001017' 'black_lift_g=0.001982' \
+  'black_lift_b=0.001888' 'highlight_rolloff=0.35'; do
   if ! grep -Fqx "${tone_pin}" "${cfg}"; then
     echo "Curva de tom fora do valor aprovado: ${tone_pin}. A calibracao da \
 0.14.0 foi medida contra as referencias; mudar sem medir de novo a perde." >&2
@@ -278,6 +311,51 @@ fi
 if ! grep -Fqx 'blacks=0.05' "${cfg}"; then
   echo "blacks da base saiu de 0.05: somado aos dois deltas ele volta a ser \
 negativo e empurra os pretos para baixo, contra o piso de black_lift." >&2
+  exit 1
+fi
+
+# Bloom 0.17.0. Os valores ainda sao PROVISORIOS -- derivacao fisica e nao
+# medicao -- e por isso o que se guarda aqui e a FORMA, e nao o numero exato:
+# o que nao pode acontecer e o modulo continuar ligado com um parametro que o
+# torna inerte ou nocivo. Quando a 0.17.1 medir as referencias, os pinos exatos
+# entram aqui, no molde dos da curva de tom acima.
+if ! grep -Fqx '[module.bloom.0.17.0]' "${cfg}"; then
+  echo "Secao do bloom 0.17.0 sumiu do cfg: o modulo cai para os defaults \
+internos de config.cpp sem ninguem notar." >&2
+  exit 1
+fi
+if grep -Eq '^intensity=0(\.0+)?$' "${cfg}"; then
+  echo "intensity do bloom em zero: a piramide inteira roda todo frame e o \
+resultado e multiplicado por zero. O log diria 'ativo' e a tela nao mudaria -- \
+que e exatamente o modo de falha que custou tres versoes na serie 0.13.x." >&2
+  exit 1
+fi
+# threshold=1.0 e o outro jeito de o modulo ficar ligado sem fazer nada: nada
+# da cena passa do limiar. O clamp de config.cpp segura em 0.98, e esta guarda
+# impede que o cfg peca isso em primeiro lugar.
+if grep -Eq '^threshold=(1(\.0+)?|[2-9])' "${cfg}"; then
+  echo "threshold do bloom em 1.0 ou acima: nenhum pixel da cena passa do \
+limiar e o modulo fica ativo sem produzir nada." >&2
+  exit 1
+fi
+# A ressalva de que o modulo contraria a medicao. Ela e o registro de que as
+# cinco referencias do ATS foram medidas e NAO tem bloom -- bordas nitidas, sem
+# cauda no lado escuro. Sem ela, o proximo a ler o arquivo assume que estes
+# numeros perseguem o alvo medido, quando na verdade se afastam dele por
+# escolha.
+if ! grep -Fq 'ESTE MODULO E LICENCA ARTISTICA, E NAO O ALVO MEDIDO' "${cfg}"; then
+  echo "A ressalva do bloom sumiu do cfg. Ela registra que as referencias \
+foram medidas e nao tem bloom; sem ela alguem vai subir intensity achando que \
+esta se aproximando do alvo, quando esta se afastando." >&2
+  exit 1
+fi
+# O limiar e o unico dos quatro que a medicao sustenta: 0.85 em sRGB fica acima
+# do p95 das cinco referencias (117 a 212). Abaixo disso o bloom passa a pegar
+# o ceu de golden hour, e nao mais o disco do sol.
+if ! grep -Fqx 'threshold=0.85' "${cfg}"; then
+  echo "threshold do bloom fora de 0.85: e o unico parametro do modulo que a \
+medicao das referencias sustenta, e abaixo dele a faixa 191-212 entra -- essa \
+faixa e o ceu nas duas capturas de golden hour, e nao uma fonte de luz." >&2
   exit 1
 fi
 
@@ -359,7 +437,9 @@ g++ -std=c++20 -Wall -Wextra -Werror \
 # nao consegue ve-los: aquele arquivo e Windows-only e nao linka no Linux. A
 # igualdade entre as duas copias fica por conta destas guardas.
 for tone_default in \
-  'layer.black_lift = 0.0027f;' \
+  'layer.black_lift_r = 0.001017f;' \
+  'layer.black_lift_g = 0.001982f;' \
+  'layer.black_lift_b = 0.001888f;' \
   'layer.highlight_rolloff = 0.35f;' \
   'layer.tint = 0.35f;'; do
   if ! grep -Fq "${tone_default}" "${project_dir}/src/config.cpp"; then
@@ -370,7 +450,7 @@ ${tone_default}" >&2
 done
 # A curva em si. Sem o lift o shader volta ao saturate() sem toe da 0.13.3.
 for tone_marker in \
-  'float3 apply_black_lift(float3 color, float lift)' \
+  'float3 apply_black_lift(float3 color, float3 lift)' \
   'float3 apply_highlight_rolloff(float3 color, float strength)'; do
   if ! grep -Fq "${tone_marker}" \
     "${project_dir}/shaders/photorealism.hlsl"; then
@@ -379,17 +459,82 @@ ${tone_marker}" >&2
     exit 1
   fi
 done
+# 0.17.1: o contraste em potencia. A forma antiga -- reta com max(...,0) --
+# mandava tudo abaixo de 0,01178 linear para o mesmo zero, e era ELA, e nao o
+# black_lift, que destruia a sombra. Medido nas capturas da 0.17.0: 72 a 90%
+# dos pixels escuros com os tres canais identicos e 12 a 13 niveis distintos
+# abaixo de 12/255, contra 24 a 31 nas referencias. Se alguem reescrever a
+# linha na forma afim, o platô volta em silencio.
+if ! grep -Fq 'color = pivot * pow(max(color, 1e-6) / pivot, Contrast);' \
+  "${project_dir}/shaders/photorealism.hlsl"; then
+  echo "O contraste saiu da forma em potencia: na forma afim com clamp toda \
+sombra abaixo de 0,01178 linear volta a colapsar num unico valor, e nenhum \
+black_lift recupera isso." >&2
+  exit 1
+fi
+# O sed tira os comentarios antes do grep: o proprio comentario da linha nova
+# cita a forma antiga para explicar por que ela saiu, e sem isso a guarda
+# acusaria a explicacao dela mesma.
+if sed 's|//.*||' "${project_dir}/shaders/photorealism.hlsl" |
+  grep -Fq '(color - pivot) * Contrast + pivot'; then
+  echo "A reta de contraste da 0.17.0 voltou a photorealism.hlsl." >&2
+  exit 1
+fi
+
 # A ordem importa: o lift e o piso da imagem FINAL, entao vem depois da
 # vignette. Antes dela os cantos escureceriam abaixo do piso.
+#
+# O "|| true" das capturas abaixo nao e decoracao: sob "set -euo pipefail" um
+# grep que nao acha nada derruba o script SEM IMPRIMIR NADA, e a guarda que
+# existe justamente para explicar o problema morre calada. Com ele a variavel
+# fica vazia e o teste de vazio adiante e quem fala.
 visual_shader_source="${project_dir}/shaders/photorealism.hlsl"
 vignette_line="$(grep -n 'color \*= lerp(1.0, smoothstep' \
-  "${visual_shader_source}" | head -1 | cut -d: -f1)"
+  "${visual_shader_source}" | head -1 | cut -d: -f1 || true)"
 lift_call_line="$(grep -n 'color = apply_black_lift(color, BlackLift);' \
-  "${visual_shader_source}" | head -1 | cut -d: -f1)"
+  "${visual_shader_source}" | head -1 | cut -d: -f1 || true)"
 if [[ -z "${vignette_line}" || -z "${lift_call_line}" ]] ||
   (( lift_call_line < vignette_line )); then
   echo "apply_black_lift saiu de depois da vignette: os cantos voltam a \
 escurecer abaixo do piso de preto, e o piso deixa de ser piso." >&2
+  exit 1
+fi
+
+# Bloom 0.17.0: a ordem da composicao dentro do PSMain, guardada por numero de
+# linha como a do black_lift acima. As tres fronteiras importam e cada uma
+# quebra de um jeito diferente:
+#
+#   depois do sharpening -- senao o realce morde a borda do glow e devolve um
+#   halo duplo;
+#   antes de apply_tonal_controls -- para o brilho receber exposicao,
+#   temperatura e tint junto com a cena. Depois dele o flare do sol sairia
+#   cinza sobre uma imagem quente;
+#   e portanto antes de apply_highlight_rolloff, que comprime a soma. Somar
+#   luz depois do ombro seria somar depois da unica coisa que impede o estouro.
+bloom_call_line="$(grep -n 'center += bloom \* BloomIntensity;' \
+  "${visual_shader_source}" | head -1 | cut -d: -f1 || true)"
+sharpen_line="$(grep -n 'Sharpness + LocalContrast \* edge_mask' \
+  "${visual_shader_source}" | head -1 | cut -d: -f1 || true)"
+tonal_call_line="$(grep -n 'float3 color = apply_tonal_controls(center);' \
+  "${visual_shader_source}" | head -1 | cut -d: -f1 || true)"
+if [[ -z "${bloom_call_line}" || -z "${sharpen_line}" ||
+  -z "${tonal_call_line}" ]]; then
+  echo "A composicao do bloom sumiu do PSMain, ou os marcadores da ordem \
+mudaram de forma. Sem ela a piramide roda todo frame e nada e somado." >&2
+  exit 1
+fi
+if (( bloom_call_line < sharpen_line ||
+  bloom_call_line > tonal_call_line )); then
+  echo "A composicao do bloom saiu da faixa entre o sharpening e os controles \
+tonais. Antes do realce ela ganha halo duplo; depois dos controles tonais o \
+glow deixa de ser graduado com a cena e o flare quente sai cinza." >&2
+  exit 1
+fi
+# O modulo tem que continuar desligavel de verdade: sem o ramo em BloomEnabled
+# a saida com bloom desligado deixa de ser identica a 0.16.0.
+if ! grep -Fq 'if (BloomEnabled > 0.5)' "${visual_shader_source}"; then
+  echo "O ramo de BloomEnabled sumiu do PSMain: com o modulo desligado a \
+imagem deixa de ser identica a 0.16.0 pixel a pixel." >&2
   exit 1
 fi
 
@@ -398,7 +543,7 @@ fi
 # "Shader visual aprovado foi alterado" e as guardas nomeadas nunca falavam.
 # Uma guarda muda nao guarda coisa alguma.
 visual_shader="${project_dir}/shaders/photorealism.hlsl"
-expected_visual_shader_sha256="2131faa2018c960fbb2dbbe29b6150652026b7ee91439a458c7d68f2ba1f2753"
+expected_visual_shader_sha256="ac079b51da5b4206f3b97f3a38112c50a09b1f2dc512e7da9d9567589152b15a"
 actual_visual_shader_sha256="$(sha256sum "${visual_shader}" | awk '{print $1}')"
 if [[ "${actual_visual_shader_sha256}" != "${expected_visual_shader_sha256}" ]]; then
   echo "Shader visual aprovado foi alterado: ${actual_visual_shader_sha256}" >&2
@@ -414,17 +559,113 @@ entre 6 e 12): e o unico numero que sozinho separa aquele visual do nosso." >&2
   exit 1
 fi
 
+# A propriedade central do limiar, dentro do teste: contribuicao exatamente
+# zero abaixo do joelho. Sem ela o bloom vira veu cinza uniforme em vez de
+# brilho em volta de fontes.
+if ! grep -Fq 'assert(contribution(0.0, kThreshold, kKnee) == 0.0);' \
+  "${project_dir}/tests/bloom_curve_test.cpp"; then
+  echo "O teste do bloom parou de exigir contribuicao zero abaixo do joelho: \
+e o que separa brilho em volta de fontes de uma nevoa sobre a cena inteira." >&2
+  exit 1
+fi
+
 tone_curve_test="/tmp/photorealism-tone-curve-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/tests/tone_curve_test.cpp" \
   -o "${tone_curve_test}"
 "${tone_curve_test}"
 
+bloom_curve_test="/tmp/photorealism-bloom-curve-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/bloom_curve_test.cpp" \
+  -o "${bloom_curve_test}"
+"${bloom_curve_test}"
+
 screenshot_request_gate_test="/tmp/photorealism-screenshot-request-gate-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/tests/screenshot_request_gate_test.cpp" \
   -o "${screenshot_request_gate_test}"
 "${screenshot_request_gate_test}"
+
+# O observador tem que medir o frame PRE-grade. Medir a saida fecharia uma
+# realimentacao: a cor seria funcao das features e as features funcao da cor, e
+# a imagem caminharia sozinha sem que nada no cfg mudasse. A chamada tem que
+# ficar colada no CopyResource que enche scene_texture_.
+if ! grep -Fq 'scene_observer_.observe(device_, context_, scene_texture_);' \
+  "${project_dir}/src/postprocess.cpp"; then
+  echo "O observador de cena parou de medir scene_texture_: medir a saida do \
+grade fecha uma realimentacao entre a cor e as features." >&2
+  exit 1
+fi
+
+# A guarda acima fixa a LINHA DA CHAMADA, e na 0.18.0 a chamada estava certa: o
+# que estava errado era a tabela de formatos logo depois dela. O observador
+# recusava DXGI 90 (B8G8R8A8_TYPELESS), que e exatamente o formato que
+# ensure_frame_resources cria para a copia da cena, e passou a versao inteira
+# desligado com validate.sh verde. Por isso a tabela saiu do .cpp para um
+# cabecalho testavel, e por isso estas duas guardas existem.
+if ! grep -Fq 'scene_formats::is_readable' \
+  "${project_dir}/src/scene_observer.cpp"; then
+  echo "O observador voltou a decidir formato dentro do .cpp, onde nenhum \
+teste alcanca: foi assim que a 0.18.0 saiu desligada." >&2
+  exit 1
+fi
+if ! grep -Fq 'assert(is_readable(kB8G8R8A8Typeless));' \
+  "${project_dir}/tests/scene_formats_test.cpp"; then
+  echo "O teste parou de exigir que o formato TYPELESS da copia da cena seja \
+legivel: e o caminho principal, nao um caso exotico." >&2
+  exit 1
+fi
+
+# A recusa tem que ser registrada UMA vez por assinatura de fonte. Na 0.18.0 o
+# release() vinha antes da comparacao e zerava a assinatura, entao a recusa era
+# reavaliada por frame: 663 mil linhas e 67 MB de log numa sessao.
+if ! grep -Fq 'return !resources_failed_;' \
+  "${project_dir}/src/scene_observer.cpp"; then
+  echo "O observador parou de lembrar que ja falhou: sem isso a recusa volta a \
+ser registrada uma vez por frame." >&2
+  exit 1
+fi
+
+scene_features_test="/tmp/photorealism-scene-features-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/scene_features_test.cpp" \
+  -o "${scene_features_test}"
+"${scene_features_test}"
+
+# 0.18.2. O balanco de branco tem que sair do shader dividido pela propria
+# luminancia. Sem isto o vetor volta a carregar exposicao: no perfil aprovado
+# sao +0,0411 EV contra um exposure=-0,030 no cfg, ou seja o sinal trocado. E
+# a partir da 0.19.0, com tint se movendo com o clima, o erro se move junto e a
+# imagem clareia sozinha ao ficar esverdeada.
+if ! grep -Fq 'color * (balance / max(luminance(balance), 1e-4))' \
+  "${project_dir}/shaders/photorealism.hlsl"; then
+  echo "apply_temperature parou de normalizar o balanco em luminancia: o \
+balanco volta a carregar exposicao escondida." >&2
+  exit 1
+fi
+
+# white_balance_test.cpp ESPELHA a funcao do shader, porque ela vive em HLSL.
+# Esta guarda e o que amarra as duas copias: o teste tem que continuar fixando
+# o mesmo numero medido que o shader produz.
+if ! grep -Fq 'assert(near(luminance(raw), 1.028920f, 1e-5f));' \
+  "${project_dir}/tests/white_balance_test.cpp"; then
+  echo "O teste parou de fixar a luminancia medida do balanco bruto (1,028920 \
+no perfil aprovado): e o numero que estava escondido desde a 0.1.2." >&2
+  exit 1
+fi
+
+white_balance_test="/tmp/photorealism-white-balance-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/white_balance_test.cpp" \
+  -o "${white_balance_test}"
+"${white_balance_test}"
+
+scene_formats_test="/tmp/photorealism-scene-formats-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/scene_formats_test.cpp" \
+  -o "${scene_formats_test}"
+"${scene_formats_test}"
 
 effective_profile="$(awk -F= '
   /^\[/ { section=$0; next }
@@ -448,8 +689,9 @@ effective_profile="$(awk -F= '
       total["saturation"], total["vibrance"], total["shadows"], \
       total["highlights"], total["blacks"], total["whites"], \
       total["local_contrast"], total["sharpness"], total["vignette"]
-    printf " %.4f %.3f %.3f", \
-      total["black_lift"], total["highlight_rolloff"], total["tint"]
+    printf " %.6f %.6f %.6f %.3f %.3f", \
+      total["black_lift_r"], total["black_lift_g"], total["black_lift_b"], \
+      total["highlight_rolloff"], total["tint"]
   }
 ' "${cfg}")"
 
@@ -461,7 +703,7 @@ effective_profile="$(awk -F= '
 # que importa. Uma guarda que explica uma regressao sutil so serve se for ela
 # a falar. Nesta ordem o hash continua pegando tudo que as guardas nao
 # cobrem, e so isso.
-expected_cfg_sha256="b1d07b7e1f9eccdd1ab15b5422b5af234fb84a7900cdd1ae13e9dcbf57cde470"
+expected_cfg_sha256="32d9b5860594e327c7b8fa68860a1611e15409e4f681d34e3e88ef65b5ee5edf"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
@@ -471,9 +713,13 @@ fi
 # pretos para baixo contra o alvo, e o piso passou a ser black_lift. Os tres
 # ultimos campos sao a curva de tom, e entraram no perfil justamente para que
 # uma mudanca neles nao passe por uma camada de delta sem ser vista.
-expected_profile="6400.0 -0.030 1.070 0.970 0.050 0.100 -0.180 0.000"
+# exposure passou de -0.030 para 0.011 na 0.18.2 e a IMAGEM NAO MUDOU. O
+# balanco de branco carregava +0,0411 EV escondidos e agora e normalizado em
+# luminancia; os +0,0411 EV vieram para a exposicao base, onde da para ler.
+# Exposicao e balanco sao multiplicacao em linear e comutam.
+expected_profile="6400.0 0.011 1.070 0.970 0.050 0.100 -0.180 0.000"
 expected_profile="${expected_profile} 0.080 0.240 0.200 0.030"
-expected_profile="${expected_profile} 0.0027 0.350 0.500"
+expected_profile="${expected_profile} 0.001398 0.002480 0.002268 0.350 0.500"
 if [[ "${effective_profile}" != "${expected_profile}" ]]; then
   echo "Perfil cumulativo divergiu da 0.3.0 aprovada: ${effective_profile}" >&2
   exit 1

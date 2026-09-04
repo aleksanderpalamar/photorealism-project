@@ -12,6 +12,7 @@ const wchar_t* shader_path();
 const wchar_t* depth_preview_shader_path();
 const wchar_t* ssao_shader_path();
 const wchar_t* temporal_shader_path();
+const wchar_t* bloom_shader_path();
 void log_message(const char* format, ...);
 
 }  // namespace photorealism

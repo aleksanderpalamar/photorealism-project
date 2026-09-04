@@ -1,8 +1,9 @@
 # Roadmap
 
-O desenvolvimento do modulo espacial FSR possui numeracao e roadmap proprios
-em `FSR_ROADMAP.md`. A fundacao FSR 0.1.0 e o observador color 0.2.0 acompanham
-o nucleo 0.10.1 sem modificar sua pilha visual.
+O modulo FSR foi removido na 0.15.0 e o de tracado de raios na 0.16.0, junto
+com o `FSR_ROADMAP.md` que este cabecalho citava. O que sobrou e o que o alvo
+visual medido usa: curva de tom, coloracao, iluminacao, TAA/AA nativo, SSAO e,
+desde a 0.17.0, bloom. As secoes historicas abaixo ficam como registro.
 
 ## 0.1.x a 0.3.x - Fundacao e calibracao visual
 
@@ -471,12 +472,39 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   era a razao de ter subido, era o RTGI e nao o SSAO. Continua valendo por si
   -- calibracao afinada sobre um buffer, rodando sobre outro -- mas sem
   sintoma reportado atras dela;
-- **0.17.0** bloom. Visivel nas referencias -- o flare do sol na golden hour, o
-  brilho na borda do para-brisa -- e exige passes e recursos novos:
-  bright-pass, blur separavel, composicao. Ficou fora da 0.14.0 de proposito:
-  somar glare sobre uma curva de tom ainda nao calibrada torna as duas coisas
-  impossiveis de julgar separadamente;
-- **0.18.0 (condicional)** upgrade de bind flag via hook de `CreateTexture2D`,
+- **0.19.0 (proxima)** adaptacao de cor por condicao, em cima do observador da
+  0.18.0. A calibracao de hoje e a media de cinco condicoes diferentes, e um
+  `tint` unico nao alcanca as cinco: e por isso que o valor efetivo de 0,50
+  cai entre o alvo de dia claro e o de encoberto errando os dois. Precisa,
+  nesta ordem: limiares medidos no ETS2 a partir das linhas `Cena 0.18.0:` do
+  log; ancoras de `temperature`/`tint` por condicao; interpolacao **continua**
+  entre elas, porque a margem entre condicoes e de so 1,5x sobre a dispersao
+  interna e classe dura saltaria a cor ao virar a cabine; e suavizacao com
+  **constante de tempo de 2 a 3 minutos** mais histerese. Cuidado central: o
+  jogo ja renderiza a cor da hora. **Medido no ETS2 na 0.18.1**
+  (`references/scene-baseline-ets2-0.18.1.md`, 36 amostras de jogo): o ceu R/B
+  sobe +0,0152 por minuto sozinho, antes do grade, e a hora do dia explica 58%
+  de toda a variacao de cor da sessao. Somar uma rampa de relogio por cima
+  conta duas vezes. O alvo e o ajuste que **falta** em cada condicao, nao uma
+  rampa artistica. Tres numeros ja saem medidos e substituem estimativa:
+  a faixa do ceu R/B no ETS2 e 4,2x mais larga que a do ATS, entao **nenhum
+  limiar do ATS serve**; o residuo depois da hora do dia tem desvio 0,069 e
+  decorrelaciona em menos de um minuto, o que e a camera virando e nao mudanca
+  de tempo, e e o que fixa a janela em 2-3 minutos; e 10% das amostras nao sao
+  jogo (carregamento, fade, mapa), uma delas devolvendo o valor mais quente da
+  sessao a partir de um quadro quase preto, entao a porta de jogo vem antes do
+  detector. Falta o que so o usuario pode dar: **as linhas rotuladas pela
+  condicao na tela**, sem as quais nao ha ancora de cor por condicao;
+- **0.20.0** raios de sol. E o efeito que as referencias realmente
+  mostram, e que a medicao do bloom revelou: estriados radiais saindo do sol
+  atras da linha de arvores, projetados no teto escuro da cabine. Sao
+  **direcionais**, e nenhuma piramide gaussiana produz aquilo. Reaproveita o
+  bright-pass, a cadeia de reducao, a composicao aditiva e as guardas da
+  0.17.0 -- falta um shader de blur radial e, o problema de verdade,
+  descobrir a posicao do sol na tela sem dados do motor no `Present`.
+  **Desceu de prioridade na 0.18.0**: cor errada em toda condicao pesa mais
+  que um efeito ausente;
+- **0.21.0 (condicional)** upgrade de bind flag via hook de `CreateTexture2D`,
   na tecnica do ReShade: promover o depth a typeless com
   `BIND_SHADER_RESOURCE`, sintetizando o descritor no `CreateDepthStencilView`.
   So entra se o `CopyResource` de um depth `DEPTH_STENCIL`-only falhar sob

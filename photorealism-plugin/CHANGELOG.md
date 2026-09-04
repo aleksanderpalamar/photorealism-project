@@ -1,5 +1,349 @@
 # Changelog
 
+## Pacote 0.18.2 - 2026-09-04
+
+O balanco de branco carregava exposicao, e a imagem nao muda.
+
+No perfil aprovado (6400K, tint 0,50) o vetor de balanco e
+0,9773/1,0500/0,9721, cuja luminancia Rec.709 e **1,028920**: +0,0411 EV que
+ninguem pediu. Contra o `exposure=-0,030` do cfg, a exposicao efetiva era
+**+0,0111 -- com o sinal trocado** em relacao ao que o arquivo e o log diziam.
+O numero estava escondido desde a 0.1.2.
+
+Enquanto `tint` era constante isso era um erro fixo, absorvido na calibracao.
+A partir da 0.19.0 `tint` passa a se mover com o clima e o erro se move junto:
+varrer tint de 0,0 a 1,0 desloca a imagem em 0,0803 EV, ou **5,7% de brilho**.
+O eixo verde-magenta e o pior dos dois porque G pesa 0,7152 da luminancia. A
+imagem clarearia ao ficar esverdeada e escureceria ao esfriar, sozinha. Cor que
+muda brilho e o que se le como irreal.
+
+`apply_temperature` passa a dividir o balanco pela propria luminancia, e os
++0,0411 EV foram para a exposicao base do cfg (-0,09 -> -0,0488697), onde da
+para ler. Exposicao e balanco sao multiplicacao em linear e comutam, entao a
+saida de hoje **nao muda**: medido sobre uma captura real do ETS2, 9 pixels de
+11.059.200 diferem em 1 codigo (0,0001%), que e arredondamento de quantizacao.
+A deriva ao varrer tint cai de 5,85% para 0,82%, e o que sobra e croma de
+verdade passando pela curva de potencia e pelo ombro.
+
+`tests/white_balance_test.cpp` fixa a propriedade em todo o dominio de
+`temperature` e `tint`, incluindo que a normalizacao preserva as razoes entre
+canais -- ela tira brilho, nao muda a cor. O teste ESPELHA o HLSL, porque a
+funcao vive no shader; `validate.sh` amarra as duas copias com um grep na linha
+da divisao e outro no numero medido. Uma linha nova de log passa a trazer o
+balanco bruto, sua luminancia em EV, o normalizado e o ganho resultante, para
+que isso nao possa se esconder de novo.
+
+### De onde veio
+
+Da avaliacao do repositorio `roimehrez/photorealism` (Screened Poisson
+Equation, BMVC 2017) que o usuario trouxe. Registro completo em
+`references/screened-poisson-avaliacao-0.18.2.md`, incluindo a recomendacao que
+eu dei e que a medicao derrubou.
+
+Resumo do que foi medido: o solve esparso global do repositorio e
+**identico a `passa-baixa(graduado) + passa-alta(original)`** (verificado, erro
+1e-13). Mas aplicado aqui ele apagaria o realce aprovado -- a curva tonal do
+plugin so distorce estrutura em ±8%, e os 15,3% de ganho de gradiente sao
+`sharpness` e `local_contrast`, que sao deliberados. E a distorcao de
+luminancia que eu atribui ao balanco era, num controle com ganho acromatico de
+mesma magnitude, 0,046% de matiz e o resto exposicao. Do paper ficou a pergunta
+certa, nao o metodo.
+
+## Pacote 0.18.1 - 2026-09-04
+
+Correcao de tres defeitos que o primeiro log de jogo da 0.18.0 revelou. Dois
+deles sao o **mesmo defeito**: uma tabela de formatos que so listava as
+variantes tipadas e recusava o pai TYPELESS.
+
+**O observador de cena passou a 0.18.0 inteira desligado.** O log de seis
+sessoes tem 663.486 copias de `formato 90 ... nao suportados para leitura` e
+zero linhas `Cena 0.18.0:`. O formato 90 e `B8G8R8A8_TYPELESS`, que e o que
+`ensure_frame_resources` cria de proposito para poder pendurar uma SRV sRGB na
+copia da cena -- ou seja, o observador recusava exatamente o formato do
+caminho principal. `build.sh` compilou, `validate.sh` passou e o teste de
+features passou, porque a guarda que existia fixava a *linha da chamada*, e a
+chamada estava certa; o errado era a tabela logo depois dela, dentro do `.cpp`,
+onde nenhum teste alcanca.
+
+A tabela saiu para `src/scene_formats.hpp`, em `unsigned` para compilar no
+teste sem `d3d11.h`, e `tests/scene_formats_test.cpp` fixa o caso que quebrou.
+A piramide, a view e o staging passam a usar a variante **UNORM** resolvida --
+nao `_SRGB`: com view UNORM o `GenerateMips` faz a media dos codigos de 8 bits
+como numeros, com `_SRGB` ele decodifica para linear antes. As cinco
+referencias foram medidas no espaco de codigo, entao `_SRGB` deslocaria
+mediana e faixa contra a tabela sem que nada acusasse.
+
+**O SSAO e o resolve temporal ficaram desligados nas tres sessoes mais
+recentes.** Mesma causa, outro lugar: `depth_copy_formats` so listava os
+formatos `D*`. O ETS2 declara o depth ora como 20 (`D32_FLOAT_S8X24_UINT`),
+ora como 19 (`R32G8X24_TYPELESS`) -- o log tem os dois no mesmo dia. Nas tres
+primeiras sessoes veio 20 e o SSAO subiu; nas tres ultimas veio 19 e cada
+descoberta terminava em `Candidato depth incompativel com copia 0.9.1`.
+
+O candidato recusado era o **melhor** dos dois: 19 vem com `bind_flags=0x48`,
+ja legivel por shader, contra `0x40` do 20. Cada familia passa a entrar pelos
+dois nomes; o destino da copia nao muda.
+
+**A recusa era registrada uma vez por frame.** `ensure_resources` chamava
+`release()` antes de comparar a assinatura da fonte, e o release zerava
+justamente a assinatura -- entao a recusa era reavaliada e registrada em todo
+frame. `resources_failed_` existia e nunca era lido. Resultado: 67 MB de log
+numa unica sessao. A comparacao passou para antes do release e a falha guarda
+a assinatura.
+
+### O que o log confirmou que esta certo
+
+- Custo do passe: media de 1,414 ms em 1.103 amostras de telemetria, pior
+  media de janela 3,326 ms, zero amostras descartadas.
+- Present/Present1: `state=nosso-hook-externo` em todas as fases de auditoria
+  das seis sessoes, com o overlay da Steam estabilizado antes dos hooks.
+- Nenhuma falha de shader, de recurso de frame ou de swap chain.
+
+### O que continua em aberto
+
+- **F12 da Steam.** As seis sessoes tem so a linha de registro do
+  `ISteamScreenshots` e nenhuma captura. O diagnostico da 0.18.0 segue de pe e
+  nao ha correcao aqui.
+- **Nao ha ainda uma unica medida `Cena 0.18.0:` de dentro do ETS2.** A
+  calibracao da 0.19.0 continua sem evidencia; esta versao e o que torna
+  possivel colher a primeira.
+
+## Pacote 0.18.0 - 2026-09-01
+
+Observador de cena. **Este modulo nao altera um pixel** -- ele mede o frame
+antes do grade e escreve quatro numeros no log. Detalhe em
+`references/scene-observer-0.18.0.md`.
+
+Ele existe por causa de um achado que muda a premissa da calibracao de cor.
+
+**As cinco referencias nao sao cinco fotos da mesma coisa.** Foram abertas e
+medidas aqui pela primeira vez, e sao cinco condicoes diferentes: encoberto
+(23-33-14), anoitecer com farois (23-47-51), sol baixo com neblina (11-12-15 e
+11-12-25) e dia claro (15-56-22). A calibracao de cor de hoje e a media das
+cinco. O `tint` efetivo de 0,50 nao esta errado por descuido -- e o unico
+numero possivel quando se tenta cobrir cinco condicoes com um so, e por isso
+cai entre o alvo de dia claro e o de encoberto errando os dois.
+
+Quatro features separam as cinco. Medidas pelo mesmo caminho do observador
+(media de area ate ~80 px de largura):
+
+| ref      | condicao    | ceu R/B | mediana | p90-p10 | saturacao |
+| -------- | ----------- | ------- | ------- | ------- | --------- |
+| 23-47-51 | anoitecer   | 0,915   | 13,1    | 55,0    | 0,421     |
+| 23-33-14 | encoberto   | 0,967   | 21,2    | 131,2   | 0,338     |
+| 11-12-25 | sol/neblina | 1,005   | 21,0    | 102,4   | 0,260     |
+| 11-12-15 | sol/neblina | 1,000   | 30,3    | 95,2    | 0,212     |
+| 15-56-22 | dia claro   | 0,938   | 43,9    | 157,7   | 0,183     |
+
+Nenhuma separa sozinha e cada uma desempata um par que as outras confundem. O
+par de condicoes diferentes mais proximo fica a 1,65 no espaco normalizado; o
+par mais proximo de todos e `11-12-15 x 11-12-25`, a 1,07, que e a **mesma**
+condicao dez segundos depois com a camera para outro lado. A dispersao dentro
+da condicao e menor que a distancia entre condicoes, que e a propriedade
+necessaria -- e a margem de 1,5x e apertada, o que ja decide que a adaptacao
+tera de interpolar continuamente em vez de classificar em classe dura.
+
+`tests/scene_features_test.cpp` guarda os dois numeros e inclui
+`src/scene_features.hpp` direto, sem espelhar a implementacao.
+
+Nesta versao:
+
+- `src/scene_features.hpp`, novo: a matematica das features, sem D3D11, para
+  poder ser testada;
+- `src/scene_observer.{hpp,cpp}`, novo: `GenerateMips` sobre uma copia da cena,
+  leitura assincrona com `D3D11_QUERY_EVENT` e `DONOTFLUSH`, dois slots de
+  staging, amostra descartada em vez de esperar;
+- a medicao acontece colada no `CopyResource(scene_texture_, back_buffer)`, e
+  `tools/validate.sh` verifica essa linha: medir a saida fecharia uma
+  realimentacao entre a cor e as features;
+- `[module.scene_observer.0.18.0]` no cfg, ligado por padrao com
+  `interval_frames=30` e `log_seconds=30`;
+- **a linha `Perfil efetivo` do log ganhou `tint`, `highlight_rolloff` e os
+  tres `black_lift`.** Estavam fora desde a 0.14.0, e sem eles nao havia como
+  confirmar em runtime qual cor estava rodando -- o que custou uma sessao
+  inteira de analise para descobrir que o verde vinha do `tint`.
+
+Nao ha detector ainda, nao ha adaptacao ainda, e nenhuma das cinco referencias
+tem chuva -- a camada que leva o nome `rain_overcast` continua sem alvo medido.
+
+## Pacote 0.17.2 - 2026-09-01
+
+O piso do preto de novo, porque **o estimador que fixou a 0.17.1 tinha vies**.
+Detalhe em `references/tone-floor-0.17.2.md`.
+
+A 0.17.1 foi confirmada em jogo com doze capturas no ETS2 e o defeito central
+sumiu: o plato de crush nao existe mais, o cinza exato na sombra caiu de 72-90%
+para 0,00-0,15% e nada estoura no teto nem com o sol no horizonte. Isso esta
+registrado em `references/tone-floor-confirmation-0.17.1.md`.
+
+O que esta versao corrige e o alvo, nao a implementacao.
+
+**O estimador de cauda tem vies quando a imagem tem grao.** A media do 1% mais
+escuro escolhe os pixels ordenando por LUMINANCIA, que pesa G em 0,7152, R em
+0,2126 e B em 0,0722. Numa imagem com grao, o que faz um pixel entrar nessa
+amostra e ruido negativo no canal G. So o G desce.
+
+Medido por injecao, e nao por argumento: somando grao gaussiano de desvio 2,1
+-- o das referencias -- as doze capturas limpas do plugin, a cauda se desloca
+**-0,18 / -1,83 / +0,43 codigos**. O mesmo teste valida o estimador no caso
+limpo: ele recupera o piso conhecido do plugin, que e o proprio `black_lift`,
+dentro de 0,35 codigo.
+
+As referencias tem grao de desvio 2,1 e as capturas 0,18. A 0.17.1 comparou os
+dois com o mesmo estimador sem corrigir nada.
+
+**A primeira simulacao desta versao pedia a correcao ao contrario.** Sobre os
+numeros crus, o alvo dava `black_lift_g` **24% menor**. Corrigido o vies, da
+**13% maior** -- 37 pontos percentuais de diferenca, e uma troca de sinal.
+
+Alvo novo, mediana por canal das cinco referencias corrigidas: 4,78/7,84/7,82
+em 255, contra 4,60/6,01/8,25 sem correcao.
+
+**Os tres numeros nao sao a conversao direta do alvo.** O piso medido numa
+captura e o lift mais o que a cena poe por cima, cerca de 0,6 codigo. Entao
+eles saem de resolver o lift que POE a cauda no alvo: invertendo a etapa afim
+do shader pixel a pixel nas doze capturas -- `out = lift + (1-lift)*c` e
+exatamente inversivel -- e bisseccionando por canal.
+
+    efetivo   0.001150/0.002192/0.002313  ->  0.001398/0.002480/0.002268
+    base      0.000640/0.001767/0.001590  ->  0.001017/0.001982/0.001888
+    piso      4/7/8 em 255                ->  5/8/7 em 255
+
+Cada canal do piso novo cai dentro da faixa das cinco corrigidas: R de 2,86 a
+7,64, G de 6,15 a 9,67, B de 6,03 a 10,78.
+
+**`tests/tone_curve_test.cpp`** ganhou a regressao dos codigos novos e a nota
+de que a razao do LIFT nao e a razao do PISO: a cena soma a mesma parcela nos
+tres canais, o que puxa a razao do piso na direcao de 1,0. B/G da 0,915 no lift
+e 0,997 no piso simulado. As duas faixas do teste diferem por isso, e nao por
+folga arbitraria.
+
+**O que nao mudou.** O shader nao foi tocado -- contraste em potencia e
+`apply_black_lift` por canal continuam como saíram da 0.17.1. Falta grao na
+sombra, ~7x abaixo da referencia ja descontado o downsample do gamescope, e
+esse e o proximo item.
+
+## Pacote 0.17.1 - 2026-08-31
+
+O piso do preto, e **a medicao que mostrou que o culpado era o contraste**.
+Detalhe em `references/tone-floor-0.17.1.md`.
+
+Quatro capturas da 0.17.0 medidas contra as cinco referencias do ATS. Pelos
+tres criterios do `grade_report.py` a 0.17.0 **passa**: p1 entre 7 e 8, dentro
+da faixa 6-12; G como canal mais alto; `topo%` 0,00. Os dois defeitos maiores
+estavam presentes assim mesmo.
+
+**O piso nao era um piso, era um plato.** O 1% mais escuro das quatro capturas
+saiu 8/8/8 e 9/9/9 -- exatos, nao aproximados. Abaixo de 12/255 sobravam 12 a
+13 niveis distintos contra 24 a 31 nas referencias, o desvio-padrao era 0,70 a
+1,19 contra 3,10 a 4,01, e **72 a 90% dos pixels escuros tinham os tres canais
+identicos** contra 0,00 a 0,77% nas referencias. Era por isso que o interior da
+cabine lia como plastico cinza chapado em vez de preto profundo.
+
+**A causa nao era o `black_lift`.** Era
+`max((color - pivot) * Contrast + pivot, 0.0)`: com `Contrast` acima de 1 a
+reta manda todo valor abaixo de `pivot*(Contrast-1)/Contrast` para negativo e o
+clamp junta o conjunto inteiro no mesmo zero. Com o perfil aprovado esse limiar
+e 0,01178 na entrada do passo, ou 0,0147 na entrada da cadeia -- **32 em 255**,
+a cabine inteira. O `black_lift` vinha depois e so escolhia QUAL valor a massa
+esmagada receberia. Trocar so ele nao mudaria nada.
+
+- **contraste em potencia**, `pivot * pow(max(color, 1e-6) / pivot, Contrast)`.
+  Mesmo pivo, praticamente a mesma inclinacao perto dele, manda 0 para 0 em vez
+  de para negativo e e monotonica em todo o dominio. O degrade de entrada 0-40
+  em 255 devolve **30 niveis distintos em vez de 10**;
+- **`black_lift` por canal.** O p1 da luma (8 a 11) tinha a magnitude certa e
+  escondia a cor: o 1% mais escuro das referencias e 2,1/5,8/5,2 encoberto,
+  1,6/5,7/5,1 crepusculo, 3,8/7,2/7,6 sol, 5,8/9,1/10,6 e 5,7/9,0/10,5
+  neblina. R fica entre 29% e 64% de G nas cinco. Um lift escalar e acromatico
+  por construcao, e `temperature`/`tint` nao alcancam isso -- os dois
+  multiplicam a faixa inteira, e o topo ja estava certo (R/G 0,955-1,002 na
+  referencia contra 0,945-0,958 na 0.17.0). As tres camadas estao **sempre
+  somadas** -- nao ha deteccao de clima -- entao quem tem que cair no alvo e a
+  soma: a base leva o piso de tempo claro (2,1/5,8/5,2) e `rain_overcast`
+  completa ate a mediana por canal das cinco, **4/7/8**. Mirar a soma nas duas
+  de neblina (5,8/9,1/10,6) poria o piso permanente no extremo da faixa medida
+  em vez do centro;
+- **`black_lift_r/g/b` no cfg**, com `_delta` nas duas camadas. A forma escalar
+  `black_lift=` continua aceita e escreve os tres canais iguais -- ou seja,
+  reproduz exatamente o piso acromatico que esta versao corrige;
+- **o cbuffer continua com 96 bytes.** `float3 BlackLift` mais
+  `HighlightRolloff` fecham uma linha de 16, e `Tint` desce para a linha do
+  bloom;
+- **`tests/tone_curve_test.cpp`** ganhou a regressao das duas coisas: que a
+  forma afim junta 0,002 e 0,010 no mesmo zero e a potencia nao, e que o piso
+  sai 2/6/5 na base e 4/7/8 efetivo, com R/G e B/G dentro da faixa das cinco.
+  O contador de niveis distintos exige pelo menos 24, que e o piso do que as
+  referencias mostram;
+- **duas guardas novas em `validate.sh`** -- a linha do contraste em potencia e
+  `black_lift_r < black_lift_g`. A segunda existe porque o modo de falha nao e
+  alguem zerar o lift, e alguem reigualar os tres.
+
+O que **nao** muda nesta versao, e que a mesma medicao mostrou faltar: o grao.
+As referencias tem 0,95 a 1,14 niveis de ruido por canal em regioes claras e
+lisas, e as capturas tem 0,16 a 0,32.
+
+Uma correcao de processo: os tres criterios do `grade_report.py` passaram com
+os dois defeitos presentes. `p1` nao distingue um piso com estrutura de um
+plato no mesmo valor. Faltam ali niveis distintos abaixo de 12/255, fracao de
+pixels escuros com R=G=B exato, e a razao R/G do piso.
+
+## Pacote 0.17.0 - 2026-08-30
+
+Bloom, **e a medicao que corrigiu a premissa da propria versao**. Detalhe em
+`references/bloom-0.17.0.md`.
+
+A justificativa original era que as referencias do ATS mostram glare. Medidas
+depois que a estrutura ficou pronta, **elas nao tem bloom**: toda borda entre
+muito claro e muito escuro esta nitida, o perfil de borda em resolucao cheia
+mostra o lado escuro plano ate a transicao **sem cauda** -- a assinatura que
+bloom deixaria -- os mostradores noturnos nao iluminam nada em volta, e `topo%`
+e 0,00 nas cinco. A afirmacao de que havia "halacao na borda do para-brisa"
+**estava errada**: foi observacao a olho nunca conferida nos pixels.
+
+O que as referencias tem sao **raios de sol** -- estriados radiais saindo do
+sol, projetados no teto escuro da cabine. Sao direcionais, e uma piramide
+gaussiana nao produz aquilo. Isso e a 0.18.0, e reaproveita o bright-pass e a
+piramide desta versao.
+
+O modulo fica **ligado por decisao do usuario, com `intensity=0.02`** e a
+ressalva escrita no cfg e guardada por `validate.sh`. Dos quatro parametros so
+o limiar e medido: `0.85` em sRGB e o codigo 217, acima do p95 das cinco
+referencias (117 a 212), o que faz o bloom pegar o disco do sol e o topo das
+nuvens em vez do ceu.
+
+- **`shaders/bloom.hlsl`**, tres entry points -- limiar de joelho suave na
+  descida, box na reducao, tent na subida com blend aditivo. Sem vertex shader
+  proprio: reusa o `VSMain`, como ssao e temporal ja faziam;
+- **piramide de ate seis niveis, e nao um blur maior.** Nove taps a meia
+  resolucao alcancam 0,007 da altura; o flare das referencias esta uma ordem de
+  grandeza acima, e esticar os offsets deixa buracos que viram anel. `radius` e
+  fracao da altura e vira contagem de niveis, o que faz o mesmo valor servir em
+  1080p e em 4K;
+- **a composicao acontece dentro do `PSMain`**, entre o sharpening e os
+  controles tonais. A cadeia do frame ja tem cinco ramos e todos comecam pelo
+  mesmo passe visual -- gerar a piramide antes do `if` e ler o resultado em
+  `t1` faz o modulo valer para os cinco **sem criar ramo nenhum**;
+- **`Insert` volta a sete posicoes**, a 6 mostrando o bloom isolado;
+- **`tools/bloom_report.py`** -- mede o perfil radial em volta das fontes e
+  devolve os tres parametros. Conferido contra alvos sinteticos: recupera 0,035
+  como 0,038 e 0,094 como 0,100, vies de ~7% para cima;
+- **`tests/bloom_curve_test.cpp`** prova o zero exato abaixo do joelho em cem
+  pontos. Nao basta ser pequeno: se um pixel escuro contribui, todos
+  contribuem, e o bloom vira nevoa cinza em vez de brilho em volta de fontes.
+
+**Com `enabled=false` a imagem e identica a 0.16.0.** O `PSMain` ramifica na
+constante, entao nada e somado. Os outros quatro entry points sairam
+byte-identicos; so o `PSMain` mudou, de 308 para 319 instrucoes.
+
+Uma correcao de processo encontrada ao provar as guardas novas: as capturas de
+numero de linha do `validate.sh` usam `grep | head | cut`, e sob
+`set -euo pipefail` um grep que nao acha nada **derruba o script sem imprimir
+nada**. As guardas de ordem morriam caladas -- inclusive a do `black_lift`, que
+estava assim desde a 0.14.0 e ninguem tinha notado porque a linha que ela
+procura nunca faltou. As cinco capturas ganharam `|| true`, e as sete guardas
+novas foram provadas falhando com a propria mensagem.
+
 ## Pacote 0.16.0 - 2026-08-30
 
 Remocao completa do RTGI, a pedido do usuario e pela mesma razao medida na

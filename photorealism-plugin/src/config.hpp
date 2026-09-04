@@ -16,7 +16,12 @@ struct Settings {
     float local_contrast;
     float sharpness;
     float vignette;
-    float black_lift;
+    // 0.17.1: o piso do preto e por canal. O 1% mais escuro das cinco
+    // referencias tem R entre 29% e 64% de G; um piso escalar sai acromatico e
+    // nao alcanca isso.
+    float black_lift_r;
+    float black_lift_g;
+    float black_lift_b;
     float highlight_rolloff;
     float tint;
     float depth_near_plane;
@@ -44,6 +49,17 @@ struct Settings {
     float temporal_history_weight;
     float temporal_depth_rejection;
     float temporal_color_rejection;
+    bool bloom_enabled;
+    float bloom_threshold;
+    float bloom_knee;
+    float bloom_intensity;
+    float bloom_radius;
+    // 0.18.0. O observador nao muda pixel nenhum: ele mede o frame pre-grade e
+    // registra as features que separam as condicoes. E a fonte de dados da
+    // adaptacao por clima, que entra depois e em cima destes numeros.
+    bool scene_observer_enabled;
+    float scene_observer_interval_frames;
+    float scene_observer_log_seconds;
 };
 
 Settings default_settings();
