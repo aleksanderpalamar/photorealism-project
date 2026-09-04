@@ -89,6 +89,32 @@ float4 sample_scene(float2 uv)
 // A compensacao em R e B e metade do ganho de G para que empurrar o tint mude
 // a cor sem mudar junto o brilho, e a exposicao nao precise ser recalibrada a
 // cada ajuste.
+// Balanco de branco NORMALIZADO em luminancia -- 0.18.2.
+//
+// Ate a 0.18.1 esta funcao devolvia `color * balance` cru, e o vetor de
+// balanco carregava exposicao junto com a cor. No perfil aprovado
+// (6400K, tint 0,50) o balanco e 0,9773/1,0500/0,9721, cuja luminancia
+// Rec.709 e 1,028920: **+0,0411 EV que ninguem pediu**. Contra o
+// `exposure=-0,030` do cfg, a exposicao efetiva era +0,0111 -- com o sinal
+// trocado em relacao ao que o arquivo e o log diziam.
+//
+// Isso nao e so contabilidade. O eixo verde-magenta e o que mais mexe na
+// luminancia, porque G pesa 0,7152 dos tres: varrer tint de 0,0 a 1,0
+// desloca a imagem em 0,0803 EV, ou 5,7% de brilho. Enquanto tint era uma
+// constante isso era um erro fixo, absorvido na calibracao sem que nada
+// acusasse. A partir da 0.19.0 tint passa a se mover com o clima, e o erro
+// passa a se mover junto: a imagem clarearia ao ficar esverdeada e escureceria
+// ao esfriar, sozinha. Cor que muda brilho e exatamente o que se le como
+// irreal.
+//
+// Dividir pela propria luminancia deixa o vetor puramente cromatico, e ai
+// `exposure` volta a ser a unica coisa que controla brilho. A compensacao de
+// +0,0411 EV foi para a exposicao base do cfg, entao a saida de hoje nao muda
+// um codigo -- os dois sao multiplicacoes em linear e comutam.
+//
+// O max() nunca morde: a luminancia do balanco fica entre 0,95 e 1,05 em todo
+// o dominio de Temperature e Tint. Esta ali para que um perfil futuro absurdo
+// nao vire divisao por zero.
 float3 apply_temperature(float3 color)
 {
     float shift = clamp((Temperature - 6500.0) / 3500.0, -1.0, 1.0);
@@ -97,7 +123,7 @@ float3 apply_temperature(float3 color)
         1.0 - 0.08 * shift - 0.05 * tint,
         1.0 + 0.10 * tint,
         1.0 + 0.10 * shift - 0.05 * tint);
-    return color * balance;
+    return color * (balance / max(luminance(balance), 1e-4));
 }
 
 // Ombro: os altos comprimem para 1 em vez de bater nele.

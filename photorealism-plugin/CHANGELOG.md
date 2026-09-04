@@ -1,5 +1,54 @@
 # Changelog
 
+## Pacote 0.18.2 - 2026-09-04
+
+O balanco de branco carregava exposicao, e a imagem nao muda.
+
+No perfil aprovado (6400K, tint 0,50) o vetor de balanco e
+0,9773/1,0500/0,9721, cuja luminancia Rec.709 e **1,028920**: +0,0411 EV que
+ninguem pediu. Contra o `exposure=-0,030` do cfg, a exposicao efetiva era
+**+0,0111 -- com o sinal trocado** em relacao ao que o arquivo e o log diziam.
+O numero estava escondido desde a 0.1.2.
+
+Enquanto `tint` era constante isso era um erro fixo, absorvido na calibracao.
+A partir da 0.19.0 `tint` passa a se mover com o clima e o erro se move junto:
+varrer tint de 0,0 a 1,0 desloca a imagem em 0,0803 EV, ou **5,7% de brilho**.
+O eixo verde-magenta e o pior dos dois porque G pesa 0,7152 da luminancia. A
+imagem clarearia ao ficar esverdeada e escureceria ao esfriar, sozinha. Cor que
+muda brilho e o que se le como irreal.
+
+`apply_temperature` passa a dividir o balanco pela propria luminancia, e os
++0,0411 EV foram para a exposicao base do cfg (-0,09 -> -0,0488697), onde da
+para ler. Exposicao e balanco sao multiplicacao em linear e comutam, entao a
+saida de hoje **nao muda**: medido sobre uma captura real do ETS2, 9 pixels de
+11.059.200 diferem em 1 codigo (0,0001%), que e arredondamento de quantizacao.
+A deriva ao varrer tint cai de 5,85% para 0,82%, e o que sobra e croma de
+verdade passando pela curva de potencia e pelo ombro.
+
+`tests/white_balance_test.cpp` fixa a propriedade em todo o dominio de
+`temperature` e `tint`, incluindo que a normalizacao preserva as razoes entre
+canais -- ela tira brilho, nao muda a cor. O teste ESPELHA o HLSL, porque a
+funcao vive no shader; `validate.sh` amarra as duas copias com um grep na linha
+da divisao e outro no numero medido. Uma linha nova de log passa a trazer o
+balanco bruto, sua luminancia em EV, o normalizado e o ganho resultante, para
+que isso nao possa se esconder de novo.
+
+### De onde veio
+
+Da avaliacao do repositorio `roimehrez/photorealism` (Screened Poisson
+Equation, BMVC 2017) que o usuario trouxe. Registro completo em
+`references/screened-poisson-avaliacao-0.18.2.md`, incluindo a recomendacao que
+eu dei e que a medicao derrubou.
+
+Resumo do que foi medido: o solve esparso global do repositorio e
+**identico a `passa-baixa(graduado) + passa-alta(original)`** (verificado, erro
+1e-13). Mas aplicado aqui ele apagaria o realce aprovado -- a curva tonal do
+plugin so distorce estrutura em ±8%, e os 15,3% de ganho de gradiente sao
+`sharpness` e `local_contrast`, que sao deliberados. E a distorcao de
+luminancia que eu atribui ao balanco era, num controle com ganho acromatico de
+mesma magnitude, 0,046% de matiz e o resto exposicao. Do paper ficou a pergunta
+certa, nao o metodo.
+
 ## Pacote 0.18.1 - 2026-09-04
 
 Correcao de tres defeitos que o primeiro log de jogo da 0.18.0 revelou. Dois

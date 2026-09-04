@@ -3,6 +3,7 @@
 #include "runtime.hpp"
 
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -762,6 +763,39 @@ void log_stack(const CalibrationStack& stack, const Settings& settings) {
         settings.black_lift_r,
         settings.black_lift_g,
         settings.black_lift_b);
+
+    // 0.18.2. O vetor de balanco vai para o log com a luminancia que ele
+    // carrega, e nao so com os tres fatores.
+    //
+    // Ate a 0.18.1 esse ganho era invisivel: o cfg dizia exposure=-0,030, o
+    // log repetia, e o balanco somava +0,0411 EV por fora, entao a exposicao
+    // real era +0,0111 -- com o sinal trocado. O shader agora normaliza, de
+    // modo que ganho_luma tem que sair 1,000000 e ganho_EV +0,0000. Se um
+    // perfil futuro fizer esse numero sair de 1, e porque alguem devolveu
+    // exposicao escondida ao balanco, e a linha diz isso na hora.
+    const float wb_shift =
+        clamp_value((settings.temperature - 6500.0f) / 3500.0f, -1.0f, 1.0f);
+    const float wb_tint = clamp_value(settings.tint, -1.0f, 1.0f);
+    const float wb_r = 1.0f - 0.08f * wb_shift - 0.05f * wb_tint;
+    const float wb_g = 1.0f + 0.10f * wb_tint;
+    const float wb_b = 1.0f + 0.10f * wb_shift - 0.05f * wb_tint;
+    const float wb_luma = 0.2126f * wb_r + 0.7152f * wb_g + 0.0722f * wb_b;
+    const float wb_norm = wb_luma > 1e-4f ? wb_luma : 1e-4f;
+    log_message(
+        "Balanco de branco 0.18.2: bruto=%.4f/%.4f/%.4f luma_bruta=%.6f "
+        "(%+.4f EV) normalizado=%.4f/%.4f/%.4f ganho_luma=%.6f (%+.4f EV).",
+        static_cast<double>(wb_r),
+        static_cast<double>(wb_g),
+        static_cast<double>(wb_b),
+        static_cast<double>(wb_luma),
+        static_cast<double>(std::log2(wb_luma)),
+        static_cast<double>(wb_r / wb_norm),
+        static_cast<double>(wb_g / wb_norm),
+        static_cast<double>(wb_b / wb_norm),
+        static_cast<double>(
+            (0.2126f * wb_r + 0.7152f * wb_g + 0.0722f * wb_b) / wb_norm),
+        static_cast<double>(std::log2(
+            (0.2126f * wb_r + 0.7152f * wb_g + 0.0722f * wb_b) / wb_norm)));
     log_message(
         "Depth linearization 0.6.4: reversed_z=sim near_plane=%.4f "
         "preview_distance=%.1f vertical_fov=%.1f.",

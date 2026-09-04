@@ -208,7 +208,8 @@ for scene_observer_message in \
   'Observador de cena 0.18.0 ativo' \
   'Modulo observador de cena 0.18.0' \
   'Cena 0.18.0: ceu_R/B=%.3f mediana=%.1f faixa_p90-p10=%.1f' \
-  'Perfil efetivo (cor): tint=%.3f'; do
+  'Perfil efetivo (cor): tint=%.3f' \
+  'Balanco de branco 0.18.2: bruto=%.4f/%.4f/%.4f luma_bruta=%.6f'; do
   if ! grep -Fq "${scene_observer_message}" "${dxgi_strings}"; then
     echo "Observador de cena 0.18.0 incompleto: ${scene_observer_message}" >&2
     exit 1
@@ -542,7 +543,7 @@ fi
 # "Shader visual aprovado foi alterado" e as guardas nomeadas nunca falavam.
 # Uma guarda muda nao guarda coisa alguma.
 visual_shader="${project_dir}/shaders/photorealism.hlsl"
-expected_visual_shader_sha256="a93788e3924ac235170816f03803d138306a212aae0290bcfc1cdc482a2ca911"
+expected_visual_shader_sha256="ac079b51da5b4206f3b97f3a38112c50a09b1f2dc512e7da9d9567589152b15a"
 actual_visual_shader_sha256="$(sha256sum "${visual_shader}" | awk '{print $1}')"
 if [[ "${actual_visual_shader_sha256}" != "${expected_visual_shader_sha256}" ]]; then
   echo "Shader visual aprovado foi alterado: ${actual_visual_shader_sha256}" >&2
@@ -632,6 +633,34 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   -o "${scene_features_test}"
 "${scene_features_test}"
 
+# 0.18.2. O balanco de branco tem que sair do shader dividido pela propria
+# luminancia. Sem isto o vetor volta a carregar exposicao: no perfil aprovado
+# sao +0,0411 EV contra um exposure=-0,030 no cfg, ou seja o sinal trocado. E
+# a partir da 0.19.0, com tint se movendo com o clima, o erro se move junto e a
+# imagem clareia sozinha ao ficar esverdeada.
+if ! grep -Fq 'color * (balance / max(luminance(balance), 1e-4))' \
+  "${project_dir}/shaders/photorealism.hlsl"; then
+  echo "apply_temperature parou de normalizar o balanco em luminancia: o \
+balanco volta a carregar exposicao escondida." >&2
+  exit 1
+fi
+
+# white_balance_test.cpp ESPELHA a funcao do shader, porque ela vive em HLSL.
+# Esta guarda e o que amarra as duas copias: o teste tem que continuar fixando
+# o mesmo numero medido que o shader produz.
+if ! grep -Fq 'assert(near(luminance(raw), 1.028920f, 1e-5f));' \
+  "${project_dir}/tests/white_balance_test.cpp"; then
+  echo "O teste parou de fixar a luminancia medida do balanco bruto (1,028920 \
+no perfil aprovado): e o numero que estava escondido desde a 0.1.2." >&2
+  exit 1
+fi
+
+white_balance_test="/tmp/photorealism-white-balance-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/white_balance_test.cpp" \
+  -o "${white_balance_test}"
+"${white_balance_test}"
+
 scene_formats_test="/tmp/photorealism-scene-formats-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/tests/scene_formats_test.cpp" \
@@ -674,7 +703,7 @@ effective_profile="$(awk -F= '
 # que importa. Uma guarda que explica uma regressao sutil so serve se for ela
 # a falar. Nesta ordem o hash continua pegando tudo que as guardas nao
 # cobrem, e so isso.
-expected_cfg_sha256="5491d9c98e7e66e474cfafd4ed8ca876636f7942310d4b47b2255d11d04c2579"
+expected_cfg_sha256="32d9b5860594e327c7b8fa68860a1611e15409e4f681d34e3e88ef65b5ee5edf"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
@@ -684,7 +713,11 @@ fi
 # pretos para baixo contra o alvo, e o piso passou a ser black_lift. Os tres
 # ultimos campos sao a curva de tom, e entraram no perfil justamente para que
 # uma mudanca neles nao passe por uma camada de delta sem ser vista.
-expected_profile="6400.0 -0.030 1.070 0.970 0.050 0.100 -0.180 0.000"
+# exposure passou de -0.030 para 0.011 na 0.18.2 e a IMAGEM NAO MUDOU. O
+# balanco de branco carregava +0,0411 EV escondidos e agora e normalizado em
+# luminancia; os +0,0411 EV vieram para a exposicao base, onde da para ler.
+# Exposicao e balanco sao multiplicacao em linear e comutam.
+expected_profile="6400.0 0.011 1.070 0.970 0.050 0.100 -0.180 0.000"
 expected_profile="${expected_profile} 0.080 0.240 0.200 0.030"
 expected_profile="${expected_profile} 0.001398 0.002480 0.002268 0.350 0.500"
 if [[ "${effective_profile}" != "${expected_profile}" ]]; then
