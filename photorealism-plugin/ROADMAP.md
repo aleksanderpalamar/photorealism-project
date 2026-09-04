@@ -480,11 +480,21 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   log; ancoras de `temperature`/`tint` por condicao; interpolacao **continua**
   entre elas, porque a margem entre condicoes e de so 1,5x sobre a dispersao
   interna e classe dura saltaria a cor ao virar a cabine; e suavizacao com
-  constante de tempo de segundos mais histerese. Cuidado central: o jogo ja
-  renderiza a cor da hora -- a referencia de anoitecer tem ceu R/B 0,906 na
-  saida crua do ATS. Somar uma rampa de relogio por cima conta duas vezes e se
-  afasta do fotorrealismo. O alvo e o ajuste que **falta** em cada condicao,
-  nao uma rampa artistica;
+  **constante de tempo de 2 a 3 minutos** mais histerese. Cuidado central: o
+  jogo ja renderiza a cor da hora. **Medido no ETS2 na 0.18.1**
+  (`references/scene-baseline-ets2-0.18.1.md`, 36 amostras de jogo): o ceu R/B
+  sobe +0,0152 por minuto sozinho, antes do grade, e a hora do dia explica 58%
+  de toda a variacao de cor da sessao. Somar uma rampa de relogio por cima
+  conta duas vezes. O alvo e o ajuste que **falta** em cada condicao, nao uma
+  rampa artistica. Tres numeros ja saem medidos e substituem estimativa:
+  a faixa do ceu R/B no ETS2 e 4,2x mais larga que a do ATS, entao **nenhum
+  limiar do ATS serve**; o residuo depois da hora do dia tem desvio 0,069 e
+  decorrelaciona em menos de um minuto, o que e a camera virando e nao mudanca
+  de tempo, e e o que fixa a janela em 2-3 minutos; e 10% das amostras nao sao
+  jogo (carregamento, fade, mapa), uma delas devolvendo o valor mais quente da
+  sessao a partir de um quadro quase preto, entao a porta de jogo vem antes do
+  detector. Falta o que so o usuario pode dar: **as linhas rotuladas pela
+  condicao na tela**, sem as quais nao ha ancora de cor por condicao;
 - **0.20.0** raios de sol. E o efeito que as referencias realmente
   mostram, e que a medicao do bloom revelou: estriados radiais saindo do sol
   atras da linha de arvores, projetados no teto escuro da cabine. Sao

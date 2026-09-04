@@ -1,0 +1,223 @@
+[10:43:34.750] Photorealism Plugin 0.11.0: nucleo grafico carregado via dxgi.dll.
+[10:43:47.226] Proxy DXGI conectado a implementacao do sistema.
+[10:43:48.498] Steam overlay detectado e estabilizado antes dos hooks: gameoverlayrenderer64.dll=00006FFFF9F00000 amostras=4.
+[10:43:49.604] Hooks Present/Present1/ResizeBuffers/OMSetRenderTargets*/ClearDepthStencilView instalados; feature level=0xB000 Present1=ativo-slot22.
+[10:43:49.604] Auditoria Present 0.11.0: phase=install method=Present entry=00006FFFF9CAAB70 current=00006FFFFA101ED0 current_owner=S:\common\Euro Truck Simulator 2\bin\win_x64\dxgi.dll ours=00006FFFFA101ED0 downstream=00006FFFF99EF9B0 downstream_owner=S:\common\Euro Truck Simulator 2\bin\win_x64\d3d11.dll state=nosso-hook-externo.
+[10:43:49.604] Auditoria Present 0.11.0: phase=install method=Present1 entry=00006FFFF9CAABE0 current=00006FFFFA102030 current_owner=S:\common\Euro Truck Simulator 2\bin\win_x64\dxgi.dll ours=00006FFFFA102030 downstream=00006FFFF99F0700 downstream_owner=S:\common\Euro Truck Simulator 2\bin\win_x64\d3d11.dll state=nosso-hook-externo.
+[10:43:49.713] ResizeBuffers solicitado: swap_chain=000000003EB2D5E0 buffers=3 size=119x34 format=0 flags=0x00000800.
+[10:43:49.717] ResizeBuffers concluido: swap_chain=000000003EB2D5E0 result=0x00000000.
+[10:43:49.717] ResizeBuffers solicitado: swap_chain=000000003EB2D5E0 buffers=3 size=1440x900 format=0 flags=0x00000800.
+[10:43:49.718] ResizeBuffers concluido: swap_chain=000000003EB2D5E0 result=0x00000000.
+[10:43:50.108] Auditoria Present 0.11.0: phase=post-install-500ms method=Present entry=00006FFFF9CAAB70 current=00006FFFFA101ED0 current_owner=S:\common\Euro Truck Simulator 2\bin\win_x64\dxgi.dll ours=00006FFFFA101ED0 downstream=00006FFFF99EF9B0 downstream_owner=S:\common\Euro Truck Simulator 2\bin\win_x64\d3d11.dll state=nosso-hook-externo.
+[10:43:50.108] Auditoria Present 0.11.0: phase=post-install-500ms method=Present1 entry=00006FFFF9CAABE0 current=00006FFFFA102030 current_owner=S:\common\Euro Truck Simulator 2\bin\win_x64\dxgi.dll ours=00006FFFFA102030 downstream=00006FFFF99F0700 downstream_owner=S:\common\Euro Truck Simulator 2\bin\win_x64\d3d11.dll state=nosso-hook-externo.
+[10:43:51.098] ResizeBuffers solicitado: swap_chain=000000003EB2D5E0 buffers=3 size=2560x1440 format=0 flags=0x00000800.
+[10:43:51.100] ResizeBuffers concluido: swap_chain=000000003EB2D5E0 result=0x00000000.
+[10:43:51.101] ResizeBuffers solicitado: swap_chain=000000003EB2D5E0 buffers=3 size=2560x1440 format=0 flags=0x00000800.
+[10:43:51.102] ResizeBuffers concluido: swap_chain=000000003EB2D5E0 result=0x00000000.
+[10:43:51.477] Camadas cumulativas: base_0.1.2=ativa visual_0.2.0=ativa rain_overcast_0.3.0=ativa.
+[10:43:51.477] Perfil efetivo: temperature=6400.0 exposure=-0.030 contrast=1.070 saturation=0.970 vibrance=0.050 shadows=0.100 highlights=-0.180 blacks=0.000 whites=0.080 local_contrast=0.240 sharpness=0.200 vignette=0.030.
+[10:43:51.477] Perfil efetivo (cor): tint=0.500 highlight_rolloff=0.350 black_lift=0.001398/0.002480/0.002268.
+[10:43:51.477] Depth linearization 0.6.4: reversed_z=sim near_plane=0.1000 preview_distance=50.0 vertical_fov=60.0.
+[10:43:51.477] Modulo SSAO 0.7.0: ativo samples=8 radius=0.800 intensity=0.280 bias=0.040 fade=30.0-70.0 edge_rejection=1.50.
+[10:43:51.477] Modulo SSAO refinement 0.8.0: ativo samples=16 highlight_protection=0.55-0.95 ao_floor=0.35.
+[10:43:51.477] Modulo SSAO interior 0.9.0: ativo faixa=2.0-8.0m radius=0.450 intensity=0.200 bias=0.050 edge_rejection=1.75.
+[10:43:51.477] Modulo temporal 0.10.0: ativo history_weight=0.65 depth_rejection=0.020 color_rejection=0.080.
+[10:43:51.478] Modulo bloom 0.17.0: ativo threshold=0.850 knee=0.060 intensity=0.020 radius=0.0300 (licenca artistica; so o limiar e medido).
+[10:43:51.478] Modulo observador de cena 0.18.0: ativo intervalo=30 frames log=30s (mede o frame pre-grade; nao altera a imagem).
+[10:43:51.478] Telemetria GPU inicializada: 8 amostras em anel, relatorio=10s.
+[10:43:51.610] Auditoria Present 0.11.0: phase=post-install-2000ms method=Present entry=00006FFFF9CAAB70 current=00006FFFFA101ED0 current_owner=S:\common\Euro Truck Simulator 2\bin\win_x64\dxgi.dll ours=00006FFFFA101ED0 downstream=00006FFFF99EF9B0 downstream_owner=S:\common\Euro Truck Simulator 2\bin\win_x64\d3d11.dll state=nosso-hook-externo.
+[10:43:51.610] Auditoria Present 0.11.0: phase=post-install-2000ms method=Present1 entry=00006FFFF9CAABE0 current=00006FFFFA102030 current_owner=S:\common\Euro Truck Simulator 2\bin\win_x64\dxgi.dll ours=00006FFFFA102030 downstream=00006FFFF99F0700 downstream_owner=S:\common\Euro Truck Simulator 2\bin\win_x64\d3d11.dll state=nosso-hook-externo.
+[10:43:51.938] Shaders Photorealism compilados: visual=ok depth_preview=ok ssao_0.9.1=ok temporal_0.10.0=ok bloom_0.17.0=ok.
+[10:43:51.938] Pipeline D3D11 inicializado.
+[10:43:51.939] Descoberta depth 0.10.1 iniciada por backbuffer: cycle=1 backbuffer=2560x1440 format=87 janela=30000ms early=3000ms resources=256 view_cache=4096.
+[10:43:51.939] Recursos de frame criados: 2560x1440 format=87 ssao_intermediate=ok temporal_spatial=ok.
+[10:43:51.939] Bloom 0.17.0 com piramide de 5 niveis: 1280x720 ate 80x45.
+[10:43:51.939] Bloom 0.17.0 ativo: niveis=5 threshold=0.850 knee=0.060 intensity=0.020 radius=0.0300.
+[10:43:51.939] SSAO 0.9.1 aguardando depth e recursos validos; o passe visual aprovado permanece ativo.
+[10:43:51.939] Resolve temporal 0.10.0 aguardando depth e recursos validos; pilha visual/SSAO permanece ativa.
+[10:43:51.940] Observador de cena 0.18.0 ativo: fonte 2560x1440 format=90 amostrado como 87, mip 5 (80x45 = 3600 pixels), intervalo=30 frames, log=30s.
+[10:43:51.940] Primeiro frame processado: 2560x1440 format=87 srgb_manual_entrada=nao srgb_manual_saida=nao ssao_solicitado=sim temporal_solicitado=sim.
+[10:43:51.941] Steam screenshot 0.10.4 ativo via ISteamScreenshots v003: ScreenshotRequested_t=2302, readback assincrono e exatamente um WriteScreenshot por toque; deduplicacao=750ms e nenhuma tecla interceptada.
+[10:43:51.941] Auditoria Present 0.11.0: phase=first-runtime-call method=Present entry=00006FFFF9CAAB70 current=00006FFFFA101ED0 current_owner=S:\common\Euro Truck Simulator 2\bin\win_x64\dxgi.dll ours=00006FFFFA101ED0 downstream=00006FFFF99EF9B0 downstream_owner=S:\common\Euro Truck Simulator 2\bin\win_x64\d3d11.dll state=nosso-hook-externo.
+[10:43:54.401] Cena 0.18.0: ceu_R/B=1.471 mediana=0.0 faixa_p90-p10=0.0 saturacao=0.019 media=4.7 amostra=3600.
+[10:43:54.613] Auditoria Present 0.11.0: phase=post-install-5000ms method=Present entry=00006FFFF9CAAB70 current=00006FFFFA101ED0 current_owner=S:\common\Euro Truck Simulator 2\bin\win_x64\dxgi.dll ours=00006FFFFA101ED0 downstream=00006FFFF99EF9B0 downstream_owner=S:\common\Euro Truck Simulator 2\bin\win_x64\d3d11.dll state=nosso-hook-externo.
+[10:43:54.613] Auditoria Present 0.11.0: phase=post-install-5000ms method=Present1 entry=00006FFFF9CAABE0 current=00006FFFFA102030 current_owner=S:\common\Euro Truck Simulator 2\bin\win_x64\dxgi.dll ours=00006FFFFA102030 downstream=00006FFFF99F0700 downstream_owner=S:\common\Euro Truck Simulator 2\bin\win_x64\d3d11.dll state=nosso-hook-externo.
+[10:44:01.479] Custo GPU do passe: media=2.247 ms minimo=0.840 ms pico=3.158 ms amostras=475 descartadas=0.
+[10:44:11.827] Custo GPU do passe: media=2.496 ms minimo=0.926 ms pico=3.409 ms amostras=459 descartadas=0.
+[10:44:21.830] Custo GPU do passe: media=2.391 ms minimo=0.930 ms pico=3.372 ms amostras=604 descartadas=0.
+[10:44:24.697] Cena 0.18.0: ceu_R/B=0.902 mediana=28.3 faixa_p90-p10=175.4 saturacao=0.175 media=63.7 amostra=3600.
+[10:44:31.830] Custo GPU do passe: media=2.408 ms minimo=2.144 ms pico=3.220 ms amostras=600 descartadas=0.
+[10:44:41.831] Custo GPU do passe: media=2.321 ms minimo=2.003 ms pico=3.464 ms amostras=600 descartadas=0.
+[10:44:51.831] Custo GPU do passe: media=2.239 ms minimo=0.845 ms pico=3.714 ms amostras=591 descartadas=0.
+[10:44:52.515] Descoberta depth 0.10.1 concluida: cycle=1 mode=window-timeout resources=3 grupos=2 resource_evictions=0 view_cache_replacements=0 janela=30000ms minimum_bindings=1000 minimum_rate=400/s scaled_area=110%.
+[10:44:52.515] Depth principal 0.10.1 ainda nao foi retido com seguranca; nenhum recurso elegivel atingiu a confianca minima e a descoberta continuara automaticamente no cycle=2.
+[10:44:52.515] Depth grupo #1: size=2560x1440 area_scale=1.000x aspect_error=0.00% texture_format=19(R32G8X24_TYPELESS) view_format=20(D32_FLOAT_S8X24_UINT) samples=1 bind_flags=0x00000048 shader_readable=sim resources=2 bindings=214 score=50960793600.
+[10:44:52.515] Depth grupo #2: size=1024x1024 area_scale=0.284x aspect_error=43.75% texture_format=19(R32G8X24_TYPELESS) view_format=20(D32_FLOAT_S8X24_UINT) samples=1 bind_flags=0x00000048 shader_readable=sim resources=1 bindings=42 score=2818048.
+[10:44:52.516] Depth recurso #1: resource=00000000457CF7D0 size=2560x1440 texture_format=19(R32G8X24_TYPELESS) view_format=20(D32_FLOAT_S8X24_UINT) samples=1 bind_flags=0x00000048 shader_readable=sim views=6 bindings=189 score=44826624000 elegibilidade=bindings-insuficientes.
+[10:44:52.516] Depth recurso #2: resource=0000000045CE76C0 size=2560x1440 texture_format=19(R32G8X24_TYPELESS) view_format=20(D32_FLOAT_S8X24_UINT) samples=1 bind_flags=0x00000048 shader_readable=sim views=25 bindings=25 score=6134169600 elegibilidade=bindings-insuficientes.
+[10:44:52.516] Depth recurso #3: resource=0000000045CE6F40 size=1024x1024 texture_format=19(R32G8X24_TYPELESS) view_format=20(D32_FLOAT_S8X24_UINT) samples=1 bind_flags=0x00000048 shader_readable=sim views=42 bindings=42 score=2818048 elegibilidade=bindings-insuficientes.
+[10:44:54.799] Cena 0.18.0: ceu_R/B=1.078 mediana=115.2 faixa_p90-p10=117.8 saturacao=0.076 media=108.5 amostra=3600.
+[10:44:57.698] Descoberta depth 0.10.1 concluida: cycle=2 mode=early-confidence resources=2 grupos=2 resource_evictions=0 view_cache_replacements=0 janela=30000ms minimum_bindings=1000 minimum_rate=400/s scaled_area=110%.
+[10:44:57.699] Depth principal 0.10.1 selecionado automaticamente: resource=0000000045CE76C0 generation=1 size=2560x1440 texture_format=19(R32G8X24_TYPELESS) samples=1 bind_flags=0x00000048 bindings=1240 score=292788633600.
+[10:44:57.699] Depth grupo #1: size=2560x1440 area_scale=1.000x aspect_error=0.00% texture_format=19(R32G8X24_TYPELESS) view_format=20(D32_FLOAT_S8X24_UINT) samples=1 bind_flags=0x00000048 shader_readable=sim resources=1 bindings=1240 score=292788633600.
+[10:44:57.699] Depth grupo #2: size=1024x1024 area_scale=0.284x aspect_error=43.75% texture_format=19(R32G8X24_TYPELESS) view_format=20(D32_FLOAT_S8X24_UINT) samples=1 bind_flags=0x00000048 shader_readable=sim resources=1 bindings=40 score=2686976.
+[10:44:57.699] Depth recurso #1: resource=0000000045CE76C0 size=2560x1440 texture_format=19(R32G8X24_TYPELESS) view_format=20(D32_FLOAT_S8X24_UINT) samples=1 bind_flags=0x00000048 shader_readable=sim views=32 bindings=1240 score=292788633600 elegibilidade=aceito.
+[10:44:57.699] Depth recurso #2: resource=0000000045CE6F40 size=1024x1024 texture_format=19(R32G8X24_TYPELESS) view_format=20(D32_FLOAT_S8X24_UINT) samples=1 bind_flags=0x00000048 shader_readable=sim views=35 bindings=40 score=2686976 elegibilidade=bindings-insuficientes.
+[10:44:57.699] Recursos de copia depth criados: generation=1 size=2560x1440 source_format=19 resource_format=19 view_format=21.
+[10:44:57.700] Recursos temporais 0.10.0 criados: color=2560x1440 depth=2560x1440 generation=1.
+[10:44:57.700] SSAO 0.9.1 ativo: source=2560x1440 format=19 generation=1 samples=16 radius=0.800 intensity=0.280 fade=30.0-70.0 interior=ativo.
+[10:44:57.700] Resolve temporal 0.10.0 ativo: source=2560x1440 depth=2560x1440 generation=1 history_weight=0.65 depth_rejection=0.020 color_rejection=0.080.
+[10:44:57.700] Historico temporal 0.10.0 inicializado: color=2560x1440 depth=2560x1440 generation=1.
+[10:45:01.832] Custo GPU do passe: media=1.880 ms minimo=0.721 ms pico=2.783 ms amostras=573 descartadas=0.
+[10:45:11.840] Custo GPU do passe: media=2.342 ms minimo=1.546 ms pico=6.025 ms amostras=524 descartadas=0.
+[10:45:21.840] Custo GPU do passe: media=2.093 ms minimo=1.986 ms pico=2.321 ms amostras=600 descartadas=0.
+[10:45:23.107] Historico temporal 0.10.0 invalidado: alternancia Home.
+[10:45:23.108] Efeito desativado pelo atalho Home.
+[10:45:27.157] Efeito ativado pelo atalho Home.
+[10:45:27.157] Historico temporal 0.10.0 inicializado: color=2560x1440 depth=2560x1440 generation=1.
+[10:45:27.607] Cena 0.18.0: ceu_R/B=0.742 mediana=49.5 faixa_p90-p10=121.4 saturacao=0.225 media=60.6 amostra=3600.
+[10:45:31.855] Custo GPU do passe: media=2.046 ms minimo=1.931 ms pico=2.470 ms amostras=358 descartadas=0.
+[10:45:41.857] Custo GPU do passe: media=2.169 ms minimo=2.001 ms pico=2.609 ms amostras=600 descartadas=0.
+[10:45:51.857] Custo GPU do passe: media=2.031 ms minimo=1.998 ms pico=2.163 ms amostras=600 descartadas=0.
+[10:45:57.609] Cena 0.18.0: ceu_R/B=0.695 mediana=58.2 faixa_p90-p10=141.7 saturacao=0.186 media=67.9 amostra=3600.
+[10:46:01.859] Custo GPU do passe: media=2.019 ms minimo=1.968 ms pico=2.208 ms amostras=601 descartadas=0.
+[10:46:11.873] Custo GPU do passe: media=1.982 ms minimo=1.916 ms pico=2.324 ms amostras=598 descartadas=0.
+[10:46:21.889] Custo GPU do passe: media=2.005 ms minimo=1.973 ms pico=2.144 ms amostras=601 descartadas=0.
+[10:46:27.648] Cena 0.18.0: ceu_R/B=0.799 mediana=51.2 faixa_p90-p10=68.0 saturacao=0.110 media=54.6 amostra=3600.
+[10:46:31.898] Custo GPU do passe: media=3.100 ms minimo=1.976 ms pico=4.891 ms amostras=601 descartadas=0.
+[10:46:41.898] Custo GPU do passe: media=3.558 ms minimo=3.095 ms pico=4.298 ms amostras=600 descartadas=0.
+[10:46:51.898] Custo GPU do passe: media=3.696 ms minimo=3.215 ms pico=5.000 ms amostras=600 descartadas=0.
+[10:46:57.657] Cena 0.18.0: ceu_R/B=1.000 mediana=0.0 faixa_p90-p10=0.0 saturacao=0.000 media=0.0 amostra=3600.
+[10:47:01.907] Custo GPU do passe: media=2.810 ms minimo=1.901 ms pico=4.115 ms amostras=600 descartadas=0.
+[10:47:11.907] Custo GPU do passe: media=1.973 ms minimo=1.838 ms pico=2.096 ms amostras=600 descartadas=0.
+[10:47:21.924] Custo GPU do passe: media=1.909 ms minimo=1.835 ms pico=2.101 ms amostras=601 descartadas=0.
+[10:47:27.657] Cena 0.18.0: ceu_R/B=0.786 mediana=36.8 faixa_p90-p10=81.8 saturacao=0.274 media=44.3 amostra=3600.
+[10:47:31.941] Custo GPU do passe: media=2.004 ms minimo=1.961 ms pico=2.214 ms amostras=601 descartadas=0.
+[10:47:41.943] Custo GPU do passe: media=1.950 ms minimo=1.866 ms pico=2.169 ms amostras=601 descartadas=0.
+[10:47:51.958] Custo GPU do passe: media=1.904 ms minimo=1.837 ms pico=2.139 ms amostras=600 descartadas=0.
+[10:47:58.143] Cena 0.18.0: ceu_R/B=0.735 mediana=58.9 faixa_p90-p10=128.0 saturacao=0.224 media=60.5 amostra=3600.
+[10:48:01.958] Custo GPU do passe: media=1.971 ms minimo=1.879 ms pico=2.136 ms amostras=600 descartadas=0.
+[10:48:11.975] Custo GPU do passe: media=1.994 ms minimo=1.863 ms pico=2.176 ms amostras=601 descartadas=0.
+[10:48:21.975] Custo GPU do passe: media=1.953 ms minimo=1.929 ms pico=2.100 ms amostras=600 descartadas=0.
+[10:48:28.143] Cena 0.18.0: ceu_R/B=0.760 mediana=53.0 faixa_p90-p10=151.2 saturacao=0.217 media=64.5 amostra=3600.
+[10:48:31.975] Custo GPU do passe: media=1.985 ms minimo=1.957 ms pico=2.102 ms amostras=600 descartadas=0.
+[10:48:41.975] Custo GPU do passe: media=1.982 ms minimo=1.945 ms pico=2.111 ms amostras=600 descartadas=0.
+[10:48:51.976] Custo GPU do passe: media=1.968 ms minimo=1.938 ms pico=2.082 ms amostras=600 descartadas=0.
+[10:48:58.143] Cena 0.18.0: ceu_R/B=0.779 mediana=61.0 faixa_p90-p10=188.5 saturacao=0.198 media=70.9 amostra=3600.
+[10:49:01.975] Custo GPU do passe: media=1.962 ms minimo=1.948 ms pico=2.067 ms amostras=600 descartadas=0.
+[10:49:11.992] Custo GPU do passe: media=1.983 ms minimo=1.960 ms pico=2.083 ms amostras=601 descartadas=0.
+[10:49:21.992] Custo GPU do passe: media=1.985 ms minimo=1.967 ms pico=2.083 ms amostras=600 descartadas=0.
+[10:49:28.144] Cena 0.18.0: ceu_R/B=0.792 mediana=66.0 faixa_p90-p10=186.6 saturacao=0.170 media=75.5 amostra=3600.
+[10:49:31.993] Custo GPU do passe: media=1.962 ms minimo=1.937 ms pico=2.076 ms amostras=600 descartadas=0.
+[10:49:42.008] Custo GPU do passe: media=2.094 ms minimo=1.966 ms pico=3.370 ms amostras=601 descartadas=0.
+[10:49:52.024] Custo GPU do passe: media=2.164 ms minimo=1.742 ms pico=2.393 ms amostras=601 descartadas=0.
+[10:49:58.156] Cena 0.18.0: ceu_R/B=0.781 mediana=70.2 faixa_p90-p10=157.2 saturacao=0.187 media=89.5 amostra=3600.
+[10:50:02.040] Custo GPU do passe: media=2.105 ms minimo=1.967 ms pico=2.290 ms amostras=601 descartadas=0.
+[10:50:12.040] Custo GPU do passe: media=2.105 ms minimo=2.023 ms pico=2.245 ms amostras=600 descartadas=0.
+[10:50:22.040] Custo GPU do passe: media=2.199 ms minimo=2.091 ms pico=2.355 ms amostras=600 descartadas=0.
+[10:50:28.157] Cena 0.18.0: ceu_R/B=0.758 mediana=63.7 faixa_p90-p10=158.0 saturacao=0.210 media=84.5 amostra=3600.
+[10:50:32.040] Custo GPU do passe: media=2.076 ms minimo=2.000 ms pico=2.332 ms amostras=600 descartadas=0.
+[10:50:42.044] Custo GPU do passe: media=2.083 ms minimo=1.994 ms pico=2.216 ms amostras=600 descartadas=0.
+[10:50:52.044] Custo GPU do passe: media=2.012 ms minimo=1.994 ms pico=2.119 ms amostras=600 descartadas=0.
+[10:50:58.646] Cena 0.18.0: ceu_R/B=0.829 mediana=54.0 faixa_p90-p10=102.4 saturacao=0.212 media=59.0 amostra=3600.
+[10:51:02.044] Custo GPU do passe: media=2.027 ms minimo=1.993 ms pico=2.172 ms amostras=600 descartadas=0.
+[10:51:12.045] Custo GPU do passe: media=2.037 ms minimo=2.012 ms pico=2.160 ms amostras=600 descartadas=0.
+[10:51:22.045] Custo GPU do passe: media=2.029 ms minimo=1.983 ms pico=2.180 ms amostras=600 descartadas=0.
+[10:51:28.660] Cena 0.18.0: ceu_R/B=0.809 mediana=33.4 faixa_p90-p10=79.5 saturacao=0.306 media=42.8 amostra=3600.
+[10:51:32.060] Custo GPU do passe: media=2.045 ms minimo=2.018 ms pico=2.173 ms amostras=601 descartadas=0.
+[10:51:42.061] Custo GPU do passe: media=2.038 ms minimo=1.998 ms pico=2.160 ms amostras=600 descartadas=0.
+[10:51:52.078] Custo GPU do passe: media=2.034 ms minimo=2.006 ms pico=2.163 ms amostras=601 descartadas=0.
+[10:51:59.147] Cena 0.18.0: ceu_R/B=0.920 mediana=48.2 faixa_p90-p10=99.3 saturacao=0.264 media=55.0 amostra=3600.
+[10:52:02.079] Custo GPU do passe: media=2.007 ms minimo=1.961 ms pico=2.655 ms amostras=600 descartadas=0.
+[10:52:12.096] Custo GPU do passe: media=2.006 ms minimo=1.973 ms pico=2.186 ms amostras=601 descartadas=0.
+[10:52:22.099] Custo GPU do passe: media=2.007 ms minimo=1.958 ms pico=2.216 ms amostras=601 descartadas=0.
+[10:52:29.150] Cena 0.18.0: ceu_R/B=0.890 mediana=40.2 faixa_p90-p10=119.3 saturacao=0.293 media=56.7 amostra=3600.
+[10:52:32.099] Custo GPU do passe: media=1.976 ms minimo=1.940 ms pico=2.175 ms amostras=600 descartadas=0.
+[10:52:42.099] Custo GPU do passe: media=1.968 ms minimo=1.926 ms pico=3.125 ms amostras=600 descartadas=0.
+[10:52:52.100] Custo GPU do passe: media=1.951 ms minimo=1.907 ms pico=2.221 ms amostras=600 descartadas=0.
+[10:52:59.649] Cena 0.18.0: ceu_R/B=0.898 mediana=52.7 faixa_p90-p10=200.6 saturacao=0.262 media=64.0 amostra=3600.
+[10:53:02.115] Custo GPU do passe: media=1.956 ms minimo=1.903 ms pico=2.173 ms amostras=601 descartadas=0.
+[10:53:12.130] Custo GPU do passe: media=1.950 ms minimo=1.908 ms pico=2.156 ms amostras=600 descartadas=0.
+[10:53:22.149] Custo GPU do passe: media=1.934 ms minimo=1.864 ms pico=2.164 ms amostras=601 descartadas=0.
+[10:53:29.649] Cena 0.18.0: ceu_R/B=0.900 mediana=57.7 faixa_p90-p10=104.9 saturacao=0.338 media=55.1 amostra=3600.
+[10:53:32.182] Custo GPU do passe: media=2.027 ms minimo=1.953 ms pico=2.252 ms amostras=602 descartadas=0.
+[10:53:42.197] Custo GPU do passe: media=2.016 ms minimo=1.882 ms pico=2.163 ms amostras=601 descartadas=0.
+[10:53:52.200] Custo GPU do passe: media=2.020 ms minimo=1.986 ms pico=2.226 ms amostras=601 descartadas=0.
+[10:54:00.149] Cena 0.18.0: ceu_R/B=0.734 mediana=49.7 faixa_p90-p10=137.2 saturacao=0.297 media=62.0 amostra=3600.
+[10:54:02.215] Custo GPU do passe: media=2.003 ms minimo=1.935 ms pico=2.218 ms amostras=600 descartadas=0.
+[10:54:12.216] Custo GPU do passe: media=1.944 ms minimo=1.837 ms pico=2.168 ms amostras=601 descartadas=0.
+[10:54:22.233] Custo GPU do passe: media=1.906 ms minimo=1.837 ms pico=2.102 ms amostras=601 descartadas=0.
+[10:54:30.149] Cena 0.18.0: ceu_R/B=0.863 mediana=34.9 faixa_p90-p10=196.4 saturacao=0.297 media=64.2 amostra=3600.
+[10:54:32.247] Custo GPU do passe: media=1.940 ms minimo=1.831 ms pico=2.451 ms amostras=600 descartadas=0.
+[10:54:42.249] Custo GPU do passe: media=1.986 ms minimo=1.854 ms pico=2.141 ms amostras=600 descartadas=0.
+[10:54:52.251] Custo GPU do passe: media=1.991 ms minimo=1.931 ms pico=2.737 ms amostras=599 descartadas=0.
+[10:55:00.185] Cena 0.18.0: ceu_R/B=0.791 mediana=55.3 faixa_p90-p10=168.1 saturacao=0.274 media=62.0 amostra=3600.
+[10:55:02.252] Custo GPU do passe: media=1.989 ms minimo=1.926 ms pico=2.162 ms amostras=600 descartadas=0.
+[10:55:12.252] Custo GPU do passe: media=2.021 ms minimo=1.974 ms pico=2.473 ms amostras=600 descartadas=0.
+[10:55:22.252] Custo GPU do passe: media=2.018 ms minimo=1.882 ms pico=2.271 ms amostras=600 descartadas=0.
+[10:55:30.683] Cena 0.18.0: ceu_R/B=0.903 mediana=40.9 faixa_p90-p10=77.4 saturacao=0.279 media=43.6 amostra=3600.
+[10:55:32.265] Custo GPU do passe: media=2.020 ms minimo=1.974 ms pico=2.215 ms amostras=600 descartadas=0.
+[10:55:42.266] Custo GPU do passe: media=2.041 ms minimo=1.997 ms pico=2.166 ms amostras=600 descartadas=0.
+[10:55:52.268] Custo GPU do passe: media=1.981 ms minimo=1.931 ms pico=2.228 ms amostras=601 descartadas=0.
+[10:56:00.701] Cena 0.18.0: ceu_R/B=0.933 mediana=32.1 faixa_p90-p10=84.4 saturacao=0.296 media=41.1 amostra=3600.
+[10:56:02.283] Custo GPU do passe: media=1.994 ms minimo=1.947 ms pico=2.174 ms amostras=600 descartadas=0.
+[10:56:12.300] Custo GPU do passe: media=2.033 ms minimo=1.967 ms pico=2.397 ms amostras=601 descartadas=0.
+[10:56:22.315] Custo GPU do passe: media=2.007 ms minimo=1.961 ms pico=2.137 ms amostras=601 descartadas=0.
+[10:56:31.184] Cena 0.18.0: ceu_R/B=0.971 mediana=45.8 faixa_p90-p10=103.9 saturacao=0.250 media=55.9 amostra=3600.
+[10:56:32.317] Custo GPU do passe: media=1.990 ms minimo=1.933 ms pico=2.215 ms amostras=600 descartadas=0.
+[10:56:42.318] Custo GPU do passe: media=2.002 ms minimo=1.963 ms pico=2.485 ms amostras=600 descartadas=0.
+[10:56:52.320] Custo GPU do passe: media=2.000 ms minimo=1.916 ms pico=2.507 ms amostras=601 descartadas=0.
+[10:57:01.186] Cena 0.18.0: ceu_R/B=0.950 mediana=41.2 faixa_p90-p10=82.5 saturacao=0.259 media=48.3 amostra=3600.
+[10:57:02.320] Custo GPU do passe: media=2.045 ms minimo=1.914 ms pico=2.255 ms amostras=600 descartadas=0.
+[10:57:12.336] Custo GPU do passe: media=2.015 ms minimo=1.980 ms pico=2.217 ms amostras=601 descartadas=0.
+[10:57:22.335] Custo GPU do passe: media=2.001 ms minimo=1.944 ms pico=2.334 ms amostras=599 descartadas=0.
+[10:57:31.186] Cena 0.18.0: ceu_R/B=0.953 mediana=29.1 faixa_p90-p10=85.1 saturacao=0.295 media=43.7 amostra=3600.
+[10:57:32.353] Custo GPU do passe: media=1.998 ms minimo=1.968 ms pico=2.196 ms amostras=601 descartadas=0.
+[10:57:42.353] Custo GPU do passe: media=2.003 ms minimo=1.983 ms pico=2.202 ms amostras=600 descartadas=0.
+[10:57:52.353] Custo GPU do passe: media=2.014 ms minimo=1.969 ms pico=2.223 ms amostras=601 descartadas=0.
+[10:58:01.186] Cena 0.18.0: ceu_R/B=1.042 mediana=61.1 faixa_p90-p10=181.7 saturacao=0.206 media=73.9 amostra=3600.
+[10:58:02.369] Custo GPU do passe: media=1.987 ms minimo=1.938 ms pico=2.188 ms amostras=601 descartadas=0.
+[10:58:12.373] Custo GPU do passe: media=2.029 ms minimo=1.946 ms pico=2.315 ms amostras=600 descartadas=0.
+[10:58:22.387] Custo GPU do passe: media=2.025 ms minimo=1.996 ms pico=2.144 ms amostras=601 descartadas=0.
+[10:58:31.188] Cena 0.18.0: ceu_R/B=0.975 mediana=40.8 faixa_p90-p10=88.8 saturacao=0.278 media=49.6 amostra=3600.
+[10:58:32.404] Custo GPU do passe: media=2.010 ms minimo=1.997 ms pico=2.124 ms amostras=600 descartadas=0.
+[10:58:42.404] Custo GPU do passe: media=2.012 ms minimo=1.987 ms pico=2.125 ms amostras=601 descartadas=0.
+[10:58:52.403] Custo GPU do passe: media=2.040 ms minimo=2.008 ms pico=2.241 ms amostras=599 descartadas=0.
+[10:59:01.202] Cena 0.18.0: ceu_R/B=1.029 mediana=53.4 faixa_p90-p10=110.3 saturacao=0.264 media=57.1 amostra=3600.
+[10:59:02.419] Custo GPU do passe: media=2.024 ms minimo=1.988 ms pico=2.213 ms amostras=601 descartadas=0.
+[10:59:12.418] Custo GPU do passe: media=2.024 ms minimo=1.970 ms pico=2.150 ms amostras=600 descartadas=0.
+[10:59:22.432] Custo GPU do passe: media=2.024 ms minimo=2.008 ms pico=2.143 ms amostras=601 descartadas=0.
+[10:59:31.700] Cena 0.18.0: ceu_R/B=1.075 mediana=40.4 faixa_p90-p10=98.2 saturacao=0.315 media=50.7 amostra=3600.
+[10:59:32.433] Custo GPU do passe: media=2.034 ms minimo=2.018 ms pico=2.175 ms amostras=600 descartadas=0.
+[10:59:42.434] Custo GPU do passe: media=2.027 ms minimo=1.995 ms pico=2.627 ms amostras=600 descartadas=0.
+[10:59:52.437] Custo GPU do passe: media=2.009 ms minimo=1.972 ms pico=2.178 ms amostras=600 descartadas=0.
+[11:00:01.702] Cena 0.18.0: ceu_R/B=1.068 mediana=47.0 faixa_p90-p10=103.6 saturacao=0.270 media=56.9 amostra=3600.
+[11:00:02.451] Custo GPU do passe: media=2.020 ms minimo=1.951 ms pico=2.363 ms amostras=601 descartadas=0.
+[11:00:12.452] Custo GPU do passe: media=2.022 ms minimo=1.988 ms pico=2.232 ms amostras=600 descartadas=0.
+[11:00:22.452] Custo GPU do passe: media=2.013 ms minimo=1.981 ms pico=2.141 ms amostras=600 descartadas=0.
+[11:00:32.201] Cena 0.18.0: ceu_R/B=1.066 mediana=41.0 faixa_p90-p10=82.8 saturacao=0.246 media=49.4 amostra=3600.
+[11:00:32.467] Custo GPU do passe: media=2.116 ms minimo=2.023 ms pico=2.351 ms amostras=601 descartadas=0.
+[11:00:42.468] Custo GPU do passe: media=2.034 ms minimo=2.019 ms pico=2.172 ms amostras=600 descartadas=0.
+[11:00:52.470] Custo GPU do passe: media=2.038 ms minimo=2.014 ms pico=2.172 ms amostras=599 descartadas=0.
+[11:01:02.220] Cena 0.18.0: ceu_R/B=0.902 mediana=43.5 faixa_p90-p10=92.5 saturacao=0.314 media=50.5 amostra=3600.
+[11:01:02.470] Custo GPU do passe: media=2.016 ms minimo=1.993 ms pico=2.150 ms amostras=600 descartadas=0.
+[11:01:12.472] Custo GPU do passe: media=2.004 ms minimo=1.972 ms pico=2.116 ms amostras=600 descartadas=0.
+[11:01:22.472] Custo GPU do passe: media=2.020 ms minimo=1.990 ms pico=2.206 ms amostras=600 descartadas=0.
+[11:01:32.490] Custo GPU do passe: media=2.027 ms minimo=2.001 ms pico=2.177 ms amostras=601 descartadas=0.
+[11:01:32.706] Cena 0.18.0: ceu_R/B=0.903 mediana=53.5 faixa_p90-p10=105.7 saturacao=0.263 media=58.5 amostra=3600.
+[11:01:42.506] Custo GPU do passe: media=1.998 ms minimo=1.957 ms pico=2.178 ms amostras=601 descartadas=0.
+[11:01:52.521] Custo GPU do passe: media=2.042 ms minimo=1.945 ms pico=2.180 ms amostras=601 descartadas=0.
+[11:02:02.538] Custo GPU do passe: media=2.036 ms minimo=1.975 ms pico=2.182 ms amostras=601 descartadas=0.
+[11:02:02.722] Cena 0.18.0: ceu_R/B=1.054 mediana=53.5 faixa_p90-p10=113.5 saturacao=0.238 media=58.4 amostra=3600.
+[11:02:12.555] Custo GPU do passe: media=2.037 ms minimo=1.907 ms pico=2.195 ms amostras=601 descartadas=0.
+[11:02:22.571] Custo GPU do passe: media=2.087 ms minimo=2.029 ms pico=2.233 ms amostras=601 descartadas=0.
+[11:02:32.573] Custo GPU do passe: media=1.949 ms minimo=1.790 ms pico=2.197 ms amostras=600 descartadas=0.
+[11:02:33.208] Cena 0.18.0: ceu_R/B=0.930 mediana=72.8 faixa_p90-p10=142.8 saturacao=0.212 media=77.7 amostra=3600.
+[11:02:42.589] Custo GPU do passe: media=2.030 ms minimo=1.974 ms pico=2.192 ms amostras=601 descartadas=0.
+[11:02:52.589] Custo GPU do passe: media=2.072 ms minimo=2.057 ms pico=2.210 ms amostras=600 descartadas=0.
+[11:03:02.589] Custo GPU do passe: media=2.068 ms minimo=2.040 ms pico=2.188 ms amostras=600 descartadas=0.
+[11:03:03.222] Cena 0.18.0: ceu_R/B=0.914 mediana=44.9 faixa_p90-p10=96.5 saturacao=0.311 media=52.4 amostra=3600.
+[11:03:12.603] Custo GPU do passe: media=2.087 ms minimo=2.026 ms pico=2.429 ms amostras=601 descartadas=0.
+[11:03:22.603] Custo GPU do passe: media=2.205 ms minimo=1.979 ms pico=2.419 ms amostras=600 descartadas=0.
+[11:03:32.615] Custo GPU do passe: media=2.349 ms minimo=2.140 ms pico=5.112 ms amostras=601 descartadas=0.
+[11:03:33.715] Cena 0.18.0: ceu_R/B=1.019 mediana=66.9 faixa_p90-p10=103.5 saturacao=0.078 media=75.6 amostra=3600.
