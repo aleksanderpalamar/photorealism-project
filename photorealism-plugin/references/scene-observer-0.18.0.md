@@ -120,3 +120,56 @@ saida do ATS.
 - Nao afirma nada sobre chuva. Nenhuma das cinco referencias tem chuva, e a
   camada que leva o nome `rain_overcast` nunca teve alvo medido.
 - Nao ha detector ainda. Este modulo so mede.
+
+## Adendo 0.18.1: o modulo saiu desligado
+
+O primeiro log de jogo da 0.18.0 tem **663.486 linhas** de
+`Observador de cena 0.18.0 inativo: formato 90 ... nao suportados` e **zero**
+linhas `Cena 0.18.0:`. Seis sessoes, 67 MB, nenhuma medida.
+
+Formato 90 e `B8G8R8A8_TYPELESS`. Nao e exotico: e o que
+`ensure_frame_resources` cria de proposito para a copia da cena, para poder
+pendurar nela uma SRV sRGB. O observador recusava o formato do caminho
+principal.
+
+Vale registrar por que nada acusou. Existiam:
+
+- `build.sh` compilando os dois DLLs -- e compilava, o codigo estava correto;
+- `validate.sh` com uma guarda escrita para este modulo -- e ela fixava a
+  **linha da chamada**, `scene_observer_.observe(device_, context_, scene_texture_)`,
+  que estava certa;
+- `scene_features_test.cpp` com cinco grupos de assert -- e todos passavam,
+  porque testavam a matematica, que estava certa.
+
+O que ninguem testava era a **tabela de formatos entre a chamada e a
+matematica**, porque ela morava dentro do `.cpp` junto com os tipos do D3D11,
+fora do alcance de um teste que compila em Linux. A licao que ficou no
+repositorio: a tabela virou `src/scene_formats.hpp` em `unsigned`, e
+`tests/scene_formats_test.cpp` fixa `is_readable(kB8G8R8A8Typeless)`.
+
+**O mesmo defeito estava numa segunda tabela.** `depth_copy_formats` listava
+so os formatos `D*`, e o ETS2 declara o depth ora como 20
+(`D32_FLOAT_S8X24_UINT`), ora como 19 (`R32G8X24_TYPELESS`). Nas tres sessoes
+mais recentes veio 19, e o SSAO e o resolve temporal ficaram desligados a
+sessao inteira -- o candidato recusado sendo o melhor dos dois, ja que 19 vem
+com `bind_flags=0x48` e o 20 com `0x40`.
+
+Duas tabelas, o mesmo erro: enumerar as variantes tipadas e esquecer o pai
+TYPELESS. Vale procurar a terceira antes que um log a encontre.
+
+## Adendo 0.18.1: o que o log realmente mediu
+
+Nenhuma feature de cena, porque o modulo estava desligado. Mas as seis
+sessoes valem como medida do resto:
+
+- **Custo**: media de 1,414 ms em 1.103 amostras, pior media de janela
+  3,326 ms, zero amostras descartadas.
+- **Hooks**: `state=nosso-hook-externo` em todas as fases de auditoria, nas
+  seis sessoes, com o overlay da Steam estabilizado antes da instalacao.
+- **F12**: so a linha de registro do `ISteamScreenshots`, nenhuma captura, nas
+  seis. O diagnostico continua o da 0.18.0 e continua sem correcao.
+
+E vale registrar o que o usuario viu. Ele aprovou o resultado em jogo -- e nas
+tres sessoes mais recentes o que estava na tela era **so o passe de cor mais o
+bloom**, sem SSAO e sem resolve temporal. Isso e informacao sobre a
+calibracao, nao so sobre o bug: o que agradou nao dependia da oclusao.

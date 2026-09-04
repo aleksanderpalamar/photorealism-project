@@ -597,11 +597,46 @@ grade fecha uma realimentacao entre a cor e as features." >&2
   exit 1
 fi
 
+# A guarda acima fixa a LINHA DA CHAMADA, e na 0.18.0 a chamada estava certa: o
+# que estava errado era a tabela de formatos logo depois dela. O observador
+# recusava DXGI 90 (B8G8R8A8_TYPELESS), que e exatamente o formato que
+# ensure_frame_resources cria para a copia da cena, e passou a versao inteira
+# desligado com validate.sh verde. Por isso a tabela saiu do .cpp para um
+# cabecalho testavel, e por isso estas duas guardas existem.
+if ! grep -Fq 'scene_formats::is_readable' \
+  "${project_dir}/src/scene_observer.cpp"; then
+  echo "O observador voltou a decidir formato dentro do .cpp, onde nenhum \
+teste alcanca: foi assim que a 0.18.0 saiu desligada." >&2
+  exit 1
+fi
+if ! grep -Fq 'assert(is_readable(kB8G8R8A8Typeless));' \
+  "${project_dir}/tests/scene_formats_test.cpp"; then
+  echo "O teste parou de exigir que o formato TYPELESS da copia da cena seja \
+legivel: e o caminho principal, nao um caso exotico." >&2
+  exit 1
+fi
+
+# A recusa tem que ser registrada UMA vez por assinatura de fonte. Na 0.18.0 o
+# release() vinha antes da comparacao e zerava a assinatura, entao a recusa era
+# reavaliada por frame: 663 mil linhas e 67 MB de log numa sessao.
+if ! grep -Fq 'return !resources_failed_;' \
+  "${project_dir}/src/scene_observer.cpp"; then
+  echo "O observador parou de lembrar que ja falhou: sem isso a recusa volta a \
+ser registrada uma vez por frame." >&2
+  exit 1
+fi
+
 scene_features_test="/tmp/photorealism-scene-features-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/tests/scene_features_test.cpp" \
   -o "${scene_features_test}"
 "${scene_features_test}"
+
+scene_formats_test="/tmp/photorealism-scene-formats-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/scene_formats_test.cpp" \
+  -o "${scene_formats_test}"
+"${scene_formats_test}"
 
 effective_profile="$(awk -F= '
   /^\[/ { section=$0; next }

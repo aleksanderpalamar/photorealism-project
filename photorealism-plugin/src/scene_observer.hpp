@@ -49,6 +49,7 @@ class SceneObserver {
     unsigned source_width_ = 0u;
     unsigned source_height_ = 0u;
     DXGI_FORMAT source_format_ = DXGI_FORMAT_UNKNOWN;
+    DXGI_FORMAT sample_format_ = DXGI_FORMAT_UNKNOWN;
     unsigned mip_level_ = 0u;
     unsigned mip_width_ = 0u;
     unsigned mip_height_ = 0u;

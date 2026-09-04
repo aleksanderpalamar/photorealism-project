@@ -1059,22 +1059,34 @@ private:
         if (resource_format == nullptr || view_format == nullptr) {
             return false;
         }
-        if (source == DXGI_FORMAT_D32_FLOAT_S8X24_UINT) {
+        // Cada familia entra pelos DOIS nomes: o tipado (D*) e o typeless
+        // pai. A tabela so tinha os tipados ate a 0.18.1, e o ETS2 declara o
+        // depth ora como 20 (D32_FLOAT_S8X24_UINT), ora como 19
+        // (R32G8X24_TYPELESS) -- o log tem as duas coisas no mesmo dia. No
+        // segundo caso o SSAO e o resolve temporal ficavam desligados a
+        // sessao inteira, e o candidato recusado era justo o MELHOR dos dois:
+        // 19 vem com bind_flags=0x48, ou seja ja e legivel por shader, contra
+        // 0x40 do 20. O destino da copia e o mesmo nos dois casos.
+        if (source == DXGI_FORMAT_D32_FLOAT_S8X24_UINT ||
+            source == DXGI_FORMAT_R32G8X24_TYPELESS) {
             *resource_format = DXGI_FORMAT_R32G8X24_TYPELESS;
             *view_format = DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS;
             return true;
         }
-        if (source == DXGI_FORMAT_D32_FLOAT) {
+        if (source == DXGI_FORMAT_D32_FLOAT ||
+            source == DXGI_FORMAT_R32_TYPELESS) {
             *resource_format = DXGI_FORMAT_R32_TYPELESS;
             *view_format = DXGI_FORMAT_R32_FLOAT;
             return true;
         }
-        if (source == DXGI_FORMAT_D24_UNORM_S8_UINT) {
+        if (source == DXGI_FORMAT_D24_UNORM_S8_UINT ||
+            source == DXGI_FORMAT_R24G8_TYPELESS) {
             *resource_format = DXGI_FORMAT_R24G8_TYPELESS;
             *view_format = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
             return true;
         }
-        if (source == DXGI_FORMAT_D16_UNORM) {
+        if (source == DXGI_FORMAT_D16_UNORM ||
+            source == DXGI_FORMAT_R16_TYPELESS) {
             *resource_format = DXGI_FORMAT_R16_TYPELESS;
             *view_format = DXGI_FORMAT_R16_UNORM;
             return true;

@@ -1,5 +1,64 @@
 # Changelog
 
+## Pacote 0.18.1 - 2026-09-04
+
+Correcao de tres defeitos que o primeiro log de jogo da 0.18.0 revelou. Dois
+deles sao o **mesmo defeito**: uma tabela de formatos que so listava as
+variantes tipadas e recusava o pai TYPELESS.
+
+**O observador de cena passou a 0.18.0 inteira desligado.** O log de seis
+sessoes tem 663.486 copias de `formato 90 ... nao suportados para leitura` e
+zero linhas `Cena 0.18.0:`. O formato 90 e `B8G8R8A8_TYPELESS`, que e o que
+`ensure_frame_resources` cria de proposito para poder pendurar uma SRV sRGB na
+copia da cena -- ou seja, o observador recusava exatamente o formato do
+caminho principal. `build.sh` compilou, `validate.sh` passou e o teste de
+features passou, porque a guarda que existia fixava a *linha da chamada*, e a
+chamada estava certa; o errado era a tabela logo depois dela, dentro do `.cpp`,
+onde nenhum teste alcanca.
+
+A tabela saiu para `src/scene_formats.hpp`, em `unsigned` para compilar no
+teste sem `d3d11.h`, e `tests/scene_formats_test.cpp` fixa o caso que quebrou.
+A piramide, a view e o staging passam a usar a variante **UNORM** resolvida --
+nao `_SRGB`: com view UNORM o `GenerateMips` faz a media dos codigos de 8 bits
+como numeros, com `_SRGB` ele decodifica para linear antes. As cinco
+referencias foram medidas no espaco de codigo, entao `_SRGB` deslocaria
+mediana e faixa contra a tabela sem que nada acusasse.
+
+**O SSAO e o resolve temporal ficaram desligados nas tres sessoes mais
+recentes.** Mesma causa, outro lugar: `depth_copy_formats` so listava os
+formatos `D*`. O ETS2 declara o depth ora como 20 (`D32_FLOAT_S8X24_UINT`),
+ora como 19 (`R32G8X24_TYPELESS`) -- o log tem os dois no mesmo dia. Nas tres
+primeiras sessoes veio 20 e o SSAO subiu; nas tres ultimas veio 19 e cada
+descoberta terminava em `Candidato depth incompativel com copia 0.9.1`.
+
+O candidato recusado era o **melhor** dos dois: 19 vem com `bind_flags=0x48`,
+ja legivel por shader, contra `0x40` do 20. Cada familia passa a entrar pelos
+dois nomes; o destino da copia nao muda.
+
+**A recusa era registrada uma vez por frame.** `ensure_resources` chamava
+`release()` antes de comparar a assinatura da fonte, e o release zerava
+justamente a assinatura -- entao a recusa era reavaliada e registrada em todo
+frame. `resources_failed_` existia e nunca era lido. Resultado: 67 MB de log
+numa unica sessao. A comparacao passou para antes do release e a falha guarda
+a assinatura.
+
+### O que o log confirmou que esta certo
+
+- Custo do passe: media de 1,414 ms em 1.103 amostras de telemetria, pior
+  media de janela 3,326 ms, zero amostras descartadas.
+- Present/Present1: `state=nosso-hook-externo` em todas as fases de auditoria
+  das seis sessoes, com o overlay da Steam estabilizado antes dos hooks.
+- Nenhuma falha de shader, de recurso de frame ou de swap chain.
+
+### O que continua em aberto
+
+- **F12 da Steam.** As seis sessoes tem so a linha de registro do
+  `ISteamScreenshots` e nenhuma captura. O diagnostico da 0.18.0 segue de pe e
+  nao ha correcao aqui.
+- **Nao ha ainda uma unica medida `Cena 0.18.0:` de dentro do ETS2.** A
+  calibracao da 0.19.0 continua sem evidencia; esta versao e o que torna
+  possivel colher a primeira.
+
 ## Pacote 0.18.0 - 2026-09-01
 
 Observador de cena. **Este modulo nao altera um pixel** -- ele mede o frame

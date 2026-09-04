@@ -1,6 +1,7 @@
 #include "scene_observer.hpp"
 
 #include "runtime.hpp"
+#include "scene_formats.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -16,15 +17,17 @@ namespace {
 constexpr unsigned kTargetSampleWidth = 96u;
 
 bool supported_format(DXGI_FORMAT format) {
-    return format == DXGI_FORMAT_R8G8B8A8_UNORM ||
-           format == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB ||
-           format == DXGI_FORMAT_B8G8R8A8_UNORM ||
-           format == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
+    return scene_formats::is_readable(static_cast<unsigned>(format));
 }
 
 bool format_is_bgra(DXGI_FORMAT format) {
-    return format == DXGI_FORMAT_B8G8R8A8_UNORM ||
-           format == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
+    return scene_formats::is_bgra(static_cast<unsigned>(format));
+}
+
+// Formato concreto usado na piramide, na view e no staging.
+DXGI_FORMAT sample_format(DXGI_FORMAT format) {
+    return static_cast<DXGI_FORMAT>(
+        scene_formats::resolve_unorm(static_cast<unsigned>(format)));
 }
 
 unsigned long long now_ms() {
@@ -66,6 +69,7 @@ void SceneObserver::release() {
     source_width_ = 0u;
     source_height_ = 0u;
     source_format_ = DXGI_FORMAT_UNKNOWN;
+    sample_format_ = DXGI_FORMAT_UNKNOWN;
     resources_failed_ = false;
     latest_ = SceneFeatures{};
 }
@@ -74,25 +78,33 @@ bool SceneObserver::ensure_resources(
     ID3D11Device* device, ID3D11Texture2D* scene) {
     D3D11_TEXTURE2D_DESC description = {};
     scene->GetDesc(&description);
-    if (pyramid_ != nullptr && description.Width == source_width_ &&
+    // A comparacao vem antes de qualquer release, e a falha tambem cai nela.
+    // Na 0.18.0 o release() vinha primeiro e zerava a assinatura, entao a
+    // recusa era reavaliada e registrada A CADA FRAME: 663 mil linhas e 67 MB
+    // de log numa unica sessao. `resources_failed_` existia e nunca era lido.
+    if (description.Width == source_width_ &&
         description.Height == source_height_ &&
         description.Format == source_format_) {
-        return true;
+        return !resources_failed_;
     }
     release();
     if (!supported_format(description.Format) ||
         description.SampleDesc.Count != 1u || description.Width == 0u ||
         description.Height == 0u) {
         // Formato exotico nao e erro: o passe visual segue, o observador
-        // apenas nao tem o que medir. Registrar uma vez evita log por frame.
+        // apenas nao tem o que medir.
         log_message(
             "Observador de cena 0.18.0 inativo: formato %u ou MSAA %u nao "
             "suportados para leitura.",
             static_cast<unsigned>(description.Format),
             static_cast<unsigned>(description.SampleDesc.Count));
+        source_width_ = description.Width;
+        source_height_ = description.Height;
+        source_format_ = description.Format;
         resources_failed_ = true;
         return false;
     }
+    const DXGI_FORMAT readable = sample_format(description.Format);
 
     // Cadeia completa de mips gerada pelo hardware. E o caminho mais barato
     // para uma media de area honesta: uma reducao por amostragem pontual
@@ -104,6 +116,7 @@ bool SceneObserver::ensure_resources(
     pyramid.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
     pyramid.CPUAccessFlags = 0u;
     pyramid.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
+    pyramid.Format = readable;
     if (FAILED(device->CreateTexture2D(&pyramid, nullptr, &pyramid_))) {
         log_message(
             "Observador de cena 0.18.0 inativo: piramide %ux%u nao pode ser "
@@ -113,8 +126,17 @@ bool SceneObserver::ensure_resources(
         resources_failed_ = true;
         return false;
     }
+    // Descritor explicito, nao nulo: um TYPELESS nao tem formato de view
+    // proprio, e o descritor nulo o recusaria. Ver resolve_unorm sobre por que
+    // a view e UNORM e nao _SRGB -- e ela que decide se o GenerateMips faz a
+    // media no espaco de codigo ou em linear.
+    D3D11_SHADER_RESOURCE_VIEW_DESC pyramid_view = {};
+    pyramid_view.Format = readable;
+    pyramid_view.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+    pyramid_view.Texture2D.MostDetailedMip = 0u;
+    pyramid_view.Texture2D.MipLevels = static_cast<UINT>(-1);
     if (FAILED(device->CreateShaderResourceView(
-            pyramid_, nullptr, &pyramid_view_))) {
+            pyramid_, &pyramid_view, &pyramid_view_))) {
         log_message(
             "Observador de cena 0.18.0 inativo: view da piramide recusada.");
         release();
@@ -143,7 +165,7 @@ bool SceneObserver::ensure_resources(
     staging.Height = mip_height_;
     staging.MipLevels = 1u;
     staging.ArraySize = 1u;
-    staging.Format = description.Format;
+    staging.Format = readable;
     staging.SampleDesc.Count = 1u;
     staging.Usage = D3D11_USAGE_STAGING;
     staging.BindFlags = 0u;
@@ -167,13 +189,15 @@ bool SceneObserver::ensure_resources(
     source_width_ = description.Width;
     source_height_ = description.Height;
     source_format_ = description.Format;
+    sample_format_ = readable;
     resources_failed_ = false;
     log_message(
-        "Observador de cena 0.18.0 ativo: fonte %ux%u format=%u, amostra no "
-        "mip %u (%ux%u = %u pixels), intervalo=%u frames, log=%.0fs.",
+        "Observador de cena 0.18.0 ativo: fonte %ux%u format=%u amostrado como "
+        "%u, mip %u (%ux%u = %u pixels), intervalo=%u frames, log=%.0fs.",
         source_width_,
         source_height_,
         static_cast<unsigned>(source_format_),
+        static_cast<unsigned>(sample_format_),
         mip_level_,
         mip_width_,
         mip_height_,
@@ -217,7 +241,7 @@ void SceneObserver::compute(const unsigned char* pixels, unsigned pitch) {
         mip_width_,
         mip_height_,
         pitch,
-        format_is_bgra(source_format_));
+        format_is_bgra(sample_format_));
     if (!features.valid) {
         return;
     }
