@@ -238,3 +238,113 @@ ceu R/B de 0,566 a 1,503, e nao se sabe qual delas era sol, chuva, tunel ou
 anoitecer. Sem isso da para calibrar a suavizacao e a porta -- e foi o que se
 fez -- mas nao as ancoras de `temperature`/`tint` por condicao, que sao o
 produto da 0.19.0.
+
+---
+
+# Terceira coleta: 4 sessoes, 386 amostras - 2026-09-09
+
+O usuario relatou ter percebido a cor mudando com o clima. **A 0.18.2 nao tem
+detector nenhum** -- `tint=0.500` e constante. O que ele viu e o proprio ETS2,
+que o observador mede antes do grade. A pergunta util nao e se o plugin adaptou
+(nao adaptou), e sim se o sinal que ele viu esta nos dados. Esta.
+
+Saude: 386 amostras, 4 sessoes, SSAO e temporal ativos, zero
+`incompativel com copia`, zero `inativo`, custo 1,342 ms em 1155 janelas
+(pico 7,372 ms, zero descartadas).
+
+## CORRECAO: a porta de jogo estava descartando a chuva
+
+A porta proposta era `p90-p10 > 20 **e** saturacao > 0,09`. Nestas sessoes ela
+descartou **117 de 386 amostras (30%)**, contra 3,3% nas duas anteriores. O
+detalhe que denuncia: **111 das 117 cairam SO pelo criterio de saturacao**, e
+elas tem mediana 48, faixa 70 e media 52 -- cena de jogo, com estrutura, bem
+iluminada.
+
+Saturacao baixa nao e quadro invalido. **E o que encoberto e chuva parecem.** A
+porta estava configurada para jogar fora exatamente a condicao que o usuario
+quer detectar, e so nao apareceu antes porque as duas primeiras sessoes nao
+tinham chuva (minimo de saturacao 0,110 e 0,135).
+
+A porta correta usa **so estrutura**: `p90-p10 > 20`, que descarta 6 de 386 --
+cinco quadros pretos (media 2,4 a 4,7, faixa 0) e um ambiguo. Saturacao e
+**feature**, nunca criterio de validade. Usar uma feature como porta remove do
+conjunto justamente os extremos que ela deveria medir.
+
+## Os tres regimes, e o rotulo vem da persistencia
+
+Com a porta corrigida, a saturacao fica **bimodal**, com um vale claro em
+0,11-0,13. Cruzando com o brilho, tres grupos:
+
+| grupo                       |   n | ceu R/B | mediana | p90-p10 | saturacao |
+| --------------------------- | --- | ------- | ------- | ------- | --------- |
+| escuro + dessaturado        |  74 | 0,982   |   3,1   |  40,9   | 0,078     |
+| **claro + dessaturado**     |  60 | 1,001   |  75,6   | 107,6   | 0,064     |
+| saturado                    | 203 | 0,897   |  60,1   | 133,4   | 0,243     |
+
+O agrupamento usou saturacao e brilho; `ceu R/B` e `p90-p10` **nao entraram** e
+mesmo assim separam junto, que e evidencia nao circular.
+
+O rotulo vem da **duracao**: nenhuma condicao de tempo dura 30 segundos e
+nenhum artefato dura dez minutos. Blocos contiguos de 3 minutos ou mais:
+
+```
+S 15:08 (7,0m)  N 15:15 (3,5m)  N 15:19 (5,0m)  N 15:29 (3,0m)
+S 15:40 (61,0m) N 16:54 (5,0m)  N 00:09 (4,0m)  S 00:13 (29,5m)
+C 00:43 (9,0m)  S 00:52 (3,5m)  S 23:06 (7,0m)  C 23:13 (14,0m)
+```
+
+**Dois blocos de nublado/chuva, de 9 e 14 minutos, em sessoes diferentes.** E
+quase certamente a chuva que o usuario viu. So ele confirma.
+
+## Ancoras medidas
+
+| condicao          | blocos | min |   ceu R/B (p10-p90)   | mediana | p90-p10 | saturacao (p10-p90)  |
+| ----------------- | ------ | --- | --------------------- | ------- | ------- | -------------------- |
+| SOL / CEU LIMPO   |   5    | 108 | 0,885 (0,770 a 1,075) |  57,1   |  124,8  | 0,240 (0,198 a 0,302)|
+| NUBLADO / CHUVA   |   2    |  23 | **1,001 (0,988 a 1,004)** | 76,8 | 108,7 | **0,064 (0,057 a 0,075)** |
+| NOITE / ESCURO    |   5    |  20 | 0,957 (0,875 a 1,190) |   3,0   |   39,3  | 0,077 (0,058 a 0,104)|
+
+Os dois blocos de chuva sao de sessoes diferentes, com seis dias e horarios
+distintos, e devolvem `ceu R/B` = 1,001 e 1,000, `saturacao` = 0,065 e 0,064.
+Reproducao quase exata: e assinatura, nao coincidencia.
+
+**A saturacao separa sol de chuva sem sobreposicao alguma**: 0,198-0,302 contra
+0,057-0,075. O vao entre 0,075 e 0,198 e maior que as duas faixas somadas.
+Noite separa de chuva pela mediana (3,0 contra 76,8), tambem sem sobreposicao.
+
+Detalhe diagnostico: a faixa de `ceu R/B` na chuva e **dez vezes mais estreita**
+que no sol (0,016 contra 0,305). Luz de encoberto e uniforme; ceu limpo varia
+com o angulo do sol e o rumo do caminhao. A propria estreiteza e sinal.
+
+## O CUIDADO CENTRAL para a 0.19.0
+
+**`ceu R/B` da chuva (1,001) e MAIOR que o do ceu limpo (0,885).** Ou seja, no
+sinal cru a chuva e mais "quente" que o dia de sol.
+
+Nao e paradoxo: a regiao de ceu mede a cor do **ceu**, e ceu limpo e AZUL
+(R/B baixo) enquanto ceu encoberto e CINZA (R/B perto de 1). Isso nao e a
+temperatura da luz que ilumina a cena.
+
+Consequencia direta: **`ceu R/B` serve para DETECTAR a condicao e nao serve
+como alvo de `temperature`/`tint`.** Ligar o balanco proporcionalmente a essa
+feature deixaria o dia de sol mais frio e a chuva mais quente -- o oposto do
+que o usuario pediu. O caminho e condicao -> tabela de ancoras escolhidas pelo
+LOOK, nunca realimentacao proporcional da feature.
+
+## Classe dura pisca, agora medido
+
+Trocas de classe por hora de jogo, aplicando o limiar duro amostra a amostra:
+
+| janela | trocas/hora |
+| ------ | ----------- |
+| 0      | 16,0        |
+| 1 min  | 10,9        |
+| 2 min  | 7,3         |
+| 3 min  | 6,1         |
+| 6 min  | 5,1         |
+
+43% dos trechos da sessao 1 tem uma amostra so. Suavizar ajuda mas satura por
+volta de 5 trocas/hora, e cada troca seria um salto de cor visivel. Confirma no
+jogo o que a 0.18.0 previu a partir da margem de 1,5x do ATS: **interpolacao
+continua, nunca classe dura.** A suavizacao de 2-3 minutos continua valendo, e
+agora tem um segundo motivo -- ela derruba a piscada de 16 para 7 por hora.
