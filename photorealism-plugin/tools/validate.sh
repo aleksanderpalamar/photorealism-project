@@ -734,6 +734,19 @@ composicao voltam a poder divergir." >&2
   exit 1
 fi
 
+if ! grep -Fq 'current != nullptr && current == previous.module' \
+  "${project_dir}/src/overlay_watch.hpp"; then
+  echo "advance_overlay_watch parou de exigir o MESMO endereco: um overlay \
+recarregado passaria por estavel e os hooks entrariam cedo demais." >&2
+  exit 1
+fi
+
+overlay_watch_test="/tmp/photorealism-overlay-watch-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/overlay_watch_test.cpp" \
+  -o "${overlay_watch_test}"
+"${overlay_watch_test}"
+
 config_load_test="/tmp/photorealism-config-load-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
   -I"${project_dir}/tests/support" -I"${project_dir}/src" \

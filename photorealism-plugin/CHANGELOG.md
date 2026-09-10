@@ -1,5 +1,53 @@
 # Changelog
 
+## Pacote 0.19.2 - 2026-09-10
+
+Refatoracao de `src/dxgi_proxy.cpp`, pedida pelo usuario. Sem mudanca de
+comportamento.
+
+### Aninhamento
+
+O problema estava concentrado em `graphics_worker`: um laco de repeticao com um
+bloco condicional dentro, contendo outro laco, contendo um `if/else`. Quatro
+niveis.
+
+| | antes | depois |
+| --- | --- | --- |
+| maior funcao | 55 linhas | **24** |
+| aninhamento de chaves | 6 | 4 |
+| `if` mais profundo | indentacao 16 | **indentacao 8** |
+| `if` dentro de outro `if` | 3 | **0** |
+
+A contagem de `if` continua 11, e isso e proposital: nenhum deles sumiu, todos
+viraram guarda plana ou ramo unico dentro de um laco. O arquivo passou de 144
+para 188 linhas, porque constantes ganharam nome e a espera pelo overlay virou
+funcao propria. Mais linhas, muito menos profundidade.
+
+`CreateDXGIFactory`, `CreateDXGIFactory1` e `CreateDXGIFactory2` eram tres
+copias do mesmo corpo com assinaturas diferentes; passaram a chamar um
+`forward_to_system_dxgi` com encaminhamento perfeito. A sequencia de auditoria
+pos-instalacao virou tabela, com o campo de espera nomeado
+`delay_since_previous_milliseconds` -- os rotulos sao acumulados (500, 2000,
+5000) e as esperas sao incrementos (500, 1500, 3000), e o nome do campo e o que
+torna esse pareamento legivel sem comentario.
+
+### A logica sutil saiu para onde um teste alcanca
+
+`src/overlay_watch.hpp` passa a conter a maquina de estados que espera o overlay
+da Steam **estabilizar** antes de instalar os hooks. Ela nao verifica apenas se
+o modulo existe: exige o **mesmo endereco** por quatro amostras seguidas, porque
+um overlay recarregado durante a espera reaparece em outro endereco e instalar
+hooks nesse instante e justamente o que se quer evitar.
+
+Isso vivia dentro de `dxgi_proxy.cpp`, que nao compila fora do Windows e
+portanto nao tinha teste possivel. Agora e um cabecalho que so precisa de
+`const void*`, e `tests/overlay_watch_test.cpp` cobre oito casos: overlay que
+nunca aparece, que aparece e fica, que troca de endereco no meio, que some e
+volta, que oscila entre dois enderecos, e o limiar exato de amostras.
+
+Verificado que o teste cai quando a comparacao de endereco e trocada por um
+mero teste de nao-nulo. `validate.sh` recusa o build nesse caso.
+
 ## Pacote 0.19.1 - 2026-09-10
 
 Refatoracao de `src/config.cpp`, pedida pelo usuario, mais um defeito que ela
