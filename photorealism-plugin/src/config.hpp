@@ -1,7 +1,6 @@
 #pragma once
 
 namespace photorealism {
-
 struct Settings {
     bool enabled;
     float temperature;
@@ -16,9 +15,7 @@ struct Settings {
     float local_contrast;
     float sharpness;
     float vignette;
-    // 0.17.1: o piso do preto e por canal. O 1% mais escuro das cinco
-    // referencias tem R entre 29% e 64% de G; um piso escalar sai acromatico e
-    // nao alcanca isso.
+
     float black_lift_r;
     float black_lift_g;
     float black_lift_b;
@@ -54,15 +51,11 @@ struct Settings {
     float bloom_knee;
     float bloom_intensity;
     float bloom_radius;
-    // 0.18.0. O observador nao muda pixel nenhum: ele mede o frame pre-grade e
-    // registra as features que separam as condicoes. E a fonte de dados da
-    // adaptacao por clima, que entra depois e em cima destes numeros.
+
     bool scene_observer_enabled;
     float scene_observer_interval_frames;
     float scene_observer_log_seconds;
-    // 0.19.0. Adaptacao de cor por condicao. Os limiares saem das 386
-    // amostras medidas no ETS2; as ancoras sao escolha de look, e por isso
-    // moram no cfg em vez de ficarem cravadas no codigo.
+
     bool condition_adaptation_enabled;
     float condition_time_constant_seconds;
     float condition_log_seconds;
@@ -81,5 +74,4 @@ struct Settings {
 
 Settings default_settings();
 bool load_settings(Settings* settings);
-
-}  // namespace photorealism
+}

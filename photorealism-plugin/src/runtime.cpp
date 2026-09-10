@@ -6,7 +6,6 @@
 
 namespace photorealism {
 namespace {
-
 HMODULE g_module = nullptr;
 INIT_ONCE g_paths_once = INIT_ONCE_STATIC_INIT;
 wchar_t g_module_directory[MAX_PATH] = {};
@@ -68,7 +67,6 @@ BOOL CALLBACK initialize_paths(PINIT_ONCE, PVOID, PVOID*) {
     std::wcsncpy(g_bloom_shader_path, g_plugin_root, MAX_PATH - 1);
     append_path(g_bloom_shader_path, MAX_PATH, L"\\shaders\\bloom.hlsl");
 
-
     std::wcsncpy(g_log_path, g_plugin_root, MAX_PATH - 1);
     append_path(g_log_path, MAX_PATH, L"\\photorealism-plugin.log");
     return TRUE;
@@ -77,8 +75,7 @@ BOOL CALLBACK initialize_paths(PINIT_ONCE, PVOID, PVOID*) {
 void ensure_paths() {
     InitOnceExecuteOnce(&g_paths_once, initialize_paths, nullptr, nullptr);
 }
-
-}  // namespace
+}
 
 void set_module(HMODULE module) {
     g_module = module;
@@ -173,5 +170,4 @@ void log_message(const char* format, ...) {
     WriteFile(file, line, bytes_to_write, &written, nullptr);
     CloseHandle(file);
 }
-
-}  // namespace photorealism
+}

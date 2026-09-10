@@ -84,8 +84,6 @@ float sample_raw_depth(float2 uv)
         DepthSampler, saturate(uv), 0.0));
 }
 
-// Adaptador: le as cinco amostras nos registradores deste shader e delega a
-// matematica para o header compartilhado.
 float3 sample_view_normal(
     float2 uv, float raw_center, out float normal_valid)
 {
@@ -115,11 +113,6 @@ float calculate_visibility(float2 uv, float raw_center)
         return 1.0;
     }
 
-    // O ETS2 nao expõe uma etiqueta semantica para cabine. O perfil de
-    // interior e, portanto, aplicado somente ao campo proximo: onde painel,
-    // colunas, retrovisores e outros elementos da cabine dominam a imagem.
-    // Em distancias maiores o perfil exterior aprovado da 0.8.0 permanece
-    // integralmente ativo.
     float interior_weight = 0.0;
     if (InteriorEnabled > 0.5)
     {

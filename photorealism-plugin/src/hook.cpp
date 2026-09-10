@@ -15,7 +15,6 @@
 
 namespace photorealism {
 namespace {
-
 using PresentFunction = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain*, UINT, UINT);
 using Present1Function = HRESULT(STDMETHODCALLTYPE*)(
     IDXGISwapChain1*, UINT, UINT, const DXGI_PRESENT_PARAMETERS*);
@@ -274,14 +273,6 @@ void STDMETHODCALLTYPE hooked_clear_depth_stencil_view(
     }
 }
 
-
-
-
-
-
-
-
-
 template <typename Function>
 bool replace_vtable_entry(
     void** entry,
@@ -316,8 +307,7 @@ LRESULT CALLBACK hidden_window_proc(
     HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     return DefWindowProcW(window, message, wparam, lparam);
 }
-
-}  // namespace
+}
 
 bool install_swap_chain_hooks() {
     if (g_original_present.load(std::memory_order_acquire) != nullptr &&
@@ -459,12 +449,6 @@ bool install_swap_chain_hooks() {
                     depth_observer_installed && depth_uav_observer_installed &&
                     depth_clear_observer_installed;
         if (installed) {
-            // Os oito hooks de Draw/RSSet*/PSSetShaderResources sairam na
-            // 0.15.0 junto com o modulo de upscaling que os exigia: existiam
-            // so para alimenta-lo, e cada um custava uma indirecao em TODA
-            // chamada de desenho do jogo. Restam os tres de que a descoberta
-            // de depth depende. O CHANGELOG da 0.15.0 tem o nome do modulo; a
-            // guarda de validate.sh proibe o acronimo aqui de proposito.
             log_message(
                 "Hooks Present/Present1/ResizeBuffers/OMSetRenderTargets*/"
                 "ClearDepthStencilView instalados; feature level=0x%X "
@@ -548,5 +532,4 @@ void audit_swap_chain_hook_chain(const char* phase) {
                 g_original_present1.load(std::memory_order_acquire)));
     }
 }
-
-}  // namespace photorealism
+}

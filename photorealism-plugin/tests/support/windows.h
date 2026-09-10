@@ -1,13 +1,5 @@
 #pragma once
 
-// Substituto mínimo de <windows.h> para os testes rodarem em Linux.
-//
-// config.cpp precisa de tres coisas do Windows: HMODULE na assinatura de
-// runtime.hpp, _stricmp para comparar chaves sem diferenciar caixa, e _wfopen
-// para abrir o cfg. Nada disso e logica do plugin, entao substituir e seguro --
-// o que o teste exercita e o parse, a composicao e os limites, que sao os
-// mesmos binarios que rodam no jogo.
-
 #include <cstdio>
 #include <cstdlib>
 #include <cwchar>

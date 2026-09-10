@@ -64,12 +64,30 @@ O primeiro grupo e o que impede a volta do defeito acima: **os defaults internos
 e o cfg entregue tem que produzir o mesmo perfil**. Verificado que o teste cai
 quando a `exposure` volta para -0,09.
 
+### Sem comentarios no codigo
+
+A pedido do usuario, todo comentario saiu de `src/`, `tests/` e `shaders/`:
+**1089 linhas, zero comentarios restantes**. O fonte caiu de 10.353 para 9.264
+linhas.
+
+A justificativa medida de cada decisao -- a derivacao do `black_lift`, o limiar
+do bloom, a troca do contraste afim pela potencia, os limiares de condicao --
+continua inteira em `references/*.md` e neste CHANGELOG, que e onde ja morava e
+onde da para procurar. O `.cfg` nao foi tocado: os comentarios de la sao a
+documentacao que o usuario le para ajustar as ancoras.
+
+Verificado antes de apagar que nenhuma guarda do `validate.sh` dependia de
+texto de comentario. A unica que citava um -- a que proibe a reta de contraste
+da 0.17.0 -- ja passava `sed 's|//.*||'` antes do grep, entao a limpeza a
+deixou mais estrita, nao quebrada.
+
 ### Como a equivalencia foi verificada
 
 Antes de mexer, os 132 campos de `Settings` foram despejados para arquivo, em
 dois cenarios -- defaults internos e parse do cfg entregue. Depois da
 refatoracao, o mesmo despejo: **identico nos 131 campos**, com a unica diferenca
-sendo a `exposure` corrigida de proposito.
+sendo a `exposure` corrigida de proposito. O mesmo despejo foi repetido depois
+da remocao dos comentarios: identico nos 132.
 
 ## Pacote 0.19.0 - 2026-09-10
 

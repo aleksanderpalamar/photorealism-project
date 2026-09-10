@@ -19,7 +19,6 @@
 
 namespace photorealism {
 namespace {
-
 using CompileFromFileFunction = decltype(&D3DCompileFromFile);
 
 CompileFromFileFunction resolve_shader_compiler() {
@@ -72,9 +71,7 @@ struct ShaderConstants {
     float vignette;
     float input_needs_srgb_decode;
     float output_needs_srgb_encode;
-    // 0.17.1: piso do preto por canal. A linha de 16 bytes cabe float3 + um
-    // float, entao highlight_rolloff fica aqui e tint desce para a linha do
-    // bloom -- o buffer continua com 96 bytes e a ordem espelha o cbuffer.
+
     float black_lift[3];
     float highlight_rolloff;
     float tint;
@@ -85,9 +82,6 @@ struct ShaderConstants {
 
 static_assert(sizeof(ShaderConstants) == 96, "constant buffer must be aligned");
 
-// Os passes do bloom. SourceTexelSize e o texel da textura LIDA, e muda a cada
-// passo da piramide -- por isso o buffer e reescrito entre draws em vez de uma
-// vez por frame como os outros.
 struct BloomConstants {
     float source_texel_size[2];
     float filter_radius[2];
@@ -103,8 +97,6 @@ static_assert(
 
 constexpr UINT kBloomPassCount = 3;
 
-// A ordem importa: o indice e usado direto em bloom_bright_shader_,
-// bloom_downsample_shader_ e bloom_upsample_shader_, nesta sequencia.
 const char* const kBloomEntryPoints[kBloomPassCount] = {
     "PSBloomBright",
     "PSBloomDownsample",
@@ -443,8 +435,7 @@ public:
         std::uint64_t depth_generation = 0;
         std::uint64_t depth_binding_serial = 0;
         bool depth_candidate_invalidated = false;
-        // O modo 6 e o preview do bloom, que sai da cena e nao do depth. Ele
-        // fica de fora daqui para nao disparar a copia do depth a toa.
+
         const bool depth_requested =
             settings_.ssao_enabled || settings_.temporal_enabled ||
             (depth_preview_mode_ != 0 && depth_preview_mode_ != 6);
@@ -541,9 +532,6 @@ public:
             invalidate_temporal_history("depth ou passe temporal indisponivel");
         }
 
-        // O bloom nao depende de depth -- ele sai da propria cena. E a unica
-        // coisa da pilha que continua funcionando quando a descoberta de depth
-        // falha, e por isso a condicao aqui nao menciona depth_available.
         bloom_preview_active =
             depth_preview_mode_ == 6 && bloom_bright_shader_ != nullptr &&
             additive_blend_state_ != nullptr;
@@ -663,20 +651,13 @@ public:
             temporal_wait_logged_ = true;
         }
 
-
         if (!depth_preview_active) {
             context_->CopyResource(scene_texture_, back_buffer);
-            // 0.18.0. Aqui, e so aqui: scene_texture_ acabou de receber o
-            // frame do jogo e nenhum passe nosso escreveu nele ainda. Medir
-            // depois do grade fecharia uma realimentacao -- a cor seria funcao
-            // das features e as features funcao da cor -- e a imagem
-            // caminharia sozinha sem que nada no cfg tivesse mudado.
+
             scene_observer_.observe(device_, context_, scene_texture_);
-            // 0.19.0. A adaptacao consome o que o observador acabou de medir,
-            // no mesmo ponto e pelo mesmo motivo: e o frame do jogo, antes do
-            // nosso grade. Alimenta-la com a saida fecharia a realimentacao.
+
             update_condition_adaptation();
-            // errada de que o depth faltava no modo 6.
+
             if (depth_preview_mode_ != 0 && !ssao_preview_active &&
                 !bloom_preview_active && !depth_preview_wait_logged_) {
                 log_message(
@@ -806,7 +787,6 @@ public:
             0,
             0);
 
-
         D3D11_VIEWPORT viewport = {};
         viewport.Width = static_cast<float>(description.Width);
         viewport.Height = static_cast<float>(description.Height);
@@ -823,21 +803,11 @@ public:
         context_->HSSetShader(nullptr, nullptr, 0);
         context_->DSSetShader(nullptr, nullptr, 0);
 
-        // A piramide roda ANTES do if/else de cinco ramos, e nao dentro dele.
-        // Os cinco ramos comecam todos pelo mesmo passe visual, entao gerar o
-        // bloom aqui e le-lo em t1 no PSMain faz o modulo valer para todos de
-        // uma vez -- sem multiplicar ramo nenhum. Foi por multiplicar ramos
-        // que o modulo de tracado de raios removido na 0.16.0 chegou a 377
-        // referencias neste arquivo, e por isso levou uma versao inteira para
-        // sair.
         if (bloom_active) {
             render_bloom_pyramid(description);
         }
 
         if (bloom_preview_active) {
-            // Preview do Insert: o buffer do bloom sozinho, sem cena por
-            // baixo. E o que permite julgar limiar e raio isolados, do mesmo
-            // jeito que a mascara do SSAO na posicao 5.
             context_->OMSetRenderTargets(1, &output, nullptr);
             context_->PSSetShader(bloom_upsample_shader_, nullptr, 0);
             BloomConstants preview_constants = {};
@@ -1064,14 +1034,7 @@ private:
         if (resource_format == nullptr || view_format == nullptr) {
             return false;
         }
-        // Cada familia entra pelos DOIS nomes: o tipado (D*) e o typeless
-        // pai. A tabela so tinha os tipados ate a 0.18.1, e o ETS2 declara o
-        // depth ora como 20 (D32_FLOAT_S8X24_UINT), ora como 19
-        // (R32G8X24_TYPELESS) -- o log tem as duas coisas no mesmo dia. No
-        // segundo caso o SSAO e o resolve temporal ficavam desligados a
-        // sessao inteira, e o candidato recusado era justo o MELHOR dos dois:
-        // 19 vem com bind_flags=0x48, ou seja ja e legivel por shader, contra
-        // 0x40 do 20. O destino da copia e o mesmo nos dois casos.
+
         if (source == DXGI_FORMAT_D32_FLOAT_S8X24_UINT ||
             source == DXGI_FORMAT_R32G8X24_TYPELESS) {
             *resource_format = DXGI_FORMAT_R32G8X24_TYPELESS;
@@ -1205,10 +1168,6 @@ private:
             return false;
         }
 
-        // A subida da piramide SOMA no nivel de baixo em vez de substituir; e
-        // isso que empilha as escalas num unico glow com queda suave. Sem o
-        // blend aditivo cada nivel apagaria o anterior e sobraria so o mais
-        // largo, que sozinho e uma mancha sem nucleo.
         D3D11_BLEND_DESC additive_description = {};
         additive_description.RenderTarget[0].BlendEnable = TRUE;
         additive_description.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
@@ -1336,10 +1295,6 @@ private:
         }
         safe_release(errors);
 
-        // Os tres passes do bloom saem do mesmo arquivo e diferem apenas
-        // pelo entry point. Escrever tres blocos identicos como os de cima
-        // seria repetir quarenta linhas para trocar uma string, entao aqui a
-        // tabela faz o papel.
         for (UINT index = 0; index < kBloomPassCount; ++index) {
             const HRESULT bloom_compile_result = compile_from_file(
                 bloom_shader_path(),
@@ -1476,9 +1431,6 @@ private:
             temporal_shader_ = new_temporal_shader;
         }
 
-        // O bloom so entra INTEIRO. Com um dos tres passes faltando a
-        // piramide fica sem um elo -- brilho limiarizado que nunca espalha, ou
-        // niveis que nunca sobem -- e o resultado e pior que nao ter bloom.
         const bool bloom_complete =
             new_bloom_shaders[0] != nullptr &&
             new_bloom_shaders[1] != nullptr &&
@@ -1521,12 +1473,6 @@ private:
         }
     }
 
-    // Adaptacao de cor por condicao -- 0.19.0.
-    //
-    // Le as features que o observador acabou de medir no frame PRE-GRADE,
-    // suaviza, e produz um par (temperature, tint) continuo entre tres
-    // ancoras. Nao ha classe dura em lugar nenhum: medido em jogo, um limiar
-    // duro troca de classe 16 vezes por hora, e cada troca seria um salto.
     void update_condition_adaptation() {
         if (!settings_.condition_adaptation_enabled) {
             effective_temperature_ = settings_.temperature;
@@ -1558,9 +1504,6 @@ private:
                 elapsed,
                 settings_.condition_time_constant_seconds,
                 thresholds)) {
-            // Ainda sem amostra valida: o perfil fixo do cfg continua valendo,
-            // que e o comportamento da 0.18.2. Melhor comecar no que o usuario
-            // aprovou do que numa ancora arbitrada.
             effective_temperature_ = settings_.temperature;
             effective_tint_ = settings_.tint;
             return;
@@ -1756,15 +1699,6 @@ private:
         return true;
     }
 
-    // Quantos niveis a piramide precisa para o raio pedido.
-    //
-    // O alcance do glow e a resolucao do nivel mais grosseiro: com L niveis a
-    // altura dele e height>>L, e o tent da subida espalha cerca de um texel e
-    // meio dele. Invertendo, L = log2(raio * altura / 1.5).
-    //
-    // Isto e o que faz o `radius` do cfg valer em qualquer resolucao: o mesmo
-    // 0.05 pede cinco niveis em 1080p e seis em 4K, e o glow ocupa a mesma
-    // fracao da tela nas duas.
     UINT bloom_levels_for_radius(float radius, UINT height) const {
         if (radius <= 0.0f || height == 0) {
             return 1;
@@ -1807,9 +1741,6 @@ private:
             const UINT level_height =
                 std::max(source.Height >> (index + 1), 1u);
 
-            // Abaixo de oito pixels o tent da subida amostra fora da textura
-            // nos dois lados e o nivel devolve uma media chapada -- custo sem
-            // alcance. A piramide para aqui, com os niveis que couberam.
             if (level_width < 8 || level_height < 8) {
                 break;
             }
@@ -1861,9 +1792,6 @@ private:
             ++bloom_level_count_;
         }
 
-        // Um nivel so nao e piramide: o glow fica na largura de um blur de
-        // meia resolucao, uma ordem de grandeza abaixo do que as referencias
-        // mostram. Melhor desligar do que entregar um halo que ninguem pediu.
         if (bloom_level_count_ < 2) {
             if (!bloom_resources_failure_logged_) {
                 log_message(
@@ -1887,8 +1815,6 @@ private:
         return true;
     }
 
-    // Desce a piramide limiarizando, sobe somando. O resultado fica no nivel
-    // 0, que o PSMain le em t1.
     void render_bloom_pyramid(const D3D11_TEXTURE2D_DESC& description) {
         BloomConstants constants = {};
         constants.threshold = settings_.bloom_threshold;
@@ -1901,9 +1827,6 @@ private:
         D3D11_VIEWPORT viewport = {};
         viewport.MaxDepth = 1.0f;
 
-        // Descida. O nivel 0 vem da cena em resolucao cheia e ja sai
-        // limiarizado; os demais so reduzem, porque quem nao passou no limiar
-        // do nivel 0 nao tem como voltar.
         for (UINT index = 0; index < bloom_level_count_; ++index) {
             const UINT source_width =
                 index == 0 ? description.Width : bloom_widths_[index - 1];
@@ -1933,10 +1856,6 @@ private:
             context_->OMSetRenderTargets(0, nullptr, nullptr);
         }
 
-        // Subida, somando. O nivel que acabou de ser lido como origem vira
-        // destino na volta, entao a textura precisa sair do slot de SRV antes
-        // -- caso contrario o runtime desliga a leitura em silencio e o nivel
-        // some do resultado.
         context_->OMSetBlendState(
             additive_blend_state_, nullptr, 0xFFFFFFFFu);
         for (UINT index = bloom_level_count_ - 1; index > 0; --index) {
@@ -2172,16 +2091,6 @@ private:
         return true;
     }
 
-
-
-
-
-
-
-
-
-
-
     void invalidate_temporal_history(const char* reason) {
         if (!temporal_history_valid_) {
             return;
@@ -2229,11 +2138,6 @@ private:
             static_cast<unsigned>(settings_.scene_observer_interval_frames),
             settings_.scene_observer_log_seconds);
 
-        // 0.19.0. Uma recarga por End tem que poder trocar as ancoras e ver o
-        // efeito, mas NAO deve zerar o estado suavizado: reiniciar a
-        // suavizacao daria varios minutos de cor errada logo apos o ajuste,
-        // que e exatamente quando o usuario esta comparando. So o gatilho do
-        // log e liberado, para a proxima linha sair na hora.
         condition_logged_once_ = false;
         if (!settings_.condition_adaptation_enabled) {
             condition_smoother_.reset();
@@ -2245,9 +2149,7 @@ private:
     void release_frame_resources() {
         release_depth_capture_resources();
         release_bloom_resources();
-        // A piramide e o staging do observador acompanham a resolucao da cena;
-        // sem soltar aqui, um ResizeBuffers deixaria a amostra presa no
-        // tamanho antigo e as features passariam a medir outra coisa.
+
         scene_observer_.release();
         safe_release(spatial_target_);
         safe_release(spatial_view_);
@@ -2503,9 +2405,7 @@ private:
     SceneObserver scene_observer_;
     ID3D11Device* device_ = nullptr;
     ID3D11DeviceContext* context_ = nullptr;
-    // 0.19.0. O que efetivamente vai para o cbuffer. Com a adaptacao
-    // desligada sao copias exatas de settings_, e a imagem e identica a
-    // 0.18.2 codigo por codigo.
+
     float effective_temperature_ = 6500.0f;
     float effective_tint_ = 0.0f;
     ConditionSmoother condition_smoother_;
@@ -2530,7 +2430,7 @@ private:
     ID3D11RenderTargetView* spatial_target_ = nullptr;
     ID3D11Texture2D* depth_copy_texture_ = nullptr;
     ID3D11ShaderResourceView* depth_copy_view_ = nullptr;
-    // copia do depth de que as rejeicoes dependem.
+
     ID3D11Texture2D* temporal_history_texture_ = nullptr;
     ID3D11ShaderResourceView* temporal_history_view_ = nullptr;
     ID3D11Texture2D* temporal_depth_history_texture_ = nullptr;
@@ -2609,8 +2509,7 @@ private:
 PostProcessor g_post_processor;
 thread_local bool g_inside_present = false;
 SRWLOCK g_processor_lock = SRWLOCK_INIT;
-
-}  // namespace
+}
 
 void process_frame(IDXGISwapChain* swap_chain) {
     if (g_inside_present) {
@@ -2645,5 +2544,4 @@ void report_resize_result(IDXGISwapChain* swap_chain, HRESULT result) {
     g_post_processor.report_resize(swap_chain, result);
     ReleaseSRWLockExclusive(&g_processor_lock);
 }
-
-}  // namespace photorealism
+}

@@ -25,8 +25,6 @@ float sample_raw_depth(float2 uv)
         DepthSampler, saturate(uv), 0.0));
 }
 
-// Adaptador: le as cinco amostras nos registradores deste shader e delega a
-// matematica para o header compartilhado.
 float3 sample_view_normal(
     float2 uv, float raw_center, out float normal_valid)
 {

@@ -10,7 +10,6 @@
 
 namespace photorealism {
 namespace {
-
 constexpr UINT kMaximumObservedResources = 256;
 constexpr UINT kViewCacheCapacity = 4096;
 constexpr UINT kViewCacheProbeCount = 32;
@@ -616,8 +615,7 @@ void start_discovery(
         kMaximumObservedResources,
         kViewCacheCapacity);
 }
-
-}  // namespace
+}
 
 void update_backbuffer_signature(
     UINT width, UINT height, DXGI_FORMAT format) {
@@ -881,5 +879,4 @@ bool invalidate_stale_depth_candidate(
     ReleaseSRWLockExclusive(&g_observer_lock);
     return invalidated;
 }
-
-}  // namespace photorealism
+}

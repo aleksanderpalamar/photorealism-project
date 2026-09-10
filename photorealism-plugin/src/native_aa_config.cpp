@@ -10,7 +10,6 @@
 #include <string>
 
 namespace {
-
 constexpr std::size_t kMaximumConfigBytes = 2u * 1024u * 1024u;
 
 bool append_path(wchar_t* path, std::size_t capacity, const wchar_t* suffix) {
@@ -156,14 +155,6 @@ bool write_atomic(const wchar_t* config_path, const std::string& contents) {
     return true;
 }
 
-// Ate a 0.12.1 o plugin zerava r_aa, r_taa_tuning, r_taa_luma_sharpen e
-// r_taa_modulated_drr_strength, para assumir integralmente o AA. Isso tem um
-// efeito colateral: com o TAA nativo desligado, o Prism3D nao precisa ler o
-// depth num shader e o cria sem D3D11_BIND_SHADER_RESOURCE. Sem depth
-// legivel, SSAO e resolve temporal ficam sem fonte.
-//
-// A politica agora vem do photorealism-plugin.cfg, para poder ser ajustada
-// sem recompilar. Os defaults abaixo valem quando a secao nao existe.
 constexpr const char* kNativeAaSection = "native_aa.0.12.2";
 constexpr const char* kDefaultAa = "6";
 constexpr const char* kDefaultTaaTuning = "0";
@@ -226,8 +217,7 @@ NativeAaPolicy read_native_aa_policy(HMODULE proxy_module) {
         plugin_config, "r_taa_modulated_drr_strength", kDefaultTaaDrr);
     return policy;
 }
-
-}  // namespace
+}
 
 bool configure_native_aa_for_photorealism(HMODULE proxy_module) {
     wchar_t executable[MAX_PATH] = {};

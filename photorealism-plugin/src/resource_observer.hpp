@@ -6,7 +6,6 @@
 #include <cstdint>
 
 namespace photorealism {
-
 void update_backbuffer_signature(
     UINT width, UINT height, DXGI_FORMAT format);
 void restart_depth_discovery();
@@ -25,5 +24,4 @@ bool acquire_depth_candidate(
 bool invalidate_stale_depth_candidate(
     std::uint64_t generation,
     std::uint64_t binding_serial);
-
-}  // namespace photorealism
+}

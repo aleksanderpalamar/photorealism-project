@@ -5,20 +5,11 @@
 #include <d3d11.h>
 
 namespace photorealism {
-
-// Observador do frame pre-grade.
-//
-// A fonte OBRIGATORIA e a copia da cena, nunca a saida: o grade e funcao das
-// features e as features seriam funcao do grade, o que fecha uma realimentacao
-// e faz a cor caminhar sozinha. `observe` recebe a mesma textura que o passe
-// visual le como entrada.
 class SceneObserver {
   public:
     void configure(bool enabled, unsigned interval_frames, float log_seconds);
     void release();
 
-    // Uma chamada por frame. So faz trabalho de GPU a cada `interval_frames`,
-    // e a leitura volta alguns frames depois, sem travar o render.
     void observe(
         ID3D11Device* device,
         ID3D11DeviceContext* context,
@@ -27,8 +18,7 @@ class SceneObserver {
     SceneFeatures latest() const { return latest_; }
 
   private:
-    // Dois slots bastam: um em voo e um livre. A cadencia de amostragem e de
-    // dezenas de frames, entao nunca ha mais de uma copia pendente.
+
     struct Slot {
         ID3D11Texture2D* staging;
         ID3D11Query* completion;
@@ -63,5 +53,4 @@ class SceneObserver {
     unsigned long long last_log_ms_ = 0ull;
     bool first_measurement_logged_ = false;
 };
-
-}  // namespace photorealism
+}

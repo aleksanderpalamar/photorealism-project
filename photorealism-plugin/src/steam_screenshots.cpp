@@ -13,7 +13,6 @@
 
 namespace photorealism {
 namespace {
-
 constexpr int kScreenshotRequestedCallback = 2302;
 constexpr std::size_t kCaptureSlotCount = 2;
 
@@ -124,9 +123,6 @@ public:
         g_requests.store(1u, std::memory_order_release);
     }
 
-    // ScreenshotRequested_t is a normal callback, not an API-call result.
-    // Accepting this second virtual entry as another request can duplicate one
-    // physical F12 delivery on compatibility layers.
     void Run(void*, bool, std::uint64_t) override {}
 
     int GetCallbackSizeBytes() override { return 1; }
@@ -377,8 +373,7 @@ bool ensure_capture_slots(
     g_format = source.Format;
     return true;
 }
-
-}  // namespace
+}
 
 void observe_postprocessed_frame(IDXGISwapChain* swap_chain) {
     if (swap_chain == nullptr || !initialize_steam_screenshots() ||
@@ -541,5 +536,4 @@ void shutdown_steam_screenshots() {
         g_last_integration_attempt = 0;
     }
 }
-
-}  // namespace photorealism
+}

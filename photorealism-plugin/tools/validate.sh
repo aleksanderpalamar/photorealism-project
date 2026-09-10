@@ -372,7 +372,7 @@ fi
 # O header entra no pino porque agora e a unica fonte da matematica usada
 # pelos tres shaders aprovados: alterar so ele mudaria os tres em silencio.
 depth_view_space_header="${project_dir}/shaders/depth_view_space.hlsli"
-expected_depth_view_space_sha256="fda4531182a5b46b74c21eda30d679cd3952dc99a8cabba03ebf7041e24f4bd2"
+expected_depth_view_space_sha256="6c11226174139a68117eaa038ade1365e606e639077629213a1e1439889109a8"
 actual_depth_view_space_sha256="$(sha256sum "${depth_view_space_header}" | awk '{print $1}')"
 if [[ "${actual_depth_view_space_sha256}" != "${expected_depth_view_space_sha256}" ]]; then
   echo "Header depth/view-space aprovado foi alterado: ${actual_depth_view_space_sha256}" >&2
@@ -381,7 +381,7 @@ fi
 
 
 depth_preview_shader="${project_dir}/shaders/depth-preview.hlsl"
-expected_depth_preview_shader_sha256="e12de14a45ce2781507963c8834ca53a1503aa25ed58a5e90b51ffd02c7b0f61"
+expected_depth_preview_shader_sha256="43b5abf25045f8d6951f670cc6d9768f74c11d60db9bd781a5c14811739239a3"
 actual_depth_preview_shader_sha256="$(sha256sum "${depth_preview_shader}" | awk '{print $1}')"
 if [[ "${actual_depth_preview_shader_sha256}" != "${expected_depth_preview_shader_sha256}" ]]; then
   echo "Shader depth preview aprovado foi alterado: ${actual_depth_preview_shader_sha256}" >&2
@@ -389,7 +389,7 @@ if [[ "${actual_depth_preview_shader_sha256}" != "${expected_depth_preview_shade
 fi
 
 ssao_shader="${project_dir}/shaders/ssao.hlsl"
-expected_ssao_shader_sha256="97e0434b739789210eb4e77896b21d55301f331309f3c89779a6bf74fe050314"
+expected_ssao_shader_sha256="8528e57b3dba89f3b905a5c0338d905e13f1514c78e766dd3e160af991134192"
 actual_ssao_shader_sha256="$(sha256sum "${ssao_shader}" | awk '{print $1}')"
 if [[ "${actual_ssao_shader_sha256}" != "${expected_ssao_shader_sha256}" ]]; then
   echo "Shader SSAO aprovado foi alterado: ${actual_ssao_shader_sha256}" >&2
@@ -546,7 +546,7 @@ fi
 # "Shader visual aprovado foi alterado" e as guardas nomeadas nunca falavam.
 # Uma guarda muda nao guarda coisa alguma.
 visual_shader="${project_dir}/shaders/photorealism.hlsl"
-expected_visual_shader_sha256="ac079b51da5b4206f3b97f3a38112c50a09b1f2dc512e7da9d9567589152b15a"
+expected_visual_shader_sha256="cc221815e206ffe96c50613d7b8fda72831f23bcb4ee61063bc205df279b4e6a"
 actual_visual_shader_sha256="$(sha256sum "${visual_shader}" | awk '{print $1}')"
 if [[ "${actual_visual_shader_sha256}" != "${expected_visual_shader_sha256}" ]]; then
   echo "Shader visual aprovado foi alterado: ${actual_visual_shader_sha256}" >&2

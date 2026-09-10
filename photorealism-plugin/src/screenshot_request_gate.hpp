@@ -3,11 +3,6 @@
 #include <cstdint>
 
 namespace photorealism::steam_screenshot {
-
-// Steam normally emits one ScreenshotRequested_t per physical hotkey press.
-// Proton/overlay callback delivery is treated defensively: while a capture is
-// in flight no second request can be admitted, and an immediate duplicate
-// after completion remains coalesced for a short bounded interval.
 constexpr std::uint64_t kDuplicateRequestWindowMs = 750;
 
 constexpr bool request_is_duplicate(
@@ -22,5 +17,4 @@ constexpr bool request_is_duplicate(
     }
     return now_ms - last_accepted_ms < kDuplicateRequestWindowMs;
 }
-
-}  // namespace photorealism::steam_screenshot
+}

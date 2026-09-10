@@ -10,29 +10,8 @@
 #include <cstdlib>
 #include <cstring>
 
-// Leitura do cfg, dirigida por TABELA.
-//
-// Ate a 0.19.0 este arquivo era uma sequencia de cadeias de `else if`: uma por
-// secao para achar a chave, mais uma para despachar a secao, mais quarenta
-// clamps escritos a mao. Cada parametro novo exigia tocar em cinco lugares
-// diferentes, e esquecer um deles nao quebrava nada visivelmente.
-//
-// Foi assim que a `exposure` da base ficou em -0,09 quando o cfg ja dizia
-// -0,0488697: a 0.18.2 mudou o arquivo e nao o default interno, e o fallback
-// passou a render 0,041 EV mais escuro que o cfg sem que nada acusasse.
-//
-// Aqui cada parametro e UMA LINHA de tabela, e essa linha carrega ao mesmo
-// tempo o nome no arquivo, o campo em Settings e o campo na camada. Parse e
-// composicao leem a mesma linha, entao nao ha como uma saber de um campo que a
-// outra ignora.
-
 namespace photorealism {
 namespace {
-
-// ---------------------------------------------------------------- estruturas
-
-// Uma camada de calibracao. A base traz valores absolutos; visual e
-// rain_overcast trazem deltas somados por cima.
 struct CalibrationLayer {
     bool enabled;
     float temperature;
@@ -47,9 +26,7 @@ struct CalibrationLayer {
     float local_contrast;
     float sharpness;
     float vignette;
-    // 0.14.0. black_lift e o piso do preto em linear, highlight_rolloff a
-    // forca do ombro, tint o eixo verde-magenta que faltava ao balanco.
-    // 0.17.1: o piso virou tres numeros, porque o alvo medido nao e cinza.
+
     float black_lift_r;
     float black_lift_g;
     float black_lift_b;
@@ -57,24 +34,12 @@ struct CalibrationLayer {
     float tint;
 };
 
-// Tudo que o cfg pode dizer, antes de virar Settings.
-//
-// So as tres camadas de cor precisam de armazenamento proprio, porque elas se
-// somam. Todo o resto -- depth, SSAO, temporal, bloom, observador, adaptacao --
-// nao tem camada nenhuma, entao e lido DIRETO no formato final.
-//
-// Ate a 0.19.0 esta struct redeclarava um a um os cinquenta e cinco campos de
-// Settings, e cada tabela precisava de duas colunas para ligar as duas copias.
-// Um campo novo tinha que ser escrito nos dois lugares com o mesmo nome, e nada
-// reclamava se a segunda copia ficasse para tras.
 struct CalibrationStack {
     CalibrationLayer base;
     CalibrationLayer visual_0_2;
     CalibrationLayer rain_overcast_0_3;
     Settings modules;
 };
-
-// ------------------------------------------------------------------ utilidades
 
 float clamp_value(float value, float minimum, float maximum) {
     const float low = value < minimum ? minimum : value;
@@ -102,11 +67,6 @@ char* trim(char* text) {
     return text;
 }
 
-// ------------------------------------------------------- ligacao chave->campo
-
-// Ponteiro-para-membro e o que permite uma tabela: a linha guarda ONDE
-// escrever, e uma unica funcao percorre a tabela escrevendo. Sem isso, cada
-// chave precisa do seu proprio ramo, que era o estado anterior deste arquivo.
 template <typename Owner>
 struct Field {
     const char* key;
@@ -130,14 +90,6 @@ bool assign_field(
     return false;
 }
 
-// --------------------------------------------------------- parametros de cor
-
-// UMA linha por parametro de cor, e ela serve a tres leitores: o parse das
-// camadas, a copia da base e a soma dos deltas.
-//
-// Antes eram tres listas separadas com os mesmos dezessete nomes, e manter as
-// tres em dia era trabalho manual. Um parametro novo aqui aparece nos tres
-// lugares de uma vez, ou em nenhum.
 struct GradeField {
     const char* key;
     float Settings::*effective;
@@ -169,8 +121,6 @@ constexpr GradeField kGradeFields[] = {
 constexpr std::size_t kGradeFieldCount =
     sizeof(kGradeFields) / sizeof(kGradeFields[0]);
 
-// Nas camadas de delta as chaves terminam em `_delta`. Devolve a chave sem o
-// sufixo, no buffer do chamador.
 const char* strip_delta_suffix(const char* key, char* buffer, std::size_t size) {
     static constexpr char kSuffix[] = "_delta";
     const std::size_t suffix_length = sizeof(kSuffix) - 1;
@@ -197,10 +147,6 @@ void apply_layer_setting(
     char buffer[64] = {};
     const char* key = strip_delta_suffix(raw_key, buffer, sizeof(buffer));
 
-    // Forma escalar da 0.14.0 ate a 0.17.0: escreve os tres canais com o mesmo
-    // valor, que e exatamente o piso acromatico que a 0.17.1 corrige. Um cfg
-    // antigo carrega e roda; para chegar no alvo medido ele precisa das tres
-    // chaves separadas.
     if (_stricmp(key, "black_lift") == 0) {
         const float number = to_number(value);
         layer->black_lift_r = number;
@@ -218,11 +164,6 @@ void apply_layer_setting(
     }
 }
 
-// -------------------------------------------------------- parametros de modulo
-
-// Mesma ideia dos parametros de cor, para o que nao e camada: a linha diz o
-// nome no arquivo, o campo em Settings e o campo no stack. Parse e copia leem
-// a mesma linha.
 struct ModuleField {
     const char* key;
     float Settings::*member;
@@ -292,15 +233,6 @@ constexpr ModuleField kConditionFields[] = {
     {"night_tint", &Settings::condition_night_tint},
 };
 
-// ------------------------------------------------------------ tabela de secoes
-
-// Uma linha por secao do cfg. `layer` so e preenchido nas tres camadas de cor;
-// `flag` so nas secoes que aceitam `enabled`.
-//
-// Antes esta informacao estava espalhada por tres lugares -- um `enum`, uma
-// cadeia de `if` que traduzia nome em enum, e outra cadeia que traduzia enum em
-// funcao. Uma secao nova exigia acertar os tres, e a 0.19.0 chegou a esquecer
-// um `continue` nessa segunda cadeia.
 struct SectionSpec {
     const char* name;
     bool Settings::*flag;
@@ -374,45 +306,24 @@ void apply_setting(
     }
 }
 
-// ----------------------------------------------------------------- referencia
-
 CalibrationLayer reference_base() {
     CalibrationLayer layer = {};
     layer.enabled = true;
     layer.temperature = 6500.0f;
-    // 0.18.2. Era -0.09 enquanto o balanco de branco carregava +0,0411 EV
-    // escondidos. O shader passou a normalizar o balanco e os +0,0411 vieram
-    // para ca. Tem que casar com o cfg, senao o fallback interno renderiza mais
-    // escuro que o arquivo -- que foi o que aconteceu ate a 0.19.0.
+
     layer.exposure = -0.0488697f;
     layer.contrast = 0.98f;
     layer.saturation = 0.95f;
     layer.vibrance = -0.05f;
     layer.shadows = 0.04f;
     layer.highlights = -0.05f;
-    // Era -0.01f, e somado aos dois deltas dava -0.06 efetivo -- empurrava os
-    // pretos para BAIXO, contra o alvo. 0.05f zera a soma das tres camadas e
-    // deixa o piso por conta de black_lift, que e quem sabe fazer isso.
+
     layer.blacks = 0.05f;
     layer.whites = 0.03f;
     layer.local_contrast = 0.12f;
     layer.sharpness = 0.18f;
     layer.vignette = 0.04f;
-    // 0.17.2. O piso do preto, por canal, em linear.
-    //
-    // A 0.17.1 leu as referencias com o estimador de cauda -- media do 1% mais
-    // escuro -- sem corrigir o vies que o grao impoe a ele. A cauda e escolhida
-    // ordenando por LUMINANCIA, que e 72% G, entao ruido negativo no canal G e
-    // o que faz um pixel entrar na amostra. O resultado e que so o G desce.
-    //
-    // Medido por injecao: somando grao de desvio 2,1 -- o das referencias -- as
-    // capturas limpas do plugin, a cauda se desloca -0,18 / -1,83 / +0,43
-    // codigos. R e B quase nao se movem porque pesam 0,21 e 0,07 na luminancia.
-    //
-    // Corrigidas do vies, as tres referencias de tempo claro tem mediana por
-    // canal 3,35/6,53/6,22 em 255, convertida para linear por codigo/255/12,92.
-    // As duas de neblina tem piso mais alto e mais azul, e entram como delta na
-    // camada rain_overcast em vez de puxarem a base.
+
     layer.black_lift_r = 0.001017f;
     layer.black_lift_g = 0.001982f;
     layer.black_lift_b = 0.001888f;
@@ -436,8 +347,7 @@ CalibrationLayer visual_delta_0_2() {
     layer.local_contrast = 0.06f;
     layer.sharpness = 0.04f;
     layer.vignette = -0.005f;
-    // Os tres da 0.14.0 entram neutros aqui: a primeira rodada move so a base,
-    // para o A/B em jogo ter uma variavel de cada vez.
+
     layer.black_lift_r = 0.0f;
     layer.black_lift_g = 0.0f;
     layer.black_lift_b = 0.0f;
@@ -461,20 +371,12 @@ CalibrationLayer rain_overcast_delta_0_3() {
     layer.local_contrast = 0.06f;
     layer.sharpness = -0.02f;
     layer.vignette = -0.005f;
-    // 0.17.2. Esta camada esta SEMPRE somada, entao quem tem que cair no alvo e
-    // a SOMA e nao a base sozinha. Os tres numeros saem de resolver o lift que
-    // POE a cauda no alvo medido, invertendo a etapa afim do shader pixel a
-    // pixel nas doze capturas da 0.17.1 e bisseccionando por canal.
+
     layer.black_lift_r = 0.000381f;
     layer.black_lift_g = 0.000498f;
     layer.black_lift_b = 0.000380f;
     layer.highlight_rolloff = 0.0f;
-    // A referencia de tempo encoberto e a mais verde das cinco (G/R = 1,21
-    // contra 1,11 da de dia claro), entao esta camada acrescenta tint.
-    //
-    // 0.19.0: com a adaptacao por condicao ligada, temperature e tint efetivos
-    // vem das ancoras e nao daqui. Este valor continua sendo o ponto de partida
-    // enquanto nao ha amostra de cena valida.
+
     layer.tint = 0.15f;
     return layer;
 }
@@ -519,27 +421,16 @@ CalibrationStack reference_stack() {
     stack.modules.temporal_depth_rejection = 0.02f;
     stack.modules.temporal_color_rejection = 0.08f;
 
-    // Licenca artistica, e nao o alvo medido. As referencias do ATS nao tem
-    // bloom: as bordas de alto contraste sao nitidas e o lado escuro nao tem
-    // cauda. Destes quatro so o limiar e medido -- 0.85 em sRGB fica acima do
-    // p95 das cinco referencias, entao o bloom pega sol, topo de nuvem e realce
-    // de capo, e nao o ceu.
     stack.modules.bloom_enabled = true;
     stack.modules.bloom_threshold = 0.85f;
     stack.modules.bloom_knee = 0.06f;
     stack.modules.bloom_intensity = 0.02f;
     stack.modules.bloom_radius = 0.03f;
 
-    // 0.18.0. Ligado por padrao porque nao muda um pixel: o unico efeito e uma
-    // linha no log a cada 30s. 30 frames sao ~0,5s; condicao de tempo muda em
-    // minutos, entao amostrar mais rapido so gastaria banda.
     stack.modules.scene_observer_enabled = true;
     stack.modules.scene_observer_interval_frames = 30.0f;
     stack.modules.scene_observer_log_seconds = 30.0f;
 
-    // 0.19.0. Limiares medidos em 386 amostras do ETS2; ancoras sao escolha de
-    // look. Os defaults vivem em scene_conditions.hpp, junto do detector que os
-    // usa, para nao existirem duas copias.
     stack.modules.condition_adaptation_enabled = true;
     stack.modules.condition_time_constant_seconds = 180.0f;
     stack.modules.condition_log_seconds = 30.0f;
@@ -558,8 +449,6 @@ CalibrationStack reference_stack() {
     stack.modules.condition_night_tint = anchors.night_tint;
     return stack;
 }
-
-// ------------------------------------------------------------------- limites
 
 struct Limit {
     float Settings::*member;
@@ -601,25 +490,18 @@ constexpr Limit kLimits[] = {
     {&Settings::temporal_history_weight, 0.0f, 0.95f},
     {&Settings::temporal_depth_rejection, 0.001f, 0.5f},
     {&Settings::temporal_color_rejection, 0.005f, 1.0f},
-    // O teto do limiar fica em 0.98 e nao em 1.0: em 1.0 nada da cena passa e o
-    // modulo fica ligado sem produzir nada, que e pior que desligado porque o
-    // log diz "ativo". O piso em 0.2 impede que o bloom vire veu sobre a imagem
-    // inteira.
+
     {&Settings::bloom_threshold, 0.2f, 0.98f},
     {&Settings::bloom_knee, 0.0f, 0.5f},
     {&Settings::bloom_intensity, 0.0f, 1.0f},
     {&Settings::bloom_radius, 0.005f, 0.2f},
-    // O piso de 1 frame existe para o valor 0 nao virar cadencia degenerada; o
-    // teto de 600 (~10s a 60fps) porque acima disso o observador deixa de
-    // acompanhar uma transicao de tempo dentro do jogo.
+
     {&Settings::scene_observer_interval_frames, 1.0f, 600.0f},
     {&Settings::scene_observer_log_seconds, 0.0f, 3600.0f},
     {&Settings::condition_time_constant_seconds, 1.0f, 1800.0f},
     {&Settings::condition_log_seconds, 0.0f, 3600.0f},
     {&Settings::condition_minimum_dynamic_range, 0.0f, 255.0f},
-    // As ancoras usam a mesma faixa que temperature e tint estaticos, senao um
-    // cfg editado a mao levaria a adaptacao a um lugar onde o perfil fixo nao
-    // pode ir.
+
     {&Settings::condition_sun_temperature, 3000.0f, 9000.0f},
     {&Settings::condition_rain_temperature, 3000.0f, 9000.0f},
     {&Settings::condition_night_temperature, 3000.0f, 9000.0f},
@@ -628,9 +510,6 @@ constexpr Limit kLimits[] = {
     {&Settings::condition_night_tint, -1.0f, 1.0f},
 };
 
-// Pares que precisam ficar em ordem crescente. Invertidos, o smoothstep de
-// quem os consome degenera em degrau -- e no caso da banda de condicao isso
-// devolveria a classe dura que a 0.19.0 existe para nao ter.
 struct OrderedPair {
     float Settings::*low;
     float Settings::*high;
@@ -661,8 +540,6 @@ void apply_limits(Settings* settings) {
     }
 }
 
-// ---------------------------------------------------------------- composicao
-
 void copy_base_layer(Settings* settings, const CalibrationLayer& layer) {
     for (const GradeField& field : kGradeFields) {
         settings->*(field.effective) = layer.*(field.layer);
@@ -679,8 +556,6 @@ void add_delta_layer(Settings* settings, const CalibrationLayer& layer) {
 }
 
 Settings compose_stack(const CalibrationStack& stack) {
-    // Os modulos ja estao no formato final; so as tres camadas de cor precisam
-    // ser compostas.
     Settings settings = stack.modules;
 
     if (stack.base.enabled) {
@@ -693,8 +568,6 @@ Settings compose_stack(const CalibrationStack& stack) {
     return settings;
 }
 
-// ---------------------------------------------------------------------- log
-
 void log_effective_profile(const Settings& settings) {
     log_message(
         "Perfil efetivo: temperature=%.1f exposure=%.3f contrast=%.3f "
@@ -705,10 +578,7 @@ void log_effective_profile(const Settings& settings) {
         settings.saturation, settings.vibrance, settings.shadows,
         settings.highlights, settings.blacks, settings.whites,
         settings.local_contrast, settings.sharpness, settings.vignette);
-    // Estes cinco ficaram de fora da linha acima desde a 0.14.0. tint e a maior
-    // decisao de cor da cadeia -- sozinho responde por 70% do deficit de
-    // vermelho que o plugin introduz -- e nao havia como confirmar em runtime
-    // qual valor estava rodando.
+
     log_message(
         "Perfil efetivo (cor): tint=%.3f highlight_rolloff=%.3f "
         "black_lift=%.6f/%.6f/%.6f.",
@@ -717,14 +587,6 @@ void log_effective_profile(const Settings& settings) {
 }
 
 void log_white_balance(const Settings& settings) {
-    // 0.18.2. O vetor de balanco vai para o log com a luminancia que ele
-    // carrega, e nao so com os tres fatores.
-    //
-    // Ate a 0.18.1 esse ganho era invisivel: o cfg dizia exposure=-0,030, o log
-    // repetia, e o balanco somava +0,0411 EV por fora, entao a exposicao real
-    // era +0,0111 -- com o sinal trocado. O shader agora normaliza, de modo que
-    // ganho_luma tem que sair 1,000000. Se um perfil futuro fizer esse numero
-    // sair de 1, e porque alguem devolveu exposicao escondida ao balanco.
     const float shift =
         clamp_value((settings.temperature - 6500.0f) / 3500.0f, -1.0f, 1.0f);
     const float tint = clamp_value(settings.tint, -1.0f, 1.0f);
@@ -825,12 +687,6 @@ void log_stack(const CalibrationStack& stack, const Settings& settings) {
     log_modules(settings);
 }
 
-// --------------------------------------------------------------- leitura do cfg
-
-// Devolve a secao quando a linha e um cabecalho `[nome]`, e diz pelo bool se a
-// linha era um cabecalho. Uma secao desconhecida devolve nullptr, e as chaves
-// dela sao ignoradas sem erro -- e assim que um cfg de versao futura carrega
-// numa versao antiga.
 bool read_section_header(char* content, const SectionSpec** section) {
     if (*content != '[') {
         return false;
@@ -845,7 +701,6 @@ bool read_section_header(char* content, const SectionSpec** section) {
     return true;
 }
 
-// Parte `chave = valor` no lugar. Devolve false quando a linha nao tem `=`.
 bool split_key_value(char* content, char** key, char** value) {
     char* separator = std::strchr(content, '=');
     if (separator == nullptr) {
@@ -880,8 +735,7 @@ void read_stack_from_file(FILE* file, CalibrationStack* stack) {
         apply_setting(stack, section, key, value);
     }
 }
-
-}  // namespace
+}
 
 Settings default_settings() {
     return compose_stack(reference_stack());
@@ -908,5 +762,4 @@ bool load_settings(Settings* settings) {
     log_stack(stack, *settings);
     return true;
 }
-
-}  // namespace photorealism
+}

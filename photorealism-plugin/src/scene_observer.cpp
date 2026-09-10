@@ -9,11 +9,6 @@
 
 namespace photorealism {
 namespace {
-
-// Alvo de largura da amostra. 96 e o compromisso: mip 4 ou 5 de um backbuffer
-// tipico, ou seja 3 a 5 mil pixels, que e amostra sobrando para percentil e
-// custo de leitura irrelevante. Subir isso nao melhora nenhum dos cinco
-// numeros e so aumenta o tempo de Map.
 constexpr unsigned kTargetSampleWidth = 96u;
 
 bool supported_format(DXGI_FORMAT format) {
@@ -24,7 +19,6 @@ bool format_is_bgra(DXGI_FORMAT format) {
     return scene_formats::is_bgra(static_cast<unsigned>(format));
 }
 
-// Formato concreto usado na piramide, na view e no staging.
 DXGI_FORMAT sample_format(DXGI_FORMAT format) {
     return static_cast<DXGI_FORMAT>(
         scene_formats::resolve_unorm(static_cast<unsigned>(format)));
@@ -33,16 +27,14 @@ DXGI_FORMAT sample_format(DXGI_FORMAT format) {
 unsigned long long now_ms() {
     return static_cast<unsigned long long>(GetTickCount64());
 }
-
-}  // namespace
+}
 
 void SceneObserver::configure(
     bool enabled, unsigned interval_frames, float log_seconds) {
     enabled_ = enabled;
     interval_frames_ = interval_frames < 1u ? 1u : interval_frames;
     log_seconds_ = log_seconds < 0.0f ? 0.0f : log_seconds;
-    // Uma recarga por End tem que poder consertar um limiar errado sem
-    // reiniciar o jogo; zerar isto faz a proxima medida valida ser registrada.
+
     first_measurement_logged_ = false;
 }
 
@@ -78,10 +70,7 @@ bool SceneObserver::ensure_resources(
     ID3D11Device* device, ID3D11Texture2D* scene) {
     D3D11_TEXTURE2D_DESC description = {};
     scene->GetDesc(&description);
-    // A comparacao vem antes de qualquer release, e a falha tambem cai nela.
-    // Na 0.18.0 o release() vinha primeiro e zerava a assinatura, entao a
-    // recusa era reavaliada e registrada A CADA FRAME: 663 mil linhas e 67 MB
-    // de log numa unica sessao. `resources_failed_` existia e nunca era lido.
+
     if (description.Width == source_width_ &&
         description.Height == source_height_ &&
         description.Format == source_format_) {
@@ -91,8 +80,6 @@ bool SceneObserver::ensure_resources(
     if (!supported_format(description.Format) ||
         description.SampleDesc.Count != 1u || description.Width == 0u ||
         description.Height == 0u) {
-        // Formato exotico nao e erro: o passe visual segue, o observador
-        // apenas nao tem o que medir.
         log_message(
             "Observador de cena 0.18.0 inativo: formato %u ou MSAA %u nao "
             "suportados para leitura.",
@@ -106,10 +93,6 @@ bool SceneObserver::ensure_resources(
     }
     const DXGI_FORMAT readable = sample_format(description.Format);
 
-    // Cadeia completa de mips gerada pelo hardware. E o caminho mais barato
-    // para uma media de area honesta: uma reducao por amostragem pontual
-    // aliasaria, e um shader proprio de reducao seria mais um passe para
-    // manter sem ganho nenhum sobre o que o GenerateMips ja faz.
     D3D11_TEXTURE2D_DESC pyramid = description;
     pyramid.MipLevels = 0u;
     pyramid.Usage = D3D11_USAGE_DEFAULT;
@@ -126,10 +109,7 @@ bool SceneObserver::ensure_resources(
         resources_failed_ = true;
         return false;
     }
-    // Descritor explicito, nao nulo: um TYPELESS nao tem formato de view
-    // proprio, e o descritor nulo o recusaria. Ver resolve_unorm sobre por que
-    // a view e UNORM e nao _SRGB -- e ela que decide se o GenerateMips faz a
-    // media no espaco de codigo ou em linear.
+
     D3D11_SHADER_RESOURCE_VIEW_DESC pyramid_view = {};
     pyramid_view.Format = readable;
     pyramid_view.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
@@ -212,9 +192,7 @@ void SceneObserver::drain(ID3D11DeviceContext* context) {
         if (!slot.pending) {
             continue;
         }
-        // DONOTFLUSH: perguntar sem empurrar a fila. Se ainda nao chegou, o
-        // frame segue e a resposta e colhida no proximo. Um Map bloqueante
-        // aqui custaria a latencia inteira do pipeline.
+
         if (context->GetData(
                 slot.completion,
                 nullptr,
@@ -290,9 +268,6 @@ void SceneObserver::observe(
     Slot& slot = slots_[next_slot_];
     next_slot_ = (next_slot_ + 1u) % 2u;
     if (slot.pending) {
-        // O slot anterior ainda nao voltou. Perder esta amostra e a decisao
-        // certa: condicao de tempo muda em minutos e a proxima vem em menos de
-        // um segundo.
         return;
     }
 
@@ -304,5 +279,4 @@ void SceneObserver::observe(
     context->End(slot.completion);
     slot.pending = true;
 }
-
-}  // namespace photorealism
+}

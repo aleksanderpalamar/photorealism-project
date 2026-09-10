@@ -22,12 +22,6 @@ int main() {
     assert(is_scene_candidate(
         1920, 2160, 32818, 1, backbuffer_width, backbuffer_height, 30000));
 
-    // Ate a 0.13.0 esta linha era `!is_scene_candidate`: um alvo do tamanho
-    // exato da tela era tratado como interface, nao como cena. A separacao era
-    // so a taxa de binds, e o depth de camera real do ETS2 sem supersampling
-    // faz 291/s -- abaixo da linha. A elegibilidade nao precisa fazer essa
-    // separacao, porque o score ja faz: quando o mundo supersampleado existe,
-    // ele vence a selecao. A assercao abaixo e a invariante que importa.
     assert(is_scene_candidate(
         1920, 1080, 7499, 1, backbuffer_width, backbuffer_height, 30000));
     assert(ets2_world > ets2_interface);
@@ -53,13 +47,7 @@ int main() {
         1920, 2160, 32818, 4, backbuffer_width, backbuffer_height));
     assert(!is_scene_candidate(
         1920, 2160, 32818, 4, backbuffer_width, backbuffer_height, 30000));
-    // Numeros reais do log de 28/08.
-    //
-    // O depth de camera do ETS2 sem supersampling (r_scale_x=1, r_scale_y=1)
-    // tem exatamente a area da tela. A regra dos 110% foi escrita para o caso
-    // supersampleado e o excluia por construcao; a valvula de 400 binds/s
-    // tambem nao alcancava, porque ele faz 291/s. Sobrava um shadow map
-    // 2048x2048, quadrado, com 202% da area -- e ele vencia.
+
     assert(is_scene_candidate(
         1920, 1080, 8730, 1, backbuffer_width, backbuffer_height, 30000));
     assert(!is_scene_candidate(
@@ -67,22 +55,17 @@ int main() {
     assert(!is_scene_candidate(
         4096, 4096, 343, 1, backbuffer_width, backbuffer_height, 30000));
 
-    // Proporcao e veto duro: nem atividade sustentada salva um alvo que nao
-    // tem a forma da tela.
     assert(!is_scene_candidate(
         2048, 2048, 900000, 1, backbuffer_width, backbuffer_height, 30000));
     assert(!is_scene_candidate(
         512, 1024, 900000, 1, backbuffer_width, backbuffer_height, 30000));
 
-    // O caso supersampleado que a regra original protegia continua valendo.
     assert(is_scene_candidate(
         1920, 2160, 32818, 1, backbuffer_width, backbuffer_height, 30000));
 
-    // Meia resolucao nao e o depth principal, mesmo com proporcao correta.
     assert(!is_scene_candidate(
         960, 540, 8730, 1, backbuffer_width, backbuffer_height, 30000));
 
-    // O diagnostico precisa apontar o motivo exato, nao so "rejeitado".
     using photorealism::depth_scoring::depth_candidate_rejection;
     using photorealism::depth_scoring::depth_rejection_name;
     using photorealism::depth_scoring::DepthRejection;
@@ -98,13 +81,11 @@ int main() {
     assert(depth_candidate_rejection(
                1920, 1080, 8730, 4, backbuffer_width, backbuffer_height,
                30000) == DepthRejection::samples);
-    // Meia resolucao e um quarto da area: cai no piso antes de chegar na
-    // regra de area util.
+
     assert(depth_candidate_rejection(
                960, 540, 8730, 1, backbuffer_width, backbuffer_height,
                30000) == DepthRejection::too_small);
-    // 1600x900 passa do piso e tem a forma certa, mas nao alcanca nem os 95%
-    // de area nem os 400 binds/s.
+
     assert(depth_candidate_rejection(
                1600, 900, 8730, 1, backbuffer_width, backbuffer_height,
                30000) == DepthRejection::area_and_activity);
@@ -112,7 +93,6 @@ int main() {
                0, 1080, 8730, 1, backbuffer_width, backbuffer_height,
                30000) == DepthRejection::invalid);
 
-    // O motivo "aceito" tem que coincidir com is_scene_candidate, sempre.
     struct Case {
         unsigned width;
         unsigned height;

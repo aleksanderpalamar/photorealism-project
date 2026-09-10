@@ -10,26 +10,10 @@
 #include <cwchar>
 #include <string>
 
-// Teste de carga do cfg -- 0.19.1.
-//
-// Ate aqui `config.cpp` nao tinha teste nenhum: `validate.sh` so fazia grep de
-// valores literais dentro do arquivo. Grep confirma que um numero esta escrito;
-// nao confirma que ele chega a Settings, nem que o parse le a chave, nem que o
-// clamp faz o que diz.
-//
-// Foi essa lacuna que deixou passar o defeito que este teste agora impede: a
-// 0.18.2 mudou `exposure` no cfg de -0,09 para -0,0488697 e esqueceu o default
-// interno, entao o fallback passou a renderizar 0,041 EV mais escuro que o
-// arquivo -- e nada acusou, porque o grep de cada lado passava.
-//
-// O teste inclui `config.cpp` direto, com um substituto de <windows.h>. E o
-// unico jeito de exercitar o binario de verdade sem cortar o arquivo em dois so
-// para agradar ao teste.
-
 namespace photorealism {
 namespace {
 wchar_t g_config_path[4096] = {};
-}  // namespace
+}
 
 const wchar_t* config_path() { return g_config_path; }
 void log_message(const char*, ...) {}
@@ -41,14 +25,13 @@ const wchar_t* depth_preview_shader_path() { return L"."; }
 const wchar_t* ssao_shader_path() { return L"."; }
 const wchar_t* temporal_shader_path() { return L"."; }
 const wchar_t* bloom_shader_path() { return L"."; }
-}  // namespace photorealism
+}
 
 #include "../src/config.cpp"
 
 using namespace photorealism;
 
 namespace {
-
 const char* kTempPath = "/tmp/photorealism-config-load-test.cfg";
 
 Settings load_from_text(const char* text) {
@@ -76,22 +59,14 @@ bool near(float value, float target, float tolerance) {
     return std::fabs(value - target) <= tolerance;
 }
 
-// Le o cfg que de fato acompanha o pacote.
 std::string shipped_config_path() {
     const char* root = std::getenv("PHOTOREALISM_PROJECT_DIR");
     const std::string base = root != nullptr ? root : ".";
     return base + "/config/photorealism-plugin.cfg";
 }
-
-}  // namespace
+}
 
 int main() {
-    // --- 1. O defeito que este teste existe para impedir.
-    //
-    // Os defaults internos e o cfg entregue tem que produzir o MESMO perfil de
-    // cor. Se divergirem, um jogador que perca o cfg roda com uma imagem
-    // diferente da que foi calibrada -- e foi o que aconteceu entre a 0.18.2 e
-    // a 0.19.0, com 0,041 EV de diferenca que ninguem viu.
     {
         const Settings internal = load_missing_file();
         const std::string path = shipped_config_path();
@@ -115,7 +90,7 @@ int main() {
             assert(near(internal.black_lift_r, shipped.black_lift_r, 1e-7f));
             assert(near(internal.black_lift_g, shipped.black_lift_g, 1e-7f));
             assert(near(internal.black_lift_b, shipped.black_lift_b, 1e-7f));
-            // 0.19.0: as ancoras tambem.
+
             assert(near(internal.condition_sun_temperature,
                         shipped.condition_sun_temperature, 0.01f));
             assert(near(internal.condition_rain_temperature,
@@ -128,7 +103,6 @@ int main() {
         }
     }
 
-    // --- 2. As camadas se somam, e o sufixo _delta e reconhecido.
     {
         const Settings s = load_from_text(
             "[base.0.1.2]\n"
@@ -147,7 +121,6 @@ int main() {
         assert(near(s.tint, 0.35f, 1e-5f));
     }
 
-    // --- 3. Camada desligada nao entra na soma.
     {
         const Settings s = load_from_text(
             "[base.0.1.2]\n"
@@ -162,8 +135,6 @@ int main() {
         assert(near(s.temperature, 6000.0f, 0.01f));
     }
 
-    // --- 4. A forma escalar `black_lift` da 0.14.0 continua carregando, e
-    // escreve os tres canais. Um cfg antigo tem que rodar.
     {
         const Settings s = load_from_text(
             "[base.0.1.2]\n"
@@ -178,10 +149,6 @@ int main() {
         assert(near(s.black_lift_b, 0.0027f, 1e-7f));
     }
 
-    // --- 5. Secao desconhecida e ignorada sem contaminar a seguinte.
-    //
-    // E assim que um cfg de versao futura carrega numa versao antiga: as chaves
-    // que ela nao conhece somem, e as que ela conhece continuam valendo.
     {
         const Settings s = load_from_text(
             "[module.inventado.9.9.9]\n"
@@ -193,7 +160,6 @@ int main() {
         assert(near(s.condition_sun_temperature, 5900.0f, 0.01f));
     }
 
-    // --- 6. Chave desconhecida dentro de secao conhecida tambem e ignorada.
     {
         const Settings s = load_from_text(
             "[module.bloom.0.17.0]\n"
@@ -202,7 +168,6 @@ int main() {
         assert(near(s.bloom_threshold, 0.9f, 1e-5f));
     }
 
-    // --- 7. Os limites seguram valores absurdos.
     {
         const Settings s = load_from_text(
             "[module.bloom.0.17.0]\n"
@@ -210,18 +175,12 @@ int main() {
             "[module.condition_adaptation.0.19.0]\n"
             "rain_temperature=99999\n"
             "sun_tint=-40\n");
-        // O teto do limiar e 0.98: em 1.0 nada passa e o modulo ficaria ligado
-        // sem produzir nada, o que e pior que desligado porque o log diz ativo.
+
         assert(near(s.bloom_threshold, 0.98f, 1e-5f));
         assert(near(s.condition_rain_temperature, 9000.0f, 0.01f));
         assert(near(s.condition_sun_tint, -1.0f, 1e-5f));
     }
 
-    // --- 8. Banda invertida e corrigida.
-    //
-    // Com low >= high o smoothstep de quem consome degenera em degrau, e a
-    // adaptacao por condicao volta a ter classe dura -- que e exatamente o que
-    // a 0.19.0 existe para nao ter.
     {
         const Settings s = load_from_text(
             "[module.condition_adaptation.0.19.0]\n"
@@ -234,7 +193,6 @@ int main() {
                s.condition_overcast_saturation_low);
     }
 
-    // --- 9. Comentarios, espacos e linhas sem `=` nao atrapalham.
     {
         const Settings s = load_from_text(
             "# comentario\n"
@@ -248,7 +206,6 @@ int main() {
         assert(near(s.ssao_intensity, 0.33f, 1e-5f));
     }
 
-    // --- 10. `enabled` de modulo nao vaza para o plugin inteiro, e vice-versa.
     {
         const Settings s = load_from_text(
             "[plugin]\n"
@@ -273,7 +230,6 @@ int main() {
         assert(s.ssao_enabled);
     }
 
-    // --- 11. Booleano aceita as tres formas historicas.
     {
         assert(load_from_text("[module.bloom.0.17.0]\nenabled=yes\n").bloom_enabled);
         assert(load_from_text("[module.bloom.0.17.0]\nenabled=TRUE\n").bloom_enabled);
@@ -282,7 +238,6 @@ int main() {
         assert(!load_from_text("[module.bloom.0.17.0]\nenabled=nao\n").bloom_enabled);
     }
 
-    // --- 12. Cfg vazio devolve exatamente os defaults internos.
     {
         const Settings empty = load_from_text("");
         const Settings internal = load_missing_file();

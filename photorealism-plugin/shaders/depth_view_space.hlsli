@@ -1,19 +1,6 @@
 #ifndef PHOTOREALISM_DEPTH_VIEW_SPACE_HLSLI
 #define PHOTOREALISM_DEPTH_VIEW_SPACE_HLSLI
 
-// Fonte unica da matematica depth -> view-space -> normal.
-//
-// Antes da 0.12.0 estas funcoes estavam duplicadas em ssao.hlsl,
-// temporal.hlsl e depth-preview.hlsl, com tres corpos que precisavam ser
-// mantidos em sincronia a mao. O SSAO e o resolve temporal precisam das
-// funcoes, e uma quarta copia seria insustentavel.
-//
-// Tudo aqui recebe por parametro o que antes vinha de cbuffer (NearPlane,
-// ProjectionScale, TexelSize) e recebe as amostras de depth ja lidas. O
-// header nao declara textura, sampler nem cbuffer: quem faz I/O e o shader,
-// que sabe em quais registradores seus recursos estao. E o que permite os
-// quatro shaders compartilharem o mesmo corpo sem compartilhar layout.
-
 float3 srgb_to_linear(float3 color)
 {
     color = saturate(color);
@@ -32,7 +19,6 @@ float3 linear_to_srgb(float3 color)
     return lerp(high, low, use_low);
 }
 
-// Modelo reversed-Z de plano distante infinito: distancia = near / depth.
 float linearize_reversed_depth(float raw_depth, float near_plane)
 {
     return max(near_plane, 0.000001) / max(raw_depth, 0.0000001);
@@ -49,13 +35,6 @@ float3 reconstruct_view_position(
         linear_distance);
 }
 
-// Inverso exato de reconstruct_view_position, e por isso mora ao lado dela:
-// separar as duas metades da mesma transformacao em arquivos diferentes e como
-// a duplicacao que esta versao veio desfazer comecou.
-//
-// De reconstruct_view_position temos view.x = ndc.x * z / proj.x, entao
-// ndc.x = view.x * proj.x / z. O eixo vertical carrega a mesma inversao de
-// sinal usada la.
 float2 project_view_position(float3 view_position, float2 projection_scale)
 {
     float depth = max(view_position.z, 0.000001);
@@ -65,14 +44,6 @@ float2 project_view_position(float3 view_position, float2 projection_scale)
     return float2((ndc.x + 1.0) * 0.5, (1.0 - ndc.y) * 0.5);
 }
 
-// As cinco amostras de depth chegam prontas porque cada shader liga a textura
-// de depth em um registrador diferente. Entre o vizinho da frente e o de tras
-// vence o de menor salto em Z: e o que impede a normal de atravessar uma
-// silhueta e apontar para o lugar errado na borda da geometria.
-//
-// normal_valid sai zerado quando o produto vetorial degenera, o que acontece
-// em regiao plana o suficiente para os dois vetores ficarem colineares. Sem
-// essa saida o normalize produziria NaN, e o consumidor nao teria como saber.
 float3 reconstruct_view_normal(
     float2 uv,
     float2 texel,
@@ -128,4 +99,4 @@ float3 reconstruct_view_normal(
     return normal;
 }
 
-#endif  // PHOTOREALISM_DEPTH_VIEW_SPACE_HLSLI
+#endif

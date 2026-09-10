@@ -38,7 +38,7 @@ int main() {
         "preserve");
     assert(!photorealism::aa_config::set_config_value(
         &config, "unknown_cvar", "0"));
-    // Leitor da politica de AA nativa no photorealism-plugin.cfg.
+
     using photorealism::aa_config::plugin_config_value;
     const std::string plugin_config =
         "# comentario\n"
@@ -60,14 +60,14 @@ int main() {
     assert(plugin_config_value(
                plugin_config, "native_aa.0.12.2", "r_taa_luma_sharpen") ==
            "1.5");
-    // Chave comentada nao vale, e a secao seguinte nao contamina a anterior.
+
     assert(plugin_config_value(
                plugin_config, "native_aa.0.12.2", "r_taa_tuning") == "ausente");
     assert(plugin_config_value(plugin_config, "native_aa.0.12.2", "ausente") ==
            "ausente");
     assert(plugin_config_value(plugin_config, "secao.inexistente", "r_aa") ==
            "ausente");
-    // Prefixo nao pode casar: r_aa_quality nao e r_aa.
+
     const std::string prefix_config =
         "[native_aa.0.12.2]\n"
         "r_aa_quality=7\n";

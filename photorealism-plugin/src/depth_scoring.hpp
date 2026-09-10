@@ -3,17 +3,11 @@
 #include <cstdint>
 
 namespace photorealism::depth_scoring {
-
 constexpr std::uint64_t kMaximumBindingContribution = 100000;
 constexpr std::uint64_t kMinimumCandidateBindings = 1000;
 constexpr std::uint64_t kMinimumSceneBindingsPerSecond = 400;
 constexpr std::uint64_t kMinimumScaledSceneAreaPercent = 110;
 
-// O depth de camera sem supersampling tem exatamente a area da tela. A regra
-// dos 110% acima foi escrita para o caso supersampleado e, sozinha, excluia o
-// caso nativo por construcao. Os 95% dao folga para um depth ligeiramente
-// menor que a tela sem abrir a porta para meia resolucao, que nunca e o depth
-// principal.
 constexpr std::uint64_t kMinimumSceneAreaPercent = 95;
 
 inline bool aspect_is_close(
@@ -34,14 +28,6 @@ inline bool aspect_is_close(
     return difference * 100 <= scale * 3;
 }
 
-// Um depth de cena tem a proporcao da tela, ou e a tela multiplicada por um
-// fator inteiro em cada eixo -- que e como o Prism3D faz supersampling, via
-// r_scale_x e r_scale_y. O 1920x2160 do ETS2 supersampleado tem proporcao 8:9,
-// bem longe de 16:9, mas e 1x por 2x: legitimo.
-//
-// Um shadow map 2048x2048 nao e nem uma coisa nem outra: 2048 nao e multiplo
-// de 1920 nem de 1080, e a proporcao erra por 43,75%. E o que o separa do
-// depth de camera sem depender de score.
 inline bool is_plausible_scene_shape(
     std::uint32_t width,
     std::uint32_t height,
@@ -139,8 +125,6 @@ inline bool is_scene_candidate(
         return false;
     }
 
-    // Forma e veto, nao bonus: sem isto um shadow map quadrado vence a disputa
-    // so por ter mais area que a tela.
     if (!is_plausible_scene_shape(
             width, height, reference_width, reference_height)) {
         return false;
@@ -160,10 +144,6 @@ inline bool is_scene_candidate(
     return native_scene || internally_scaled || sustained_scene_activity;
 }
 
-// Por que um candidato caiu. O log sempre mostrou o score, nunca o motivo --
-// e por isso a eleicao de um shadow map como depth de camera passou versoes
-// despercebida. O motivo devolvido e o primeiro que barra, na ordem em que
-// is_scene_candidate avalia.
 enum class DepthRejection {
     none = 0,
     samples = 1,
@@ -235,5 +215,4 @@ inline DepthRejection depth_candidate_rejection(
     }
     return DepthRejection::none;
 }
-
-}  // namespace photorealism::depth_scoring
+}

@@ -5,7 +5,6 @@
 #include <string>
 
 namespace photorealism::aa_config {
-
 inline bool quoted_value_range(
     const std::string& contents,
     const char* key,
@@ -65,11 +64,6 @@ inline bool set_config_value(
     return true;
 }
 
-// Leitor minimo do photorealism-plugin.cfg. O dinput8 roda no bootstrap,
-// antes do dxgi, e nao pode usar o config.cpp que vive na outra DLL -- entao
-// le so o que precisa: a secao que descreve o que escrever no config.cfg do
-// jogo. Formato "[secao]" seguido de linhas "chave=valor", com "#" como
-// comentario.
 inline std::string plugin_config_value(
     const std::string& contents, const char* section, const char* key) {
     const std::string header = std::string("[") + section + "]";
@@ -92,7 +86,6 @@ inline std::string plugin_config_value(
 
         if (end > first && contents[first] != '#') {
             if (contents[first] == '[') {
-                // Uma secao nova encerra a anterior: a chave nao existe aqui.
                 if (inside) {
                     return "ausente";
                 }
@@ -128,5 +121,4 @@ inline std::string plugin_config_value(
     }
     return "ausente";
 }
-
-}  // namespace photorealism::aa_config
+}

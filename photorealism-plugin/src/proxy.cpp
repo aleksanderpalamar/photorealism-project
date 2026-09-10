@@ -8,7 +8,6 @@
 #include "native_aa_config.hpp"
 
 namespace {
-
 HMODULE g_proxy_module = nullptr;
 HMODULE g_real_dinput = nullptr;
 HMODULE g_graphics_proxy = nullptr;
@@ -61,8 +60,7 @@ DWORD WINAPI bootstrap_graphics_proxy(LPVOID) {
     }
     return 0;
 }
-
-}  // namespace
+}
 
 extern "C" HRESULT WINAPI DirectInput8Create(
     HINSTANCE instance,

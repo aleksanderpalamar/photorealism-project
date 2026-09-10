@@ -3,7 +3,6 @@
 #include <dxgi.h>
 
 namespace photorealism {
-
 void process_frame(IDXGISwapChain* swap_chain);
 bool is_processing_frame();
 void prepare_for_resize(
@@ -14,5 +13,4 @@ void prepare_for_resize(
     DXGI_FORMAT format,
     UINT flags);
 void report_resize_result(IDXGISwapChain* swap_chain, HRESULT result);
-
-}  // namespace photorealism
+}

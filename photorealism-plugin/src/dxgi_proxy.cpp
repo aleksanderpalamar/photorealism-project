@@ -7,7 +7,6 @@
 #include <cwchar>
 
 namespace {
-
 HMODULE g_real_dxgi = nullptr;
 INIT_ONCE g_dxgi_once = INIT_ONCE_STATIC_INIT;
 INIT_ONCE g_core_once = INIT_ONCE_STATIC_INIT;
@@ -109,8 +108,7 @@ BOOL CALLBACK start_graphics_core_once(PINIT_ONCE, PVOID, PVOID*) {
 void ensure_graphics_core() {
     InitOnceExecuteOnce(&g_core_once, start_graphics_core_once, nullptr, nullptr);
 }
-
-}  // namespace
+}
 
 extern "C" HRESULT WINAPI CreateDXGIFactory(
     REFIID interface_id, void** output) {
