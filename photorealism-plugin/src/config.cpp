@@ -1,7 +1,8 @@
 #include "config.hpp"
 
 #include "runtime.hpp"
-#include "scene_conditions.hpp"
+#include "scene/condition_model.hpp"
+#include "scene/condition_smoother.hpp"
 
 #include <cctype>
 #include <cmath>

@@ -59,7 +59,9 @@ common_flags=(
   "${project_dir}/src/steam_screenshots.cpp" \
   "${project_dir}/src/config.cpp" \
   "${project_dir}/src/resource_observer.cpp" \
-  "${project_dir}/src/scene_observer.cpp" \
+  "${project_dir}/src/scene/sampler.cpp" \
+  "${project_dir}/src/scene/sampler_resources.cpp" \
+  "${project_dir}/src/scene/observer.cpp" \
   "${project_dir}/src/runtime.cpp" \
   "${project_dir}/src/dxgi.def" \
   -o "${build_dir}/dxgi.dll" \

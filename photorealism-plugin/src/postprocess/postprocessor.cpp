@@ -3,8 +3,8 @@
 #include "../config.hpp"
 #include "../resource_observer.hpp"
 #include "../runtime.hpp"
-#include "../scene_conditions.hpp"
-#include "../scene_observer.hpp"
+
+#include "../scene/observer.hpp"
 #include "../steam_screenshots.hpp"
 #include "com_utils.hpp"
 #include "condition_adapter.hpp"

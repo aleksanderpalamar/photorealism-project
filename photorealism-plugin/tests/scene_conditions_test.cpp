@@ -1,4 +1,5 @@
-#include "../src/scene_conditions.hpp"
+#include "../src/scene/condition_model.hpp"
+#include "../src/scene/condition_smoother.hpp"
 
 #include <cassert>
 #include <cmath>

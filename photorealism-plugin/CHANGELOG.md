@@ -1,5 +1,66 @@
 # Changelog
 
+## Pacote 0.19.7 - 2026-09-10
+
+`src/scene_*` virou `src/scene/`. Sem mudanca de comportamento. Nenhum arquivo
+passa de 200 linhas.
+
+```
+src/scene/
+  features.hpp            128  as quatro features a partir dos pixels
+  sampler_resources.cpp   161  piramide, staging e queries
+  observer.cpp            100  cadencia, log e a linha "Cena 0.18.0:"
+  condition_model.hpp      95  limiares, ancoras, pesos e mistura
+  sampler.cpp              76  submeter e drenar a leitura assincrona
+  condition_smoother.hpp   52  a media exponencial sobre as features
+  sampler.hpp              51
+  formats.hpp              41  a tabela DXGI legivel/BGRA
+  observer.hpp             41
+  sample_sink.hpp          17  a abstracao entre amostrador e observador
+```
+
+### As tres misturas que a separacao desfez
+
+**`scene_conditions.hpp` guardava duas coisas sem relacao.** De um lado
+funcoes puras que classificam a cena e misturam ancoras; do outro uma classe
+com estado que suaviza no tempo. Viraram `condition_model.hpp` e
+`condition_smoother.hpp`. Quem so quer decidir a cor de uma amostra nao precisa
+mais arrastar a maquina de suavizacao junto.
+
+**`scene_observer` era o amostrador e o observador ao mesmo tempo.** Uma metade
+cuida de piramide, staging, queries e `Map` -- e so entende D3D11. A outra
+decide de quantos em quantos quadros medir e o que registrar -- e nao precisa
+entender D3D11 nenhum. Viraram `SceneSampler` e `SceneObserver`.
+
+**A linha de log "Observador de cena 0.18.0 ativo" provava a mistura.** Ela
+misturava o que o amostrador sabe (fonte, formato, mip, pixels) com a cadencia
+que so o observador conhece (`intervalo=%u frames log=%.0fs`), e por isso o
+amostrador lia `interval_frames_`. Agora o amostrador oferece um `Info` e um
+`consume_creation_notice()`, e quem escreve a linha e o observador. O texto do
+log nao mudou.
+
+### DIP, com um motivo
+
+`SceneSampleSink` e uma interface de verdade, com um metodo virtual. Ela existe
+porque o amostrador nao deve saber o que acontece com os pixels que ele
+entrega: ele mapeia a textura, chama `on_sample` e desfaz o mapeamento. O
+`SceneObserver` implementa a interface e transforma pixels em features.
+
+O custo e uma chamada indireta a cada ~0,5 s, e o ganho e que o amostrador
+pode ser exercitado com um sink de teste sem nada de D3D11 do outro lado.
+
+### Verificacao
+
+Build e `validate.sh` verdes. Os onze testes passam. `SceneSampler` e
+`SceneObserver` verificados por quebra deliberada.
+
+Quatro guardas do `validate.sh` mudaram de caminho. Duas delas -- a que exige
+`scene_formats::is_readable` fora do `.cpp` e a que exige
+`return !resources_failed_` -- foram reapontadas para `sampler_resources.cpp`,
+e conferido que o codigo que elas guardam esta mesmo la. Sao as guardas que
+existem por causa da 0.18.0, quando o observador saiu desligado e o build
+seguiu verde.
+
 ## Pacote 0.19.6 - 2026-09-10
 
 Terceira rodada de separacao. Nove modulos novos. Sem mudanca de comportamento.

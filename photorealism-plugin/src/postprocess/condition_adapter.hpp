@@ -1,8 +1,9 @@
 #pragma once
 
 #include "../config.hpp"
-#include "../scene_conditions.hpp"
-#include "../scene_features.hpp"
+#include "../scene/condition_model.hpp"
+#include "../scene/condition_smoother.hpp"
+#include "../scene/features.hpp"
 
 namespace photorealism {
 

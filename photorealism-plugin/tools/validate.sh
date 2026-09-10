@@ -608,7 +608,7 @@ fi
 # desligado com validate.sh verde. Por isso a tabela saiu do .cpp para um
 # cabecalho testavel, e por isso estas duas guardas existem.
 if ! grep -Fq 'scene_formats::is_readable' \
-  "${project_dir}/src/scene_observer.cpp"; then
+  "${project_dir}/src/scene/sampler_resources.cpp"; then
   echo "O observador voltou a decidir formato dentro do .cpp, onde nenhum \
 teste alcanca: foi assim que a 0.18.0 saiu desligada." >&2
   exit 1
@@ -624,7 +624,7 @@ fi
 # release() vinha antes da comparacao e zerava a assinatura, entao a recusa era
 # reavaliada por frame: 663 mil linhas e 67 MB de log numa sessao.
 if ! grep -Fq 'return !resources_failed_;' \
-  "${project_dir}/src/scene_observer.cpp"; then
+  "${project_dir}/src/scene/sampler_resources.cpp"; then
   echo "O observador parou de lembrar que ja falhou: sem isso a recusa volta a \
 ser registrada uma vez por frame." >&2
   exit 1
@@ -669,7 +669,7 @@ g++ -std=c++20 -Wall -Wextra -Werror \
 # saturacao baixa nao e quadro invalido, e o que encoberto e chuva parecem.
 # Usar uma feature como criterio de validade remove do conjunto justamente os
 # extremos que ela deveria medir.
-if grep -Fq 'features.saturation <=' "${project_dir}/src/scene_conditions.hpp"; then
+if grep -Fq 'features.saturation <=' "${project_dir}/src/scene/condition_model.hpp"; then
   echo "A porta de jogo voltou a usar saturacao: isso descarta a chuva, que e \
 a condicao que a adaptacao existe para detectar." >&2
   exit 1
@@ -678,7 +678,7 @@ fi
 # A interpolacao tem que ser continua. Medido em jogo: limiar duro troca de
 # classe 16 vezes por hora, e cada troca e um salto de cor.
 if ! grep -Fq 'return t * t * (3.0f - 2.0f * t);' \
-  "${project_dir}/src/scene_conditions.hpp"; then
+  "${project_dir}/src/scene/condition_model.hpp"; then
   echo "compute_condition_weights parou de interpolar continuamente: classe \
 dura salta a cor ao virar a cabine." >&2
   exit 1

@@ -1,4 +1,4 @@
-#include "../src/scene_formats.hpp"
+#include "../src/scene/formats.hpp"
 
 #include <cassert>
 
