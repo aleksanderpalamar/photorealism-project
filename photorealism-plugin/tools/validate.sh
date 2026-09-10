@@ -594,10 +594,10 @@ g++ -std=c++20 -Wall -Wextra -Werror \
 # realimentacao: a cor seria funcao das features e as features funcao da cor, e
 # a imagem caminharia sozinha sem que nada no cfg mudasse. A chamada tem que
 # ficar colada no CopyResource que enche scene_texture_.
-if ! grep -Fq 'scene_observer_.observe(device_, context_, scene_texture_);' \
+if ! grep -Fq 'device_, context_, frame_resources_.scene_texture());' \
   "${project_dir}/src/postprocess/postprocessor.cpp"; then
-  echo "O observador de cena parou de medir scene_texture_: medir a saida do \
-grade fecha uma realimentacao entre a cor e as features." >&2
+  echo "O observador de cena parou de medir a textura pre-grade: medir a \
+saida do grade fecha uma realimentacao entre a cor e as features." >&2
   exit 1
 fi
 
@@ -692,18 +692,22 @@ fi
 
 # A adaptacao le o frame PRE-GRADE, pelo mesmo motivo do observador: alimentar
 # com a saida fecharia a realimentacao entre a cor e as features.
-if ! grep -Fq 'update_condition_adaptation();' \
+if ! grep -Fq 'condition_.update(settings_, scene_observer_.latest());' \
   "${project_dir}/src/postprocess/postprocessor.cpp"; then
   echo "A adaptacao por condicao nao e mais chamada no ponto pre-grade." >&2
   exit 1
 fi
-if ! grep -Fq 'constants.temperature = effective_temperature_;' \
+if ! grep -Fq 'constants.temperature = input.temperature;' \
+  "${project_dir}/src/postprocess/frame_constants.cpp" ||
+   ! grep -Fq 'input.temperature = condition_.temperature();' \
   "${project_dir}/src/postprocess/postprocessor.cpp"; then
   echo "O cbuffer voltou a receber a temperatura estatica: a adaptacao \
 calcularia e ninguem usaria." >&2
   exit 1
 fi
-if ! grep -Fq 'constants.tint = effective_tint_;' \
+if ! grep -Fq 'constants.tint = input.tint;' \
+  "${project_dir}/src/postprocess/frame_constants.cpp" ||
+   ! grep -Fq 'input.tint = condition_.tint();' \
   "${project_dir}/src/postprocess/postprocessor.cpp"; then
   echo "O cbuffer voltou a receber o tint estatico." >&2
   exit 1

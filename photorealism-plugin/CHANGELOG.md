@@ -1,5 +1,76 @@
 # Changelog
 
+## Pacote 0.19.6 - 2026-09-10
+
+Terceira rodada de separacao. Nove modulos novos. Sem mudanca de comportamento.
+
+O orquestrador foi de **1623 para 774 linhas** -- e de 2784 no inicio da serie.
+`src/postprocess/` tem hoje 33 arquivos; **30 deles cabem em 200 linhas**.
+
+```
+  frame_targets/plan          no orquestrador (774)
+  frame_resources.cpp    206  texturas de cena, visual e espacial
+  gpu_timer.cpp          217  anel de queries e relatorio
+  frame_constants.cpp    192  os quatro constant buffers do frame
+  shader_library.cpp     176  guarda e adota os oito shaders
+  frame_passes.cpp       161  os seis caminhos de composicao
+  pipeline_state.cpp     158  buffers, samplers, raster e blends
+  frame_log.cpp          154  as linhas de estado por condicao
+  temporal_history.cpp   151  historico de cor e de depth
+  bloom_resources.cpp    142  niveis e texturas da piramide
+  depth_capture.cpp      129  a copia legivel do depth
+  shader_compiler.cpp    119  compilar HLSL em blobs
+  bloom_pyramid.cpp      112  desenhar o glow e o preview
+  condition_adapter.cpp   92  suavizar features e produzir a cor
+  depth_liveness.cpp      81  decidir se o depth ainda esta vivo
+  device_state.cpp        76  salvar e restaurar o device
+```
+
+### O que a separacao revelou
+
+**`frame_constants` e `frame_log` viraram funcoes livres**, nao classes. Elas
+nao tem estado proprio: recebem um `FrameConstantsInput` / `FrameLogInput` e
+escrevem. Transformar em objeto so para ter um `this` seria cerimonia.
+
+**`FrameLogState` saiu do orquestrador como struct.** Os oito campos de
+throttling de log estavam misturados com estado de render; agora sao um bloco
+com nome, passado por ponteiro para quem registra.
+
+**`DepthLiveness` nao chama mais quem a chamava.** Antes ela liberava os
+recursos de depth de dentro do proprio corpo; agora devolve `expired` e o
+orquestrador decide o que fazer. A ordem foi conferida: o release continua
+acontecendo antes do `ensure`, como no original.
+
+**`PipelineState` precisou de acessores de endereco.** A API do D3D11 recebe
+`ID3D11Buffer* const*`, e um getter por valor nao tem endereco. Os
+`*_address()` existem por isso, e nao por gosto.
+
+### Verificacao
+
+Build e `validate.sh` verdes apos cada extracao. Os onze testes passam. Cada
+modulo novo foi verificado por quebra deliberada: renomear a funcao principal
+produz erro de link.
+
+Duas guardas do `validate.sh` tiveram de mudar de alvo, e o invariante foi
+preservado nas duas. A do observador passou a fixar
+`frame_resources_.scene_texture()`, que continua sendo a textura pre-grade. A
+do cbuffer virou **duas** guardas encadeadas -- `input.temperature =
+condition_.temperature()` no orquestrador e `constants.temperature =
+input.temperature` em `frame_constants.cpp` -- porque a cadeia agora passa por
+dois arquivos e verificar so uma ponta deixaria a outra livre para divergir.
+
+Um erro foi cometido e corrigido: ao extrair `DepthLiveness` eu escrevi o
+periodo de graca como 3 quadros; o original e **2**. Conferido contra o commit
+anterior antes de seguir.
+
+### O que fica no orquestrador, e por que
+
+As 774 linhas restantes sao a classe, seus membros e passos pequenos -- nenhuma
+funcao passa de 71 linhas. O que sobrou e decisao: adquirir alvos do frame,
+montar o `FramePlan`, sequenciar as etapas e desmontar. Extrair isso exigiria
+passar quase todos os colaboradores num struct de contexto, o que troca um
+arquivo grande por um acoplamento igual com mais indirecao.
+
 ## Pacote 0.19.5 - 2026-09-10
 
 Continuacao da separacao de `src/postprocess/`. Quatro modulos novos. Sem

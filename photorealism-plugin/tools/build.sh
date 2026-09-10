@@ -44,9 +44,18 @@ common_flags=(
   "${project_dir}/src/postprocess/device_state.cpp" \
   "${project_dir}/src/postprocess/gpu_timer.cpp" \
   "${project_dir}/src/postprocess/shader_library.cpp" \
+  "${project_dir}/src/postprocess/shader_compiler.cpp" \
   "${project_dir}/src/postprocess/bloom_pyramid.cpp" \
+  "${project_dir}/src/postprocess/bloom_resources.cpp" \
   "${project_dir}/src/postprocess/temporal_history.cpp" \
   "${project_dir}/src/postprocess/depth_capture.cpp" \
+  "${project_dir}/src/postprocess/depth_liveness.cpp" \
+  "${project_dir}/src/postprocess/frame_resources.cpp" \
+  "${project_dir}/src/postprocess/condition_adapter.cpp" \
+  "${project_dir}/src/postprocess/pipeline_state.cpp" \
+  "${project_dir}/src/postprocess/frame_constants.cpp" \
+  "${project_dir}/src/postprocess/frame_log.cpp" \
+  "${project_dir}/src/postprocess/frame_passes.cpp" \
   "${project_dir}/src/steam_screenshots.cpp" \
   "${project_dir}/src/config.cpp" \
   "${project_dir}/src/resource_observer.cpp" \

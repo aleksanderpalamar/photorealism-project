@@ -9,6 +9,8 @@ namespace photorealism {
 
 using CompileFromFileFunction = decltype(&D3DCompileFromFile);
 
+CompileFromFileFunction resolve_shader_compiler();
+
 class ShaderLibrary {
   public:
     bool compile(ID3D11Device* device);
