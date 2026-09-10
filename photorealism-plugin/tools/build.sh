@@ -40,7 +40,10 @@ common_flags=(
   -Wno-cast-function-type-mismatch \
   "${project_dir}/src/dxgi_proxy.cpp" \
   "${project_dir}/src/hook.cpp" \
-  "${project_dir}/src/postprocess.cpp" \
+  "${project_dir}/src/postprocess/postprocessor.cpp" \
+  "${project_dir}/src/postprocess/device_state.cpp" \
+  "${project_dir}/src/postprocess/gpu_timer.cpp" \
+  "${project_dir}/src/postprocess/shader_library.cpp" \
   "${project_dir}/src/steam_screenshots.cpp" \
   "${project_dir}/src/config.cpp" \
   "${project_dir}/src/resource_observer.cpp" \

@@ -1,5 +1,63 @@
 # Changelog
 
+## Pacote 0.19.4 - 2026-09-10
+
+`src/postprocess.cpp` virou `src/postprocess/`, com quatro modulos separados por
+responsabilidade. Sem mudanca de comportamento.
+
+```
+src/postprocess/
+  postprocess.hpp        16   interface publica (era src/postprocess.hpp)
+  com_utils.hpp          14   safe_release
+  shader_constants.hpp  114   os cinco layouts de constant buffer
+  device_state.hpp/cpp  111   SavedState: salvar e restaurar o estado do device
+  gpu_timer.hpp/cpp     265   GpuTimer: anel de queries, media/pico, relatorio
+  shader_library.hpp/cpp 368  ShaderLibrary: compilar e guardar os oito shaders
+  postprocessor.cpp    2091   orquestrador
+```
+
+O orquestrador foi de 2784 para 2091 linhas, e o que saiu nao foi "um pedaco do
+arquivo" e sim tres coisas que nunca precisaram saber do resto.
+
+### Onde a fronteira ficou
+
+**`GpuTimer`** era treze membros e sete metodos entrelacados com o resto da
+classe. Ele so precisa de um device e um contexto, e produz uma linha de log a
+cada dez segundos. Agora recebe os dois em `attach()` e o orquestrador so
+conhece `begin/end/poll/release`.
+
+**`ShaderLibrary`** guarda os oito shaders e sabe compila-los. O orquestrador
+pedia `pixel_shader_` direto do proprio corpo; agora pergunta `shaders_.visual()`
+e nao tem como escrever nesse ponteiro.
+
+**`device_state`** nao virou classe porque nao tem estado proprio: sao duas
+funcoes livres sobre uma struct. Transformar isso em objeto seria cerimonia.
+
+### Sobre DIP, com honestidade
+
+A inversao que vale aqui e a de **dados**: cada modulo recebe o que precisa pela
+sua interface, em vez de alcancar os membros de um objeto-deus. `BloomPyramid`
+nao sabe que existe um `PostProcessor`; o `PostProcessor` e que depende da
+interface pequena de cada modulo.
+
+O que **nao** foi feito, de proposito: interfaces abstratas com metodos virtuais
+sobre os tipos do D3D11. Nao ha um segundo backend para trocar, nao ha teste que
+use um duble, e o custo seria uma chamada indireta por passe. Seria cerimonia
+com nome de principio.
+
+### Verificacao
+
+Build e `validate.sh` verdes apos cada extracao. Os onze testes passam.
+
+Uma armadilha foi encontrada e corrigida no caminho: as primeiras extracoes
+copiaram o codigo para os modulos novos **sem remover o original**, que ficou
+no namespace anonimo do `.cpp`. Compilava e passava, mas os modulos novos eram
+codigo morto -- a copia anonima e que rodava. Foram 202 linhas duplicadas.
+
+Para nao depender de leitura, cada modulo foi verificado por quebra deliberada:
+renomear `capture_state` em `device_state.cpp` produz erro de link, e renomear
+`GpuTimer::poll` produz dois. Se fossem codigo morto, o build seguiria verde.
+
 ## Pacote 0.19.3 - 2026-09-10
 
 Refatoracao de `src/postprocess.cpp`, pedida pelo usuario. Sem mudanca de

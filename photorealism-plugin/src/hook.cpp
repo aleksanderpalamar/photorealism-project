@@ -1,6 +1,6 @@
 #include "hook.hpp"
 
-#include "postprocess.hpp"
+#include "postprocess/postprocess.hpp"
 #include "resource_observer.hpp"
 #include "runtime.hpp"
 #include "steam_screenshots.hpp"

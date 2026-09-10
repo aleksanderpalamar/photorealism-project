@@ -1,11 +1,16 @@
 #include "postprocess.hpp"
 
-#include "config.hpp"
-#include "resource_observer.hpp"
-#include "runtime.hpp"
-#include "scene_observer.hpp"
-#include "scene_conditions.hpp"
-#include "steam_screenshots.hpp"
+#include "../config.hpp"
+#include "../resource_observer.hpp"
+#include "../runtime.hpp"
+#include "../scene_conditions.hpp"
+#include "../scene_observer.hpp"
+#include "../steam_screenshots.hpp"
+#include "com_utils.hpp"
+#include "device_state.hpp"
+#include "gpu_timer.hpp"
+#include "shader_constants.hpp"
+#include "shader_library.hpp"
 
 #include <d3d11.h>
 #include <d3dcompiler.h>
@@ -20,30 +25,6 @@
 
 namespace photorealism {
 namespace {
-using CompileFromFileFunction = decltype(&D3DCompileFromFile);
-
-CompileFromFileFunction resolve_shader_compiler() {
-    static CompileFromFileFunction function = []() -> CompileFromFileFunction {
-        HMODULE compiler = LoadLibraryW(L"d3dcompiler_47.dll");
-        if (compiler == nullptr) {
-            log_message(
-                "Nao foi possivel carregar d3dcompiler_47.dll: %lu.",
-                GetLastError());
-            return nullptr;
-        }
-        return reinterpret_cast<CompileFromFileFunction>(
-            GetProcAddress(compiler, "D3DCompileFromFile"));
-    }();
-    return function;
-}
-
-template <typename T>
-void safe_release(T*& object) {
-    if (object != nullptr) {
-        object->Release();
-        object = nullptr;
-    }
-}
 
 bool key_pressed_once(int virtual_key, bool* was_down) {
     if (was_down == nullptr) {
@@ -54,214 +35,6 @@ bool key_pressed_once(int virtual_key, bool* was_down) {
     const bool pressed = (state & 1) != 0 || (is_down && !*was_down);
     *was_down = is_down;
     return pressed;
-}
-
-struct ShaderConstants {
-    float texel_size[2];
-    float exposure;
-    float temperature;
-    float contrast;
-    float saturation;
-    float vibrance;
-    float shadows;
-    float highlights;
-    float blacks;
-    float whites;
-    float local_contrast;
-    float sharpness;
-    float vignette;
-    float input_needs_srgb_decode;
-    float output_needs_srgb_encode;
-
-    float black_lift[3];
-    float highlight_rolloff;
-    float tint;
-    float bloom_enabled;
-    float bloom_intensity;
-    float bloom_padding;
-};
-
-static_assert(sizeof(ShaderConstants) == 96, "constant buffer must be aligned");
-
-struct BloomConstants {
-    float source_texel_size[2];
-    float filter_radius[2];
-    float threshold;
-    float knee;
-    float input_needs_srgb_decode;
-    float output_needs_srgb_encode;
-};
-
-static_assert(
-    sizeof(BloomConstants) == 32,
-    "bloom constant buffer must be aligned");
-
-constexpr UINT kBloomPassCount = 3;
-
-const char* const kBloomEntryPoints[kBloomPassCount] = {
-    "PSBloomBright",
-    "PSBloomDownsample",
-    "PSBloomUpsample",
-};
-
-struct DepthPreviewConstants {
-    float preview_mode;
-    float output_needs_srgb_encode;
-    float near_plane;
-    float preview_distance;
-    float texel_size[2];
-    float projection_scale[2];
-};
-
-static_assert(
-    sizeof(DepthPreviewConstants) == 32,
-    "depth preview constant buffer must be aligned");
-
-struct SsaoConstants {
-    float input_needs_srgb_decode;
-    float output_needs_srgb_encode;
-    float near_plane;
-    float radius;
-    float intensity;
-    float bias;
-    float fade_start;
-    float fade_end;
-    float edge_rejection;
-    float debug_mode;
-    float depth_texel_size[2];
-    float projection_scale[2];
-    float padding[2];
-    float refinement_enabled;
-    float highlight_start;
-    float highlight_end;
-    float highlight_ao_floor;
-    float interior_enabled;
-    float interior_near_start;
-    float interior_near_end;
-    float interior_radius;
-    float interior_intensity;
-    float interior_bias;
-    float interior_edge_rejection;
-    float interior_padding;
-};
-
-static_assert(
-    sizeof(SsaoConstants) == 112,
-    "SSAO constant buffer must be aligned");
-
-struct TemporalConstants {
-    float texel_size[2];
-    float near_plane;
-    float history_weight;
-    float depth_rejection;
-    float color_rejection;
-    float history_valid;
-    float output_needs_srgb_encode;
-};
-
-static_assert(
-    sizeof(TemporalConstants) == 32,
-    "temporal constant buffer must be aligned");
-
-struct SavedState {
-    ID3D11RenderTargetView* render_targets[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT] = {};
-    ID3D11DepthStencilView* depth_target = nullptr;
-    ID3D11BlendState* blend_state = nullptr;
-    FLOAT blend_factor[4] = {};
-    UINT sample_mask = 0;
-    ID3D11DepthStencilState* depth_state = nullptr;
-    UINT stencil_reference = 0;
-    ID3D11RasterizerState* rasterizer_state = nullptr;
-    D3D11_VIEWPORT viewports[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE] = {};
-    UINT viewport_count = D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
-    D3D11_RECT scissors[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE] = {};
-    UINT scissor_count = D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
-    ID3D11InputLayout* input_layout = nullptr;
-    D3D11_PRIMITIVE_TOPOLOGY topology = D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
-    ID3D11VertexShader* vertex_shader = nullptr;
-    ID3D11PixelShader* pixel_shader = nullptr;
-    ID3D11GeometryShader* geometry_shader = nullptr;
-    ID3D11HullShader* hull_shader = nullptr;
-    ID3D11DomainShader* domain_shader = nullptr;
-    ID3D11ShaderResourceView* pixel_resources[4] = {};
-    ID3D11SamplerState* pixel_samplers[2] = {};
-    ID3D11Buffer* pixel_constant_buffer = nullptr;
-};
-
-struct GpuTimingSlot {
-    ID3D11Query* disjoint = nullptr;
-    ID3D11Query* start = nullptr;
-    ID3D11Query* end = nullptr;
-    bool pending = false;
-};
-
-void capture_state(ID3D11DeviceContext* context, SavedState* state) {
-    context->OMGetRenderTargets(
-        D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT,
-        state->render_targets,
-        &state->depth_target);
-    context->OMGetBlendState(
-        &state->blend_state, state->blend_factor, &state->sample_mask);
-    context->OMGetDepthStencilState(
-        &state->depth_state, &state->stencil_reference);
-    context->RSGetState(&state->rasterizer_state);
-    context->RSGetViewports(&state->viewport_count, state->viewports);
-    context->RSGetScissorRects(&state->scissor_count, state->scissors);
-    context->IAGetInputLayout(&state->input_layout);
-    context->IAGetPrimitiveTopology(&state->topology);
-    context->VSGetShader(&state->vertex_shader, nullptr, nullptr);
-    context->PSGetShader(&state->pixel_shader, nullptr, nullptr);
-    context->GSGetShader(&state->geometry_shader, nullptr, nullptr);
-    context->HSGetShader(&state->hull_shader, nullptr, nullptr);
-    context->DSGetShader(&state->domain_shader, nullptr, nullptr);
-    context->PSGetShaderResources(0, 4, state->pixel_resources);
-    context->PSGetSamplers(0, 2, state->pixel_samplers);
-    context->PSGetConstantBuffers(0, 1, &state->pixel_constant_buffer);
-}
-
-void restore_state(ID3D11DeviceContext* context, SavedState* state) {
-    context->OMSetRenderTargets(
-        D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT,
-        state->render_targets,
-        state->depth_target);
-    context->OMSetBlendState(
-        state->blend_state, state->blend_factor, state->sample_mask);
-    context->OMSetDepthStencilState(
-        state->depth_state, state->stencil_reference);
-    context->RSSetState(state->rasterizer_state);
-    context->RSSetViewports(state->viewport_count, state->viewports);
-    context->RSSetScissorRects(state->scissor_count, state->scissors);
-    context->IASetInputLayout(state->input_layout);
-    context->IASetPrimitiveTopology(state->topology);
-    context->VSSetShader(state->vertex_shader, nullptr, 0);
-    context->PSSetShader(state->pixel_shader, nullptr, 0);
-    context->GSSetShader(state->geometry_shader, nullptr, 0);
-    context->HSSetShader(state->hull_shader, nullptr, 0);
-    context->DSSetShader(state->domain_shader, nullptr, 0);
-    context->PSSetShaderResources(0, 4, state->pixel_resources);
-    context->PSSetSamplers(0, 2, state->pixel_samplers);
-    context->PSSetConstantBuffers(0, 1, &state->pixel_constant_buffer);
-
-    for (ID3D11RenderTargetView*& target : state->render_targets) {
-        safe_release(target);
-    }
-    safe_release(state->depth_target);
-    safe_release(state->blend_state);
-    safe_release(state->depth_state);
-    safe_release(state->rasterizer_state);
-    safe_release(state->input_layout);
-    safe_release(state->vertex_shader);
-    safe_release(state->pixel_shader);
-    safe_release(state->geometry_shader);
-    safe_release(state->hull_shader);
-    safe_release(state->domain_shader);
-    for (ID3D11ShaderResourceView*& resource : state->pixel_resources) {
-        safe_release(resource);
-    }
-    for (ID3D11SamplerState*& sampler : state->pixel_samplers) {
-        safe_release(sampler);
-    }
-    safe_release(state->pixel_constant_buffer);
 }
 
 class PostProcessor {
@@ -329,7 +102,7 @@ public:
         load_settings(&settings_);
         apply_scene_observer_settings();
         if (device_ != nullptr) {
-            compile_shaders();
+            recompile_shaders();
         }
         release_depth_capture_resources();
         restart_depth_discovery();
@@ -572,7 +345,7 @@ public:
         bool ssao_active) {
         const bool eligible =
             depth.available && depth_preview_mode_ == 0 &&
-            settings_.temporal_enabled && temporal_shader_ != nullptr &&
+            settings_.temporal_enabled && shaders_.temporal() != nullptr &&
             visual_target_ != nullptr && visual_view_ != nullptr;
         if (!eligible) {
             return false;
@@ -590,7 +363,7 @@ public:
         const D3D11_TEXTURE2D_DESC& description, bool bloom_preview) {
         const bool eligible =
             (depth_preview_mode_ == 0 || bloom_preview) &&
-            settings_.bloom_enabled && bloom_bright_shader_ != nullptr &&
+            settings_.bloom_enabled && shaders_.bloom_bright() != nullptr &&
             additive_blend_state_ != nullptr;
         if (!eligible) {
             return false;
@@ -607,13 +380,13 @@ public:
 
         plan.depth_preview =
             plan.depth.available && depth_preview_mode_ >= 1 &&
-            depth_preview_mode_ <= 4 && depth_preview_shader_ != nullptr;
+            depth_preview_mode_ <= 4 && shaders_.depth_preview() != nullptr;
         plan.ssao_preview =
             plan.depth.available && depth_preview_mode_ == 5 &&
-            ssao_shader_ != nullptr;
+            shaders_.ssao() != nullptr;
         plan.ssao =
             plan.depth.available && depth_preview_mode_ == 0 &&
-            settings_.ssao_enabled && ssao_shader_ != nullptr &&
+            settings_.ssao_enabled && shaders_.ssao() != nullptr &&
             visual_target_ != nullptr && visual_view_ != nullptr;
         plan.temporal = plan_temporal(description, plan.depth, plan.ssao);
 
@@ -622,7 +395,7 @@ public:
         }
 
         plan.bloom_preview =
-            depth_preview_mode_ == 6 && bloom_bright_shader_ != nullptr &&
+            depth_preview_mode_ == 6 && shaders_.bloom_bright() != nullptr &&
             additive_blend_state_ != nullptr;
         plan.bloom = plan_bloom(description, plan.bloom_preview);
         if (!plan.bloom) {
@@ -962,7 +735,7 @@ public:
         context_->IASetInputLayout(nullptr);
         context_->IASetPrimitiveTopology(
             D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        context_->VSSetShader(vertex_shader_, nullptr, 0);
+        context_->VSSetShader(shaders_.vertex(), nullptr, 0);
         context_->GSSetShader(nullptr, nullptr, 0);
         context_->HSSetShader(nullptr, nullptr, 0);
         context_->DSSetShader(nullptr, nullptr, 0);
@@ -971,7 +744,7 @@ public:
     void draw_visual_pass(
         ID3D11RenderTargetView* target, const FramePlan& plan) {
         context_->OMSetRenderTargets(1, &target, nullptr);
-        context_->PSSetShader(pixel_shader_, nullptr, 0);
+        context_->PSSetShader(shaders_.visual(), nullptr, 0);
         ID3D11ShaderResourceView* visual_resources[2] = {
             scene_view_, plan.bloom ? bloom_views_[0] : nullptr};
         context_->PSSetShaderResources(0, 2, visual_resources);
@@ -983,7 +756,7 @@ public:
     void draw_ssao_pass(
         ID3D11RenderTargetView* target, ID3D11ShaderResourceView* source) {
         context_->OMSetRenderTargets(1, &target, nullptr);
-        context_->PSSetShader(ssao_shader_, nullptr, 0);
+        context_->PSSetShader(shaders_.ssao(), nullptr, 0);
         ID3D11ShaderResourceView* ssao_resources[2] = {
             source, depth_copy_view_};
         ID3D11SamplerState* ssao_samplers[2] = {
@@ -996,7 +769,7 @@ public:
 
     void draw_bloom_preview(const FrameTargets& targets) {
         context_->OMSetRenderTargets(1, &targets.output, nullptr);
-        context_->PSSetShader(bloom_upsample_shader_, nullptr, 0);
+        context_->PSSetShader(shaders_.bloom_upsample(), nullptr, 0);
         BloomConstants preview_constants = {};
         preview_constants.source_texel_size[0] =
             1.0f / static_cast<float>(bloom_widths_[0]);
@@ -1016,7 +789,7 @@ public:
 
     void draw_depth_preview(const FrameTargets& targets) {
         context_->OMSetRenderTargets(1, &targets.output, nullptr);
-        context_->PSSetShader(depth_preview_shader_, nullptr, 0);
+        context_->PSSetShader(shaders_.depth_preview(), nullptr, 0);
         context_->PSSetShaderResources(0, 1, &depth_copy_view_);
         context_->PSSetSamplers(0, 1, &depth_sampler_state_);
         context_->PSSetConstantBuffers(0, 1, &depth_constant_buffer_);
@@ -1038,7 +811,7 @@ public:
         }
 
         context_->OMSetRenderTargets(1, &targets.output, nullptr);
-        context_->PSSetShader(temporal_shader_, nullptr, 0);
+        context_->PSSetShader(shaders_.temporal(), nullptr, 0);
         ID3D11ShaderResourceView* temporal_resources[4] = {
             current_view,
             temporal_history_valid_ ? temporal_history_view_ : nullptr,
@@ -1123,7 +896,7 @@ public:
     void render_frame(const FrameTargets& targets) {
         SavedState state = {};
         capture_state(context_, &state);
-        const bool gpu_timing_active = begin_gpu_timing();
+        const bool gpu_timing_active = gpu_timer_.begin();
         context_->OMSetRenderTargets(0, nullptr, nullptr);
 
         const FramePlan plan = plan_frame(targets.description);
@@ -1138,7 +911,7 @@ public:
         compose_output(targets, plan);
 
         if (gpu_timing_active) {
-            end_gpu_timing();
+            gpu_timer_.end();
         }
         log_first_processed_frame(targets);
 
@@ -1161,7 +934,7 @@ public:
             return;
         }
 
-        poll_gpu_timing();
+        gpu_timer_.poll();
 
         FrameTargets targets = {};
         if (acquire_frame_targets(swap_chain, &targets)) {
@@ -1403,6 +1176,15 @@ private:
         safe_release(additive_blend_state_);
     }
 
+    bool recompile_shaders() {
+        if (!shaders_.compile(device_)) {
+            return false;
+        }
+        invalidate_temporal_history("recompilacao de shader");
+        shaders_.log_state();
+        return true;
+    }
+
     bool initialize_pipeline() {
         if (!create_constant_buffers() || !create_sampler_states() ||
             !create_raster_states() || !create_opaque_blend_state()) {
@@ -1410,263 +1192,11 @@ private:
         }
 
         create_additive_blend_state();
-        initialize_gpu_timing();
-        return compile_shaders();
+        gpu_timer_.attach(device_, context_);
+        return recompile_shaders();
     }
 
-    ID3DBlob* compile_shader_blob(
-        CompileFromFileFunction compile_from_file,
-        const wchar_t* path,
-        const char* entry_point,
-        const char* target,
-        const char* stage) {
-        constexpr UINT kFlags =
-            D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_OPTIMIZATION_LEVEL3;
-        ID3DBlob* blob = nullptr;
-        ID3DBlob* errors = nullptr;
-        const HRESULT result = compile_from_file(
-            path,
-            nullptr,
-            D3D_COMPILE_STANDARD_FILE_INCLUDE,
-            entry_point,
-            target,
-            kFlags,
-            0,
-            &blob,
-            &errors);
-        if (FAILED(result)) {
-            log_compile_error(stage, result, errors);
-            safe_release(blob);
-        }
-        safe_release(errors);
-        return blob;
-    }
 
-    ID3D11PixelShader* create_optional_pixel_shader(
-        ID3DBlob* blob, const char* description) {
-        if (blob == nullptr) {
-            return nullptr;
-        }
-        ID3D11PixelShader* shader = nullptr;
-        const HRESULT result = device_->CreatePixelShader(
-            blob->GetBufferPointer(), blob->GetBufferSize(), nullptr, &shader);
-        if (SUCCEEDED(result)) {
-            return shader;
-        }
-        log_message(
-            "Falha ao criar shader %s: 0x%08X.",
-            description,
-            static_cast<unsigned>(result));
-        safe_release(shader);
-        return nullptr;
-    }
-
-    void adopt_optional_shader(
-        ID3D11PixelShader** slot, ID3D11PixelShader* fresh) {
-        if (fresh == nullptr) {
-            return;
-        }
-        safe_release(*slot);
-        *slot = fresh;
-    }
-
-    struct ShaderBlobs {
-        ID3DBlob* vertex;
-        ID3DBlob* pixel;
-        ID3DBlob* depth_preview;
-        ID3DBlob* ssao;
-        ID3DBlob* temporal;
-        ID3DBlob* bloom[kBloomPassCount];
-    };
-
-    void release_shader_blobs(ShaderBlobs* blobs) {
-        safe_release(blobs->vertex);
-        safe_release(blobs->pixel);
-        safe_release(blobs->depth_preview);
-        safe_release(blobs->ssao);
-        safe_release(blobs->temporal);
-        for (UINT index = 0; index < kBloomPassCount; ++index) {
-            safe_release(blobs->bloom[index]);
-        }
-    }
-
-    bool compile_shader_blobs(
-        CompileFromFileFunction compile_from_file, ShaderBlobs* blobs) {
-        blobs->vertex = compile_shader_blob(
-            compile_from_file, shader_path(), "VSMain", "vs_5_0", "vertex");
-        if (blobs->vertex == nullptr) {
-            return false;
-        }
-        blobs->pixel = compile_shader_blob(
-            compile_from_file, shader_path(), "PSMain", "ps_5_0", "pixel");
-        if (blobs->pixel == nullptr) {
-            return false;
-        }
-
-        blobs->depth_preview = compile_shader_blob(
-            compile_from_file,
-            depth_preview_shader_path(),
-            "PSDepthPreview",
-            "ps_5_0",
-            "depth preview");
-        blobs->ssao = compile_shader_blob(
-            compile_from_file, ssao_shader_path(), "PSSSAO", "ps_5_0", "SSAO");
-        blobs->temporal = compile_shader_blob(
-            compile_from_file,
-            temporal_shader_path(),
-            "PSTemporal",
-            "ps_5_0",
-            "temporal");
-        for (UINT index = 0; index < kBloomPassCount; ++index) {
-            blobs->bloom[index] = compile_shader_blob(
-                compile_from_file,
-                bloom_shader_path(),
-                kBloomEntryPoints[index],
-                "ps_5_0",
-                kBloomEntryPoints[index]);
-        }
-        return true;
-    }
-
-    struct CompiledShaders {
-        ID3D11VertexShader* vertex;
-        ID3D11PixelShader* pixel;
-        ID3D11PixelShader* depth_preview;
-        ID3D11PixelShader* ssao;
-        ID3D11PixelShader* temporal;
-        ID3D11PixelShader* bloom[kBloomPassCount];
-    };
-
-    void release_compiled_shaders(CompiledShaders* shaders) {
-        safe_release(shaders->vertex);
-        safe_release(shaders->pixel);
-        safe_release(shaders->depth_preview);
-        safe_release(shaders->ssao);
-        safe_release(shaders->temporal);
-        for (UINT index = 0; index < kBloomPassCount; ++index) {
-            safe_release(shaders->bloom[index]);
-        }
-    }
-
-    HRESULT create_core_shaders(
-        const ShaderBlobs& blobs, CompiledShaders* shaders) {
-        HRESULT result = device_->CreateVertexShader(
-            blobs.vertex->GetBufferPointer(),
-            blobs.vertex->GetBufferSize(),
-            nullptr,
-            &shaders->vertex);
-        if (FAILED(result)) {
-            return result;
-        }
-        return device_->CreatePixelShader(
-            blobs.pixel->GetBufferPointer(),
-            blobs.pixel->GetBufferSize(),
-            nullptr,
-            &shaders->pixel);
-    }
-
-    void create_optional_shaders(
-        const ShaderBlobs& blobs, CompiledShaders* shaders) {
-        shaders->depth_preview =
-            create_optional_pixel_shader(blobs.depth_preview, "de preview depth");
-        shaders->ssao = create_optional_pixel_shader(blobs.ssao, "SSAO");
-        shaders->temporal =
-            create_optional_pixel_shader(blobs.temporal, "temporal");
-        for (UINT index = 0; index < kBloomPassCount; ++index) {
-            char description[64] = {};
-            std::snprintf(
-                description,
-                sizeof(description),
-                "%s do bloom",
-                kBloomEntryPoints[index]);
-            shaders->bloom[index] =
-                create_optional_pixel_shader(blobs.bloom[index], description);
-        }
-    }
-
-    void adopt_bloom_shaders(CompiledShaders* shaders) {
-        bool complete = true;
-        for (UINT index = 0; index < kBloomPassCount; ++index) {
-            complete = complete && shaders->bloom[index] != nullptr;
-        }
-        if (!complete) {
-            for (UINT index = 0; index < kBloomPassCount; ++index) {
-                safe_release(shaders->bloom[index]);
-            }
-            return;
-        }
-        safe_release(bloom_bright_shader_);
-        safe_release(bloom_downsample_shader_);
-        safe_release(bloom_upsample_shader_);
-        bloom_bright_shader_ = shaders->bloom[0];
-        bloom_downsample_shader_ = shaders->bloom[1];
-        bloom_upsample_shader_ = shaders->bloom[2];
-    }
-
-    void adopt_compiled_shaders(CompiledShaders* shaders) {
-        safe_release(vertex_shader_);
-        safe_release(pixel_shader_);
-        vertex_shader_ = shaders->vertex;
-        pixel_shader_ = shaders->pixel;
-        adopt_optional_shader(&depth_preview_shader_, shaders->depth_preview);
-        adopt_optional_shader(&ssao_shader_, shaders->ssao);
-        adopt_optional_shader(&temporal_shader_, shaders->temporal);
-        adopt_bloom_shaders(shaders);
-    }
-
-    bool compile_shaders() {
-        const CompileFromFileFunction compile_from_file =
-            resolve_shader_compiler();
-        if (compile_from_file == nullptr) {
-            log_message("D3DCompileFromFile nao esta disponivel.");
-            return false;
-        }
-
-        ShaderBlobs blobs = {};
-        if (!compile_shader_blobs(compile_from_file, &blobs)) {
-            release_shader_blobs(&blobs);
-            return false;
-        }
-
-        CompiledShaders shaders = {};
-        const HRESULT result = create_core_shaders(blobs, &shaders);
-        create_optional_shaders(blobs, &shaders);
-        release_shader_blobs(&blobs);
-
-        if (FAILED(result)) {
-            log_message(
-                "Falha ao criar shaders D3D11: 0x%08X.",
-                static_cast<unsigned>(result));
-            release_compiled_shaders(&shaders);
-            return false;
-        }
-
-        adopt_compiled_shaders(&shaders);
-        invalidate_temporal_history("recompilacao de shader");
-        log_message(
-            "Shaders Photorealism compilados: visual=ok depth_preview=%s "
-            "ssao_0.9.1=%s temporal_0.10.0=%s bloom_0.17.0=%s.",
-            depth_preview_shader_ != nullptr ? "ok" : "indisponivel",
-            ssao_shader_ != nullptr ? "ok" : "indisponivel",
-            temporal_shader_ != nullptr ? "ok" : "indisponivel",
-            bloom_bright_shader_ != nullptr ? "ok" : "indisponivel");
-        return true;
-    }
-
-    void log_compile_error(const char* stage, HRESULT result, ID3DBlob* errors) {
-        if (errors != nullptr && errors->GetBufferPointer() != nullptr) {
-            log_message(
-                "Erro no shader %s (0x%08X): %s",
-                stage,
-                static_cast<unsigned>(result),
-                static_cast<const char*>(errors->GetBufferPointer()));
-        } else {
-            log_message(
-                "Erro no shader %s: 0x%08X.",
-                stage,
-                static_cast<unsigned>(result));
-        }
-    }
 
     void update_condition_adaptation() {
         if (!settings_.condition_adaptation_enabled) {
@@ -2088,7 +1618,7 @@ private:
             context_->RSSetViewports(1, &viewport);
             context_->OMSetRenderTargets(1, &bloom_targets_[index], nullptr);
             context_->PSSetShader(
-                index == 0 ? bloom_bright_shader_ : bloom_downsample_shader_,
+                index == 0 ? shaders_.bloom_bright() : shaders_.bloom_downsample(),
                 nullptr,
                 0);
             ID3D11ShaderResourceView* source_view =
@@ -2115,7 +1645,7 @@ private:
             context_->RSSetViewports(1, &viewport);
             context_->OMSetRenderTargets(
                 1, &bloom_targets_[index - 1], nullptr);
-            context_->PSSetShader(bloom_upsample_shader_, nullptr, 0);
+            context_->PSSetShader(shaders_.bloom_upsample(), nullptr, 0);
             context_->PSSetShaderResources(0, 1, &bloom_views_[index]);
             context_->PSSetSamplers(0, 1, &sampler_state_);
             context_->PSSetConstantBuffers(0, 1, &bloom_constant_buffer_);
@@ -2136,7 +1666,7 @@ private:
         const D3D11_TEXTURE2D_DESC& source_description,
         std::uint64_t generation) {
         if (source == nullptr || device_ == nullptr ||
-            (depth_preview_shader_ == nullptr && ssao_shader_ == nullptr) ||
+            (shaders_.depth_preview() == nullptr && shaders_.ssao() == nullptr) ||
             generation == 0) {
             return false;
         }
@@ -2231,7 +1761,7 @@ private:
         const D3D11_TEXTURE2D_DESC& depth_description,
         std::uint64_t generation) {
         if (device_ == nullptr || depth_copy_texture_ == nullptr ||
-            temporal_shader_ == nullptr || generation == 0) {
+            shaders_.temporal() == nullptr || generation == 0) {
             return false;
         }
         if (temporal_history_texture_ != nullptr &&
@@ -2407,222 +1937,18 @@ private:
         bloom_active_logged_levels_ = 0;
     }
 
-    void initialize_gpu_timing() {
-        release_gpu_timing();
-        if (device_ == nullptr || context_ == nullptr) {
-            return;
-        }
 
-        D3D11_QUERY_DESC description = {};
-        for (GpuTimingSlot& slot : gpu_timing_slots_) {
-            description.Query = D3D11_QUERY_TIMESTAMP_DISJOINT;
-            HRESULT result = device_->CreateQuery(&description, &slot.disjoint);
-            if (SUCCEEDED(result)) {
-                description.Query = D3D11_QUERY_TIMESTAMP;
-                result = device_->CreateQuery(&description, &slot.start);
-            }
-            if (SUCCEEDED(result)) {
-                result = device_->CreateQuery(&description, &slot.end);
-            }
-            if (FAILED(result) || slot.disjoint == nullptr ||
-                slot.start == nullptr || slot.end == nullptr) {
-                log_message(
-                    "Telemetria GPU indisponivel: CreateQuery result=0x%08X.",
-                    static_cast<unsigned>(result));
-                release_gpu_timing();
-                return;
-            }
-        }
 
-        gpu_timing_available_ = true;
-        gpu_report_started_at_ = GetTickCount64();
-        log_message(
-            "Telemetria GPU inicializada: %u amostras em anel, relatorio=%us.",
-            kGpuTimingSlotCount,
-            kGpuReportIntervalMilliseconds / 1000);
-    }
 
-    void release_gpu_timing() {
-        for (GpuTimingSlot& slot : gpu_timing_slots_) {
-            safe_release(slot.disjoint);
-            safe_release(slot.start);
-            safe_release(slot.end);
-            slot.pending = false;
-        }
-        gpu_timing_available_ = false;
-        active_gpu_timing_slot_ = -1;
-        next_gpu_timing_slot_ = 0;
-        gpu_sample_count_ = 0;
-        gpu_dropped_sample_count_ = 0;
-        gpu_time_sum_ms_ = 0.0;
-        gpu_time_min_ms_ = DBL_MAX;
-        gpu_time_max_ms_ = 0.0;
-        gpu_report_started_at_ = 0;
-        gpu_query_error_logged_ = false;
-    }
 
-    void poll_gpu_timing() {
-        if (!gpu_timing_available_ || context_ == nullptr) {
-            return;
-        }
 
-        for (GpuTimingSlot& slot : gpu_timing_slots_) {
-            if (!slot.pending) {
-                continue;
-            }
 
-            D3D11_QUERY_DATA_TIMESTAMP_DISJOINT disjoint_data = {};
-            HRESULT result = context_->GetData(
-                slot.disjoint,
-                &disjoint_data,
-                sizeof(disjoint_data),
-                D3D11_ASYNC_GETDATA_DONOTFLUSH);
-            if (result == S_FALSE) {
-                continue;
-            }
-            if (FAILED(result)) {
-                handle_gpu_query_failure(result);
-                slot.pending = false;
-                continue;
-            }
-
-            UINT64 start_timestamp = 0;
-            UINT64 end_timestamp = 0;
-            const HRESULT start_result = context_->GetData(
-                slot.start,
-                &start_timestamp,
-                sizeof(start_timestamp),
-                D3D11_ASYNC_GETDATA_DONOTFLUSH);
-            const HRESULT end_result = context_->GetData(
-                slot.end,
-                &end_timestamp,
-                sizeof(end_timestamp),
-                D3D11_ASYNC_GETDATA_DONOTFLUSH);
-            if (start_result == S_FALSE || end_result == S_FALSE) {
-                continue;
-            }
-            if (FAILED(start_result) || FAILED(end_result)) {
-                handle_gpu_query_failure(
-                    FAILED(start_result) ? start_result : end_result);
-                slot.pending = false;
-                continue;
-            }
-
-            slot.pending = false;
-            if (disjoint_data.Disjoint || disjoint_data.Frequency == 0 ||
-                end_timestamp < start_timestamp) {
-                ++gpu_dropped_sample_count_;
-                continue;
-            }
-
-            const double milliseconds =
-                static_cast<double>(end_timestamp - start_timestamp) * 1000.0 /
-                static_cast<double>(disjoint_data.Frequency);
-            record_gpu_timing(milliseconds);
-        }
-    }
-
-    bool begin_gpu_timing() {
-        active_gpu_timing_slot_ = -1;
-        if (!gpu_timing_available_ || context_ == nullptr) {
-            return false;
-        }
-
-        for (UINT attempt = 0; attempt < kGpuTimingSlotCount; ++attempt) {
-            const UINT index =
-                (next_gpu_timing_slot_ + attempt) % kGpuTimingSlotCount;
-            GpuTimingSlot& slot = gpu_timing_slots_[index];
-            if (slot.pending) {
-                continue;
-            }
-            context_->Begin(slot.disjoint);
-            context_->End(slot.start);
-            active_gpu_timing_slot_ = static_cast<int>(index);
-            next_gpu_timing_slot_ = (index + 1) % kGpuTimingSlotCount;
-            return true;
-        }
-
-        ++gpu_dropped_sample_count_;
-        return false;
-    }
-
-    void end_gpu_timing() {
-        if (active_gpu_timing_slot_ < 0 || context_ == nullptr) {
-            return;
-        }
-        GpuTimingSlot& slot =
-            gpu_timing_slots_[static_cast<UINT>(active_gpu_timing_slot_)];
-        context_->End(slot.end);
-        context_->End(slot.disjoint);
-        slot.pending = true;
-        active_gpu_timing_slot_ = -1;
-    }
-
-    void handle_gpu_query_failure(HRESULT result) {
-        if (!gpu_query_error_logged_) {
-            log_message(
-                "Falha ao consultar telemetria GPU: 0x%08X; "
-                "o passe visual continuara ativo.",
-                static_cast<unsigned>(result));
-            gpu_query_error_logged_ = true;
-        }
-        ++gpu_dropped_sample_count_;
-    }
-
-    void record_gpu_timing(double milliseconds) {
-        if (milliseconds < 0.0 || milliseconds > 1000.0) {
-            ++gpu_dropped_sample_count_;
-            return;
-        }
-
-        ++gpu_sample_count_;
-        gpu_time_sum_ms_ += milliseconds;
-        if (milliseconds < gpu_time_min_ms_) {
-            gpu_time_min_ms_ = milliseconds;
-        }
-        if (milliseconds > gpu_time_max_ms_) {
-            gpu_time_max_ms_ = milliseconds;
-        }
-
-        const ULONGLONG now = GetTickCount64();
-        if (gpu_report_started_at_ == 0) {
-            gpu_report_started_at_ = now;
-        }
-        if (now - gpu_report_started_at_ <
-                kGpuReportIntervalMilliseconds ||
-            gpu_sample_count_ == 0) {
-            return;
-        }
-
-        log_message(
-            "Custo GPU do passe: media=%.3f ms minimo=%.3f ms pico=%.3f ms "
-            "amostras=%llu descartadas=%llu.",
-            gpu_time_sum_ms_ / static_cast<double>(gpu_sample_count_),
-            gpu_time_min_ms_,
-            gpu_time_max_ms_,
-            static_cast<unsigned long long>(gpu_sample_count_),
-            static_cast<unsigned long long>(gpu_dropped_sample_count_));
-
-        gpu_sample_count_ = 0;
-        gpu_dropped_sample_count_ = 0;
-        gpu_time_sum_ms_ = 0.0;
-        gpu_time_min_ms_ = DBL_MAX;
-        gpu_time_max_ms_ = 0.0;
-        gpu_report_started_at_ = now;
-    }
 
     void reset_device() {
         shutdown_steam_screenshots();
         release_frame_resources();
-        release_gpu_timing();
-        safe_release(vertex_shader_);
-        safe_release(pixel_shader_);
-        safe_release(depth_preview_shader_);
-        safe_release(ssao_shader_);
-        safe_release(temporal_shader_);
-        safe_release(bloom_bright_shader_);
-        safe_release(bloom_downsample_shader_);
-        safe_release(bloom_upsample_shader_);
+        gpu_timer_.release();
+        shaders_.release();
         safe_release(constant_buffer_);
         safe_release(depth_constant_buffer_);
         safe_release(ssao_constant_buffer_);
@@ -2640,6 +1966,8 @@ private:
 
     Settings settings_;
     SceneObserver scene_observer_;
+    GpuTimer gpu_timer_;
+    ShaderLibrary shaders_;
     ID3D11Device* device_ = nullptr;
     ID3D11DeviceContext* context_ = nullptr;
 
@@ -2672,14 +2000,6 @@ private:
     ID3D11ShaderResourceView* temporal_history_view_ = nullptr;
     ID3D11Texture2D* temporal_depth_history_texture_ = nullptr;
     ID3D11ShaderResourceView* temporal_depth_history_view_ = nullptr;
-    ID3D11VertexShader* vertex_shader_ = nullptr;
-    ID3D11PixelShader* pixel_shader_ = nullptr;
-    ID3D11PixelShader* depth_preview_shader_ = nullptr;
-    ID3D11PixelShader* ssao_shader_ = nullptr;
-    ID3D11PixelShader* temporal_shader_ = nullptr;
-    ID3D11PixelShader* bloom_bright_shader_ = nullptr;
-    ID3D11PixelShader* bloom_downsample_shader_ = nullptr;
-    ID3D11PixelShader* bloom_upsample_shader_ = nullptr;
     ID3D11Buffer* constant_buffer_ = nullptr;
     ID3D11Buffer* depth_constant_buffer_ = nullptr;
     ID3D11Buffer* ssao_constant_buffer_ = nullptr;
@@ -2728,19 +2048,6 @@ private:
     bool depth_stale_logged_ = false;
     static constexpr UINT kDepthActivityGraceFrames = 2;
     static constexpr UINT kDepthStaleFrameThreshold = 30;
-    static constexpr UINT kGpuTimingSlotCount = 8;
-    static constexpr ULONGLONG kGpuReportIntervalMilliseconds = 10000;
-    GpuTimingSlot gpu_timing_slots_[kGpuTimingSlotCount] = {};
-    bool gpu_timing_available_ = false;
-    bool gpu_query_error_logged_ = false;
-    int active_gpu_timing_slot_ = -1;
-    UINT next_gpu_timing_slot_ = 0;
-    std::uint64_t gpu_sample_count_ = 0;
-    std::uint64_t gpu_dropped_sample_count_ = 0;
-    double gpu_time_sum_ms_ = 0.0;
-    double gpu_time_min_ms_ = DBL_MAX;
-    double gpu_time_max_ms_ = 0.0;
-    ULONGLONG gpu_report_started_at_ = 0;
 };
 
 PostProcessor g_post_processor;

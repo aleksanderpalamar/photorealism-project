@@ -595,7 +595,7 @@ g++ -std=c++20 -Wall -Wextra -Werror \
 # a imagem caminharia sozinha sem que nada no cfg mudasse. A chamada tem que
 # ficar colada no CopyResource que enche scene_texture_.
 if ! grep -Fq 'scene_observer_.observe(device_, context_, scene_texture_);' \
-  "${project_dir}/src/postprocess.cpp"; then
+  "${project_dir}/src/postprocess/postprocessor.cpp"; then
   echo "O observador de cena parou de medir scene_texture_: medir a saida do \
 grade fecha uma realimentacao entre a cor e as features." >&2
   exit 1
@@ -693,18 +693,18 @@ fi
 # A adaptacao le o frame PRE-GRADE, pelo mesmo motivo do observador: alimentar
 # com a saida fecharia a realimentacao entre a cor e as features.
 if ! grep -Fq 'update_condition_adaptation();' \
-  "${project_dir}/src/postprocess.cpp"; then
+  "${project_dir}/src/postprocess/postprocessor.cpp"; then
   echo "A adaptacao por condicao nao e mais chamada no ponto pre-grade." >&2
   exit 1
 fi
 if ! grep -Fq 'constants.temperature = effective_temperature_;' \
-  "${project_dir}/src/postprocess.cpp"; then
+  "${project_dir}/src/postprocess/postprocessor.cpp"; then
   echo "O cbuffer voltou a receber a temperatura estatica: a adaptacao \
 calcularia e ninguem usaria." >&2
   exit 1
 fi
 if ! grep -Fq 'constants.tint = effective_tint_;' \
-  "${project_dir}/src/postprocess.cpp"; then
+  "${project_dir}/src/postprocess/postprocessor.cpp"; then
   echo "O cbuffer voltou a receber o tint estatico." >&2
   exit 1
 fi
@@ -905,7 +905,7 @@ visual nao precisa dele, e voltar custa 1.252 linhas e um passe por frame." >&2
 fi
 # As duas teclas que ele usava tambem nao podem voltar sozinhas.
 for retired_key in 'VK_PRIOR' 'VK_NEXT'; do
-  if grep -Fq "${retired_key}" "${project_dir}/src/postprocess.cpp"; then
+  if grep -Fq "${retired_key}" "${project_dir}/src/postprocess/postprocessor.cpp"; then
     echo "Tecla aposentada na 0.16.0 voltou: ${retired_key}. Page Up e Page \
 Down existiam so para o RTGI." >&2
     exit 1
