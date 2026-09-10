@@ -1,5 +1,76 @@
 # Changelog
 
+## Pacote 0.19.1 - 2026-09-10
+
+Refatoracao de `src/config.cpp`, pedida pelo usuario, mais um defeito que ela
+encontrou no caminho.
+
+### O que mudou na forma
+
+| | antes | depois |
+| --- | --- | --- |
+| linhas | 1096 | 912 |
+| `else if` | 49 | **0** (o unico que resta esta num comentario) |
+| `if (` | 113 | 21 |
+| indentacao maxima | 16 | 12 |
+| maior funcao | 193 linhas | 78 |
+
+A leitura passou a ser dirigida por **tabela**. Antes cada parametro exigia
+tocar em cinco lugares: o campo em `CalibrationStack`, o campo em `Settings`, um
+ramo de `else if` na funcao de atribuicao da secao, uma linha na copia
+stack -> Settings, e um clamp escrito a mao. Agora e **uma linha**:
+
+```cpp
+{"rain_temperature", &Settings::condition_rain_temperature},
+```
+
+Tres mudancas estruturais sustentam isso:
+
+- **Uma tabela por familia, com ponteiro-para-membro.** `kGradeFields` liga o
+  nome no arquivo ao campo em `Settings` e ao campo na camada, e as tres
+  leitoras -- parse, copia da base, soma dos deltas -- percorrem a MESMA tabela.
+  Nao ha como uma saber de um campo que a outra ignora.
+- **`kSections` substitui o `enum Section`**, a cadeia que traduzia nome em
+  enum e a cadeia que traduzia enum em funcao. Eram tres lugares para acertar,
+  e a 0.19.0 chegou a esquecer um `continue` na segunda delas.
+- **`CalibrationStack` parou de duplicar `Settings`.** So as tres camadas de cor
+  precisam de armazenamento proprio, porque se somam; todo o resto e lido direto
+  no formato final. Sairam 55 declaracoes repetidas e a segunda coluna de cada
+  tabela.
+
+Os clamps viraram `kLimits`, e os pares que precisam ficar em ordem crescente
+viraram `kOrderedPairs` -- inclusive as bandas da adaptacao, onde uma inversao
+devolveria a classe dura que a 0.19.0 existe para nao ter.
+
+### O defeito que a refatoracao encontrou
+
+`reference_base()` tinha `exposure = -0.09f` enquanto o cfg entregue ja dizia
+`-0.0488697`. A 0.18.2 moveu os +0,0411 EV do balanco de branco para a exposicao
+base, mudou o arquivo e **nao mudou o default interno**. Quem perdesse o cfg
+rodava 0,041 EV mais escuro que a calibracao aprovada, e nada acusava porque o
+`validate.sh` fazia grep de cada lado separadamente.
+
+Corrigido, e agora ha teste.
+
+### `config.cpp` passou a ter teste
+
+`tests/config_load_test.cpp` compila o proprio `config.cpp` com um substituto
+minimo de `<windows.h>` e exercita o binario de verdade: doze grupos cobrindo a
+soma das camadas, o sufixo `_delta`, a forma escalar `black_lift` da 0.14.0,
+secao e chave desconhecidas, os limites, banda invertida, comentarios e espacos,
+`enabled` por modulo, as tres formas de booleano, e cfg vazio.
+
+O primeiro grupo e o que impede a volta do defeito acima: **os defaults internos
+e o cfg entregue tem que produzir o mesmo perfil**. Verificado que o teste cai
+quando a `exposure` volta para -0,09.
+
+### Como a equivalencia foi verificada
+
+Antes de mexer, os 132 campos de `Settings` foram despejados para arquivo, em
+dois cenarios -- defaults internos e parse do cfg entregue. Depois da
+refatoracao, o mesmo despejo: **identico nos 131 campos**, com a unica diferenca
+sendo a `exposure` corrigida de proposito.
+
 ## Pacote 0.19.0 - 2026-09-10
 
 **A cor passa a seguir a condicao.** Ate a 0.18.2 o perfil era unico --

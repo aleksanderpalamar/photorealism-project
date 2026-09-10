@@ -709,6 +709,38 @@ if ! grep -Fq 'constants.tint = effective_tint_;' \
   exit 1
 fi
 
+# 0.19.1. config.cpp passou a ter teste de verdade, e nao so grep.
+#
+# O grep confirma que um numero esta escrito no arquivo; nao confirma que ele
+# chega a Settings. Foi essa lacuna que deixou a 0.18.2 mudar `exposure` no cfg
+# e esquecer o default interno: os dois greps passavam e o fallback renderizava
+# 0,041 EV mais escuro que o arquivo.
+if ! grep -Fq 'assert(near(internal.exposure, shipped.exposure, 1e-5f));' \
+  "${project_dir}/tests/config_load_test.cpp"; then
+  echo "O teste parou de exigir que os defaults internos e o cfg entregue \
+produzam o mesmo perfil: e assim que os dois divergem sem ninguem ver." >&2
+  exit 1
+fi
+
+# A leitura e dirigida por tabela desde a 0.19.1. Se voltarem as cadeias de
+# else-if, um parametro novo volta a precisar de cinco lugares certos.
+if ! grep -Fq 'const SectionSpec kSections[]' "${project_dir}/src/config.cpp"; then
+  echo "config.cpp deixou de ser dirigido por tabela de secoes." >&2
+  exit 1
+fi
+if ! grep -Fq 'constexpr GradeField kGradeFields[]' "${project_dir}/src/config.cpp"; then
+  echo "config.cpp deixou de ter a tabela unica de parametros de cor: parse e \
+composicao voltam a poder divergir." >&2
+  exit 1
+fi
+
+config_load_test="/tmp/photorealism-config-load-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  -I"${project_dir}/tests/support" -I"${project_dir}/src" \
+  "${project_dir}/tests/config_load_test.cpp" \
+  -o "${config_load_test}"
+PHOTOREALISM_PROJECT_DIR="${project_dir}" "${config_load_test}"
+
 scene_conditions_test="/tmp/photorealism-scene-conditions-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/tests/scene_conditions_test.cpp" \
