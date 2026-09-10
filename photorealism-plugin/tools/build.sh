@@ -39,7 +39,14 @@ common_flags=(
   -Werror \
   -Wno-cast-function-type-mismatch \
   "${project_dir}/src/dxgi_proxy.cpp" \
-  "${project_dir}/src/hook.cpp" \
+  "${project_dir}/src/hooks/hook_install.cpp" \
+  "${project_dir}/src/hooks/hook_state.cpp" \
+  "${project_dir}/src/hooks/hook_audit.cpp" \
+  "${project_dir}/src/hooks/swap_chain_hooks.cpp" \
+  "${project_dir}/src/hooks/context_hooks.cpp" \
+  "${project_dir}/src/hooks/device_probe.cpp" \
+  "${project_dir}/src/hooks/vtable_patch.cpp" \
+  "${project_dir}/src/hooks/module_names.cpp" \
   "${project_dir}/src/postprocess/postprocessor.cpp" \
   "${project_dir}/src/postprocess/device_state.cpp" \
   "${project_dir}/src/postprocess/gpu_timer.cpp" \

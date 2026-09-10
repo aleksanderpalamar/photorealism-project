@@ -1,5 +1,67 @@
 # Changelog
 
+## Pacote 0.19.9 - 2026-09-10
+
+`src/hook.cpp` virou `src/hooks/`. Sem mudanca de comportamento. Nenhum arquivo
+passa de 200 linhas.
+
+```
+src/hooks/
+  hook_install.cpp     169  instalar: sondar, remendar vtables, registrar
+  device_probe.cpp     142  a janela oculta e o device de prova, em RAII
+  swap_chain_hooks.cpp  84  Present, Present1 e ResizeBuffers
+  context_hooks.cpp     69  OMSetRenderTargets*, ClearDepthStencilView
+  hook_audit.cpp        65  quem e o dono de cada entrada da vtable
+  module_names.cpp      44  endereco -> nome do modulo que o contem
+  signatures.hpp        34  os sete tipos de ponteiro de funcao
+  hook_state.hpp        36  os atomicos compartilhados e o escopo de despacho
+  vtable_patch.hpp/cpp  52  trocar um slot com VirtualProtect
+  (mais quatro headers de interface)
+```
+
+### O que a separacao encontrou
+
+**A sonda de device virou RAII.** `install_swap_chain_hooks` criava uma janela
+oculta, registrava a classe, criava device, swap chain e contexto -- e liberava
+os cinco na mao, no fim, depois de tres caminhos de retorno diferentes. Agora e
+um `DeviceProbe` cujo destrutor solta tudo. Os `DestroyWindow` e
+`UnregisterClassW` espalhados sumiram.
+
+**`replace_vtable_entry` era um template inteiro no `.cpp`.** A parte que mexe
+em memoria -- `VirtualProtect`, `InterlockedExchangePointer`,
+`FlushInstructionCache` -- nao depende do tipo. Virou `patch_vtable_slot`, uma
+funcao normal em `vtable_patch.cpp`, e o template ficou reduzido a converter o
+ponteiro e guardar no atomico certo.
+
+**A instalacao virou quatro passos com nome.** `patch_present`,
+`patch_present1`, `patch_context` e um `InstallReport` que diz o que entrou. A
+funcao de 198 linhas com seis booleanos soltos virou 25 linhas que se leem em
+voz alta.
+
+**Os atomicos ganharam namespace proprio.** Eram onze globais no anonimo de um
+arquivo so; agora vivem em `hook_state`, e quem os usa escreve
+`using namespace hook_state` de proposito, em vez de alcanca-los por acidente.
+
+### Verificacao
+
+Hooks nao tem teste unitario -- eles so existem dentro do jogo. A verificacao
+foi outra: **todas as mensagens de log com formato do `hook.cpp` antigo foram
+extraidas do commit anterior e procuradas no DLL construido.** Nenhuma faltou.
+
+Duas ficaram diferentes no fonte porque a quebra de linha entre literais mudou;
+no binario, onde a concatenacao ja aconteceu, as duas aparecem inteiras e
+identicas.
+
+Build e `validate.sh` verdes. Os onze testes passam. Os cinco modulos
+verificados por quebra deliberada -- renomear um simbolo de `hook_state.cpp`
+produz vinte e um erros de link, que e a medida de quanto aquele arquivo
+sustenta.
+
+Duas guardas do `validate.sh` foram reapontadas para
+`swap_chain_hooks.cpp`, incluindo a que exige `process_frame` seguido de
+`observe_postprocessed_frame` -- a que garante que a captura da Steam veja o
+frame **depois** de todos os passes visuais.
+
 ## Pacote 0.19.8 - 2026-09-10
 
 `src/config.cpp` e `src/config.hpp` viraram `src/config/`. Sem mudanca de

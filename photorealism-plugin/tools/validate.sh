@@ -152,7 +152,7 @@ for steam_screenshot_message in \
 done
 
 if ! rg -n 'process_frame\(swap_chain\);[[:space:]]*observe_postprocessed_frame\(swap_chain\);' \
-    -U "${project_dir}/src/hook.cpp" >/dev/null; then
+    -U "${project_dir}/src/hooks/swap_chain_hooks.cpp" >/dev/null; then
   echo "Fronteira pos-processada ausente depois de todos os passes visuais." >&2
   exit 1
 fi
@@ -949,7 +949,7 @@ for retired_hook in \
   'hooked_rs_set_scissor_rects' \
   'hooked_draw_indexed' \
   'hooked_draw_instanced'; do
-  if grep -Fq "${retired_hook}" "${project_dir}/src/hook.cpp"; then
+  if grep -Fq "${retired_hook}" "${project_dir}/src/hooks/swap_chain_hooks.cpp"; then
     echo "Hook aposentado na 0.15.0 voltou a hook.cpp: ${retired_hook}. Ele \
 roda em toda chamada de desenho do jogo." >&2
     exit 1
