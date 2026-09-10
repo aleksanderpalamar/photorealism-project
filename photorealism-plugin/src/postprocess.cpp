@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
+#include <cstdio>
 #include <cstdint>
 #include <cstring>
 
@@ -267,292 +268,371 @@ class PostProcessor {
 public:
     PostProcessor() : settings_(default_settings()) {}
 
-    void render(IDXGISwapChain* swap_chain) {
-        if (swap_chain == nullptr) {
+    struct FrameTargets {
+        ID3D11Texture2D* back_buffer;
+        ID3D11RenderTargetView* output;
+        D3D11_TEXTURE2D_DESC description;
+        bool output_needs_srgb_encode;
+    };
+
+    struct DepthState {
+        bool available;
+        D3D11_TEXTURE2D_DESC description;
+        std::uint64_t generation;
+    };
+
+    struct FramePlan {
+        DepthState depth;
+        bool depth_preview;
+        bool ssao_preview;
+        bool bloom_preview;
+        bool ssao;
+        bool temporal;
+        bool bloom;
+    };
+
+    void track_active_swap_chain(IDXGISwapChain* swap_chain) {
+        if (active_swap_chain_ == swap_chain) {
             return;
         }
-        if (resize_in_progress_) {
-            return;
-        }
+        release_frame_resources();
+        active_swap_chain_ = swap_chain;
+        log_message(
+            "Swap chain ativo detectado: %p; recursos serao vinculados "
+            "no proximo frame.",
+            static_cast<void*>(swap_chain));
+    }
 
-        if (active_swap_chain_ != swap_chain) {
-            release_frame_resources();
-            active_swap_chain_ = swap_chain;
-            log_message(
-                "Swap chain ativo detectado: %p; recursos serao vinculados "
-                "no proximo frame.",
-                static_cast<void*>(swap_chain));
-        }
+    static const char* depth_preview_mode_name(unsigned mode) {
+        static const char* const kNames[] = {
+            "normal",
+            "raw",
+            "reversed-z-enhanced",
+            "linear-distance",
+            "reconstructed-normals",
+            "ssao-visibility",
+            "bloom",
+        };
+        const unsigned count = sizeof(kNames) / sizeof(kNames[0]);
+        return mode < count ? kNames[mode] : "normal";
+    }
 
+    void toggle_effect() {
+        settings_.enabled = !settings_.enabled;
+        invalidate_temporal_history("alternancia Home");
+        log_message(
+            "Efeito %s pelo atalho Home.",
+            settings_.enabled ? "ativado" : "desativado");
+    }
+
+    void reload_configuration() {
+        load_settings(&settings_);
+        apply_scene_observer_settings();
+        if (device_ != nullptr) {
+            compile_shaders();
+        }
+        release_depth_capture_resources();
+        restart_depth_discovery();
+        log_message(
+            "Configuracao, shader e descoberta depth recarregados "
+            "pelo atalho End.");
+    }
+
+    void cycle_depth_preview_mode() {
+        depth_preview_mode_ = (depth_preview_mode_ + 1) % 7;
+        invalidate_temporal_history("mudanca de preview Insert");
+        depth_preview_wait_logged_ = false;
+        depth_preview_logged_mode_ = 0;
+        log_message(
+            "Preview depth solicitado pelo Insert: mode=%u(%s).",
+            depth_preview_mode_,
+            depth_preview_mode_name(depth_preview_mode_));
+    }
+
+    void handle_hotkeys() {
         if (key_pressed_once(VK_HOME, &home_key_down_)) {
-            settings_.enabled = !settings_.enabled;
-            invalidate_temporal_history("alternancia Home");
-            log_message(
-                "Efeito %s pelo atalho Home.",
-                settings_.enabled ? "ativado" : "desativado");
+            toggle_effect();
         }
         if (key_pressed_once(VK_END, &end_key_down_)) {
-            load_settings(&settings_);
-            apply_scene_observer_settings();
-            if (device_ != nullptr) {
-                compile_shaders();
-            }
-            release_depth_capture_resources();
-            restart_depth_discovery();
-            log_message(
-                "Configuracao, shader e descoberta depth recarregados "
-                "pelo atalho End.");
+            reload_configuration();
         }
         if (key_pressed_once(VK_INSERT, &insert_key_down_)) {
-            depth_preview_mode_ = (depth_preview_mode_ + 1) % 7;
-            invalidate_temporal_history("mudanca de preview Insert");
-            depth_preview_wait_logged_ = false;
-            depth_preview_logged_mode_ = 0;
-            const char* mode_name = "normal";
-            if (depth_preview_mode_ == 1) {
-                mode_name = "raw";
-            } else if (depth_preview_mode_ == 2) {
-                mode_name = "reversed-z-enhanced";
-            } else if (depth_preview_mode_ == 3) {
-                mode_name = "linear-distance";
-            } else if (depth_preview_mode_ == 4) {
-                mode_name = "reconstructed-normals";
-            } else if (depth_preview_mode_ == 5) {
-                mode_name = "ssao-visibility";
-            } else if (depth_preview_mode_ == 6) {
-                mode_name = "bloom";
-            }
-            log_message(
-                "Preview depth solicitado pelo Insert: mode=%u(%s).",
-                depth_preview_mode_,
-                mode_name);
+            cycle_depth_preview_mode();
         }
-        if (!settings_.enabled) {
-            return;
-        }
+    }
 
+    bool adopt_device(IDXGISwapChain* swap_chain, ID3D11Device* frame_device) {
+        const bool replacing_device = device_ != nullptr;
+        reset_device();
+        if (replacing_device) {
+            restart_depth_discovery_for_device_change();
+        }
+        active_swap_chain_ = swap_chain;
+        device_ = frame_device;
+        device_->AddRef();
+        device_->GetImmediateContext(&context_);
+        load_settings(&settings_);
+        apply_scene_observer_settings();
+        if (!initialize_pipeline()) {
+            return false;
+        }
+        log_message("Pipeline D3D11 inicializado.");
+        return true;
+    }
+
+    bool ensure_device_for(IDXGISwapChain* swap_chain) {
         ID3D11Device* frame_device = nullptr;
-        HRESULT result = swap_chain->GetDevice(
+        const HRESULT result = swap_chain->GetDevice(
             IID_ID3D11Device, reinterpret_cast<void**>(&frame_device));
         if (FAILED(result) || frame_device == nullptr) {
-            return;
+            return false;
         }
-
-        if (device_ != frame_device) {
-            const bool replacing_device = device_ != nullptr;
-            reset_device();
-            if (replacing_device) {
-                restart_depth_discovery_for_device_change();
-            }
-            active_swap_chain_ = swap_chain;
-            device_ = frame_device;
-            device_->AddRef();
-            device_->GetImmediateContext(&context_);
-            load_settings(&settings_);
-            apply_scene_observer_settings();
-            if (!initialize_pipeline()) {
-                safe_release(frame_device);
-                return;
-            }
-            log_message("Pipeline D3D11 inicializado.");
-        }
+        const bool ready =
+            device_ == frame_device || adopt_device(swap_chain, frame_device);
         safe_release(frame_device);
+        return ready;
+    }
 
-        poll_gpu_timing();
+    bool backbuffer_is_supported(const D3D11_TEXTURE2D_DESC& description) {
+        const bool supported =
+            description.Width >= 640 && description.Height >= 480 &&
+            description.SampleDesc.Count == 1 &&
+            is_supported_format(description.Format);
+        if (supported || unsupported_logged_) {
+            return supported;
+        }
+        log_message(
+            "Backbuffer ignorado: %ux%u format=%u samples=%u.",
+            description.Width,
+            description.Height,
+            static_cast<unsigned>(description.Format),
+            description.SampleDesc.Count);
+        unsupported_logged_ = true;
+        return false;
+    }
 
-        ID3D11Texture2D* back_buffer = nullptr;
-        result = swap_chain->GetBuffer(
-            0, IID_ID3D11Texture2D, reinterpret_cast<void**>(&back_buffer));
-        if (FAILED(result) || back_buffer == nullptr) {
-            return;
+    bool create_output_view(FrameTargets* targets) {
+        D3D11_RENDER_TARGET_VIEW_DESC output_description = {};
+        output_description.Format =
+            srgb_view_format(targets->description.Format);
+        output_description.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
+        output_description.Texture2D.MipSlice = 0;
+        HRESULT result = device_->CreateRenderTargetView(
+            targets->back_buffer, &output_description, &targets->output);
+        if (SUCCEEDED(result) && targets->output != nullptr) {
+            return true;
         }
 
-        D3D11_TEXTURE2D_DESC description = {};
-        back_buffer->GetDesc(&description);
-        if (description.Width < 640 || description.Height < 480 ||
-            description.SampleDesc.Count != 1 ||
-            !is_supported_format(description.Format)) {
-            if (!unsupported_logged_) {
-                log_message(
-                    "Backbuffer ignorado: %ux%u format=%u samples=%u.",
-                    description.Width,
-                    description.Height,
-                    static_cast<unsigned>(description.Format),
-                    description.SampleDesc.Count);
-                unsupported_logged_ = true;
-            }
-            safe_release(back_buffer);
-            return;
+        result = device_->CreateRenderTargetView(
+            targets->back_buffer, nullptr, &targets->output);
+        targets->output_needs_srgb_encode =
+            is_unorm_format(targets->description.Format);
+        if (!output_fallback_logged_) {
+            log_message(
+                "RTV sRGB indisponivel; usando codificacao manual na saida.");
+            output_fallback_logged_ = true;
+        }
+        if (SUCCEEDED(result) && targets->output != nullptr) {
+            return true;
+        }
+        log_message(
+            "Falha ao criar RTV do backbuffer: 0x%08X.",
+            static_cast<unsigned>(result));
+        return false;
+    }
+
+    bool acquire_frame_targets(
+        IDXGISwapChain* swap_chain, FrameTargets* targets) {
+        const HRESULT result = swap_chain->GetBuffer(
+            0,
+            IID_ID3D11Texture2D,
+            reinterpret_cast<void**>(&targets->back_buffer));
+        if (FAILED(result) || targets->back_buffer == nullptr) {
+            return false;
+        }
+
+        targets->back_buffer->GetDesc(&targets->description);
+        if (!backbuffer_is_supported(targets->description)) {
+            return false;
         }
 
         update_backbuffer_signature(
-            description.Width, description.Height, description.Format);
+            targets->description.Width,
+            targets->description.Height,
+            targets->description.Format);
 
-        if (!ensure_frame_resources(description)) {
-            safe_release(back_buffer);
-            return;
+        if (!ensure_frame_resources(targets->description)) {
+            return false;
+        }
+        return create_output_view(targets);
+    }
+
+    void release_frame_targets(FrameTargets* targets) {
+        safe_release(targets->output);
+        safe_release(targets->back_buffer);
+    }
+
+    void note_depth_active(std::uint64_t generation, std::uint64_t serial) {
+        if (depth_stale_logged_) {
+            log_message(
+                "Depth voltou a ser usado pela cena: generation=%llu; "
+                "SSAO photorealista retomado.",
+                static_cast<unsigned long long>(generation));
+        }
+        depth_last_binding_serial_ = serial;
+        depth_stale_frame_count_ = 0;
+        depth_stale_logged_ = false;
+    }
+
+    bool note_depth_idle(std::uint64_t generation, std::uint64_t serial) {
+        if (depth_stale_frame_count_ < kDepthStaleFrameThreshold) {
+            ++depth_stale_frame_count_;
+        }
+        const bool grace_just_expired =
+            depth_stale_frame_count_ == kDepthActivityGraceFrames + 1 &&
+            !depth_stale_logged_;
+        if (grace_just_expired) {
+            log_message(
+                "Depth sem atividade confirmada por %u frames: "
+                "generation=%llu; SSAO suspenso e visual "
+                "photorealista preservado.",
+                depth_stale_frame_count_,
+                static_cast<unsigned long long>(generation));
+            depth_stale_logged_ = true;
         }
 
-        ID3D11RenderTargetView* output = nullptr;
-        D3D11_RENDER_TARGET_VIEW_DESC output_description = {};
-        output_description.Format = srgb_view_format(description.Format);
-        output_description.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
-        output_description.Texture2D.MipSlice = 0;
-        result = device_->CreateRenderTargetView(
-            back_buffer, &output_description, &output);
-        bool output_needs_srgb_encode = false;
-        if (FAILED(result) || output == nullptr) {
-            result = device_->CreateRenderTargetView(
-                back_buffer, nullptr, &output);
-            output_needs_srgb_encode = is_unorm_format(description.Format);
-            if (!output_fallback_logged_) {
-                log_message(
-                    "RTV sRGB indisponivel; usando codificacao manual na saida.");
-                output_fallback_logged_ = true;
-            }
+        const bool expired =
+            depth_stale_frame_count_ >= kDepthStaleFrameThreshold &&
+            invalidate_stale_depth_candidate(generation, serial);
+        if (!expired) {
+            return false;
         }
-        if (FAILED(result) || output == nullptr) {
-            log_message("Falha ao criar RTV do backbuffer: 0x%08X.", static_cast<unsigned>(result));
-            safe_release(back_buffer);
-            return;
+        log_message(
+            "Depth obsoleto invalidado apos %u frames; "
+            "redescoberta automatica iniciada sem acao do usuario.",
+            kDepthStaleFrameThreshold);
+        release_depth_capture_resources();
+        return true;
+    }
+
+    bool depth_is_safe_for_scene(
+        std::uint64_t generation, std::uint64_t serial) {
+        if (depth_liveness_generation_ != generation) {
+            depth_liveness_generation_ = generation;
+            depth_last_binding_serial_ = 0;
+            depth_stale_frame_count_ = 0;
+            depth_stale_logged_ = false;
         }
 
-        SavedState state = {};
-        capture_state(context_, &state);
-
-        const bool gpu_timing_active = begin_gpu_timing();
-
-        context_->OMSetRenderTargets(0, nullptr, nullptr);
-        bool depth_available = false;
-        bool depth_preview_active = false;
-        bool ssao_preview_active = false;
-        bool ssao_active = false;
-        bool temporal_active = false;
-        bool bloom_active = false;
-        bool bloom_preview_active = false;
-        ID3D11Texture2D* depth_candidate = nullptr;
-        D3D11_TEXTURE2D_DESC depth_description = {};
-        std::uint64_t depth_generation = 0;
-        std::uint64_t depth_binding_serial = 0;
-        bool depth_candidate_invalidated = false;
-
-        const bool depth_requested =
-            settings_.ssao_enabled || settings_.temporal_enabled ||
-            (depth_preview_mode_ != 0 && depth_preview_mode_ != 6);
-        if (depth_requested &&
-            acquire_depth_candidate(
-                &depth_candidate,
-                &depth_description,
-                &depth_generation,
-                &depth_binding_serial)) {
-            if (depth_liveness_generation_ != depth_generation) {
-                depth_liveness_generation_ = depth_generation;
-                depth_last_binding_serial_ = 0;
-                depth_stale_frame_count_ = 0;
-                depth_stale_logged_ = false;
-            }
-
-            const bool depth_used_by_current_scene =
-                depth_binding_serial != 0 &&
-                depth_binding_serial != depth_last_binding_serial_;
-            if (depth_used_by_current_scene) {
-                if (depth_stale_logged_) {
-                    log_message(
-                        "Depth voltou a ser usado pela cena: generation=%llu; "
-                        "SSAO photorealista retomado.",
-                        static_cast<unsigned long long>(depth_generation));
-                }
-                depth_last_binding_serial_ = depth_binding_serial;
-                depth_stale_frame_count_ = 0;
-                depth_stale_logged_ = false;
-            } else {
-                if (depth_stale_frame_count_ < kDepthStaleFrameThreshold) {
-                    ++depth_stale_frame_count_;
-                }
-                if (depth_stale_frame_count_ ==
-                        kDepthActivityGraceFrames + 1 &&
-                    !depth_stale_logged_) {
-                    log_message(
-                        "Depth sem atividade confirmada por %u frames: "
-                        "generation=%llu; SSAO suspenso e visual "
-                        "photorealista preservado.",
-                        depth_stale_frame_count_,
-                        static_cast<unsigned long long>(depth_generation));
-                    depth_stale_logged_ = true;
-                }
-                if (depth_stale_frame_count_ >= kDepthStaleFrameThreshold &&
-                    invalidate_stale_depth_candidate(
-                        depth_generation, depth_binding_serial)) {
-                    log_message(
-                        "Depth obsoleto invalidado apos %u frames; "
-                        "redescoberta automatica iniciada sem acao do usuario.",
-                        kDepthStaleFrameThreshold);
-                    release_depth_capture_resources();
-                    depth_candidate_invalidated = true;
-                }
-            }
-
-            const bool depth_safe_for_scene =
-                !depth_candidate_invalidated &&
-                (depth_used_by_current_scene ||
-                 depth_stale_frame_count_ <= kDepthActivityGraceFrames);
-            if (depth_safe_for_scene &&
-                ensure_depth_capture_resources(
-                    depth_candidate,
-                    depth_description,
-                    depth_generation)) {
-                context_->CopyResource(depth_copy_texture_, depth_candidate);
-                depth_available = true;
-            }
+        const bool used_by_current_scene =
+            serial != 0 && serial != depth_last_binding_serial_;
+        if (used_by_current_scene) {
+            note_depth_active(generation, serial);
+            return true;
         }
-        safe_release(depth_candidate);
+        if (note_depth_idle(generation, serial)) {
+            return false;
+        }
+        return depth_stale_frame_count_ <= kDepthActivityGraceFrames;
+    }
 
-        depth_preview_active =
-            depth_available && depth_preview_mode_ >= 1 &&
+    bool depth_is_requested() const {
+        return settings_.ssao_enabled || settings_.temporal_enabled ||
+               (depth_preview_mode_ != 0 && depth_preview_mode_ != 6);
+    }
+
+    DepthState acquire_depth_state() {
+        DepthState depth = {};
+        if (!depth_is_requested()) {
+            return depth;
+        }
+
+        ID3D11Texture2D* candidate = nullptr;
+        std::uint64_t serial = 0;
+        if (!acquire_depth_candidate(
+                &candidate, &depth.description, &depth.generation, &serial)) {
+            safe_release(candidate);
+            return depth;
+        }
+
+        const bool safe = depth_is_safe_for_scene(depth.generation, serial);
+        depth.available =
+            safe && ensure_depth_capture_resources(
+                        candidate, depth.description, depth.generation);
+        if (depth.available) {
+            context_->CopyResource(depth_copy_texture_, candidate);
+        }
+        safe_release(candidate);
+        return depth;
+    }
+
+    bool plan_temporal(
+        const D3D11_TEXTURE2D_DESC& description,
+        const DepthState& depth,
+        bool ssao_active) {
+        const bool eligible =
+            depth.available && depth_preview_mode_ == 0 &&
+            settings_.temporal_enabled && temporal_shader_ != nullptr &&
+            visual_target_ != nullptr && visual_view_ != nullptr;
+        if (!eligible) {
+            return false;
+        }
+        if (!ensure_temporal_resources(
+                description, depth.description, depth.generation)) {
+            return false;
+        }
+        const bool spatial_missing =
+            spatial_target_ == nullptr || spatial_view_ == nullptr;
+        return !(ssao_active && spatial_missing);
+    }
+
+    bool plan_bloom(
+        const D3D11_TEXTURE2D_DESC& description, bool bloom_preview) {
+        const bool eligible =
+            (depth_preview_mode_ == 0 || bloom_preview) &&
+            settings_.bloom_enabled && bloom_bright_shader_ != nullptr &&
+            additive_blend_state_ != nullptr;
+        if (!eligible) {
+            return false;
+        }
+        return ensure_bloom_resources(
+            description,
+            bloom_levels_for_radius(
+                settings_.bloom_radius, description.Height));
+    }
+
+    FramePlan plan_frame(const D3D11_TEXTURE2D_DESC& description) {
+        FramePlan plan = {};
+        plan.depth = acquire_depth_state();
+
+        plan.depth_preview =
+            plan.depth.available && depth_preview_mode_ >= 1 &&
             depth_preview_mode_ <= 4 && depth_preview_shader_ != nullptr;
-        ssao_preview_active =
-            depth_available && depth_preview_mode_ == 5 &&
+        plan.ssao_preview =
+            plan.depth.available && depth_preview_mode_ == 5 &&
             ssao_shader_ != nullptr;
-        ssao_active =
-            depth_available && depth_preview_mode_ == 0 &&
+        plan.ssao =
+            plan.depth.available && depth_preview_mode_ == 0 &&
             settings_.ssao_enabled && ssao_shader_ != nullptr &&
             visual_target_ != nullptr && visual_view_ != nullptr;
-        if (depth_available && depth_preview_mode_ == 0 &&
-            settings_.temporal_enabled && temporal_shader_ != nullptr &&
-            visual_target_ != nullptr && visual_view_ != nullptr) {
-            temporal_active = ensure_temporal_resources(
-                description, depth_description, depth_generation);
-            if (ssao_active &&
-                (spatial_target_ == nullptr || spatial_view_ == nullptr)) {
-                temporal_active = false;
-            }
-        }
+        plan.temporal = plan_temporal(description, plan.depth, plan.ssao);
 
-        if (!temporal_active && temporal_history_valid_) {
+        if (!plan.temporal && temporal_history_valid_) {
             invalidate_temporal_history("depth ou passe temporal indisponivel");
         }
 
-        bloom_preview_active =
+        plan.bloom_preview =
             depth_preview_mode_ == 6 && bloom_bright_shader_ != nullptr &&
             additive_blend_state_ != nullptr;
-        if ((depth_preview_mode_ == 0 || bloom_preview_active) &&
-            settings_.bloom_enabled && bloom_bright_shader_ != nullptr &&
-            additive_blend_state_ != nullptr) {
-            bloom_active = ensure_bloom_resources(
-                description,
-                bloom_levels_for_radius(
-                    settings_.bloom_radius, description.Height));
+        plan.bloom = plan_bloom(description, plan.bloom_preview);
+        if (!plan.bloom) {
+            plan.bloom_preview = false;
         }
-        if (!bloom_active) {
-            bloom_preview_active = false;
-            if (settings_.bloom_enabled && depth_preview_mode_ == 0 &&
-                !bloom_wait_logged_) {
-                log_message(
-                    "Bloom 0.17.0 aguardando shaders e recursos validos; "
-                    "a pilha visual aprovada permanece ativa.");
-                bloom_wait_logged_ = true;
-            }
-        } else {
+        return plan;
+    }
+
+    void log_bloom_state(const FramePlan& plan) {
+        if (plan.bloom) {
             bloom_wait_logged_ = false;
             if (bloom_active_logged_levels_ != bloom_level_count_) {
                 log_message(
@@ -565,9 +645,19 @@ public:
                     settings_.bloom_radius);
                 bloom_active_logged_levels_ = bloom_level_count_;
             }
+            return;
         }
+        if (settings_.bloom_enabled && depth_preview_mode_ == 0 &&
+            !bloom_wait_logged_) {
+            log_message(
+                "Bloom 0.17.0 aguardando shaders e recursos validos; "
+                "a pilha visual aprovada permanece ativa.");
+            bloom_wait_logged_ = true;
+        }
+    }
 
-        if (depth_preview_active) {
+    void log_preview_state(const FramePlan& plan) {
+        if (plan.depth_preview) {
             depth_preview_wait_logged_ = false;
             if (depth_preview_logged_mode_ != depth_preview_mode_) {
                 log_message(
@@ -575,101 +665,150 @@ public:
                     "format=%u generation=%llu near=%.4f range=%.1f "
                     "vertical_fov=%.1f.",
                     depth_preview_mode_,
-                    depth_description.Width,
-                    depth_description.Height,
-                    static_cast<unsigned>(depth_description.Format),
-                    static_cast<unsigned long long>(depth_generation),
+                    plan.depth.description.Width,
+                    plan.depth.description.Height,
+                    static_cast<unsigned>(plan.depth.description.Format),
+                    static_cast<unsigned long long>(plan.depth.generation),
                     settings_.depth_near_plane,
                     settings_.depth_preview_distance,
                     settings_.depth_vertical_fov);
                 depth_preview_logged_mode_ = depth_preview_mode_;
             }
-        } else if (ssao_preview_active) {
-            depth_preview_wait_logged_ = false;
-            if (depth_preview_logged_mode_ != depth_preview_mode_) {
-                log_message(
-                    "Preview SSAO ativo: mode=5 source=%ux%u generation=%llu "
-                    "radius=%.3f intensity=%.3f.",
-                    depth_description.Width,
-                    depth_description.Height,
-                    static_cast<unsigned long long>(depth_generation),
-                    settings_.ssao_radius,
-                    settings_.ssao_intensity);
-                depth_preview_logged_mode_ = depth_preview_mode_;
-            }
+            return;
         }
+        if (!plan.ssao_preview) {
+            return;
+        }
+        depth_preview_wait_logged_ = false;
+        if (depth_preview_logged_mode_ != depth_preview_mode_) {
+            log_message(
+                "Preview SSAO ativo: mode=5 source=%ux%u generation=%llu "
+                "radius=%.3f intensity=%.3f.",
+                plan.depth.description.Width,
+                plan.depth.description.Height,
+                static_cast<unsigned long long>(plan.depth.generation),
+                settings_.ssao_radius,
+                settings_.ssao_intensity);
+            depth_preview_logged_mode_ = depth_preview_mode_;
+        }
+    }
 
-        if (ssao_active) {
+    void log_ssao_state(const FramePlan& plan) {
+        if (plan.ssao) {
             ssao_wait_logged_ = false;
-            if (ssao_active_logged_generation_ != depth_generation) {
+            if (ssao_active_logged_generation_ != plan.depth.generation) {
                 log_message(
                     "SSAO 0.9.1 ativo: source=%ux%u format=%u "
                     "generation=%llu samples=%u radius=%.3f intensity=%.3f "
                     "fade=%.1f-%.1f interior=%s.",
-                    depth_description.Width,
-                    depth_description.Height,
-                    static_cast<unsigned>(depth_description.Format),
-                    static_cast<unsigned long long>(depth_generation),
+                    plan.depth.description.Width,
+                    plan.depth.description.Height,
+                    static_cast<unsigned>(plan.depth.description.Format),
+                    static_cast<unsigned long long>(plan.depth.generation),
                     settings_.ssao_refinement_enabled ? 16u : 8u,
                     settings_.ssao_radius,
                     settings_.ssao_intensity,
                     settings_.ssao_fade_start,
                     settings_.ssao_fade_end,
                     settings_.ssao_interior_enabled ? "ativo" : "inativo");
-                ssao_active_logged_generation_ = depth_generation;
+                ssao_active_logged_generation_ = plan.depth.generation;
             }
-        } else if (depth_preview_mode_ == 0 && settings_.ssao_enabled &&
-                   !ssao_wait_logged_) {
+            return;
+        }
+        if (depth_preview_mode_ == 0 && settings_.ssao_enabled &&
+            !ssao_wait_logged_) {
             log_message(
                 "SSAO 0.9.1 aguardando depth e recursos validos; "
                 "o passe visual aprovado permanece ativo.");
             ssao_wait_logged_ = true;
         }
+    }
 
-        if (temporal_active) {
+    void log_temporal_state(
+        const FramePlan& plan, const D3D11_TEXTURE2D_DESC& description) {
+        if (plan.temporal) {
             temporal_wait_logged_ = false;
-            if (temporal_active_logged_generation_ != depth_generation) {
+            if (temporal_active_logged_generation_ != plan.depth.generation) {
                 log_message(
                     "Resolve temporal 0.10.0 ativo: source=%ux%u "
                     "depth=%ux%u generation=%llu history_weight=%.2f "
                     "depth_rejection=%.3f color_rejection=%.3f.",
                     description.Width,
                     description.Height,
-                    depth_description.Width,
-                    depth_description.Height,
-                    static_cast<unsigned long long>(depth_generation),
+                    plan.depth.description.Width,
+                    plan.depth.description.Height,
+                    static_cast<unsigned long long>(plan.depth.generation),
                     settings_.temporal_history_weight,
                     settings_.temporal_depth_rejection,
                     settings_.temporal_color_rejection);
-                temporal_active_logged_generation_ = depth_generation;
+                temporal_active_logged_generation_ = plan.depth.generation;
             }
-        } else if (depth_preview_mode_ == 0 && settings_.temporal_enabled &&
-                   !temporal_wait_logged_) {
+            return;
+        }
+        if (depth_preview_mode_ == 0 && settings_.temporal_enabled &&
+            !temporal_wait_logged_) {
             log_message(
                 "Resolve temporal 0.10.0 aguardando depth e recursos validos; "
                 "pilha visual/SSAO permanece ativa.");
             temporal_wait_logged_ = true;
         }
+    }
 
-        if (!depth_preview_active) {
-            context_->CopyResource(scene_texture_, back_buffer);
+    void log_frame_plan(
+        const FramePlan& plan, const D3D11_TEXTURE2D_DESC& description) {
+        log_bloom_state(plan);
+        log_preview_state(plan);
+        log_ssao_state(plan);
+        log_temporal_state(plan, description);
+    }
 
-            scene_observer_.observe(device_, context_, scene_texture_);
-
-            update_condition_adaptation();
-
-            if (depth_preview_mode_ != 0 && !ssao_preview_active &&
-                !bloom_preview_active && !depth_preview_wait_logged_) {
-                log_message(
-                    "Diagnostico depth/SSAO aguardando candidato valido; "
-                    "o passe visual normal permanece ativo.");
-                depth_preview_wait_logged_ = true;
-            }
+    void capture_scene_for_grade(
+        const FramePlan& plan, ID3D11Texture2D* back_buffer) {
+        if (plan.depth_preview) {
+            return;
         }
+        context_->CopyResource(scene_texture_, back_buffer);
 
+        scene_observer_.observe(device_, context_, scene_texture_);
+
+        update_condition_adaptation();
+
+        const bool diagnostic_waiting =
+            depth_preview_mode_ != 0 && !plan.ssao_preview &&
+            !plan.bloom_preview && !depth_preview_wait_logged_;
+        if (!diagnostic_waiting) {
+            return;
+        }
+        log_message(
+            "Diagnostico depth/SSAO aguardando candidato valido; "
+            "o passe visual normal permanece ativo.");
+        depth_preview_wait_logged_ = true;
+    }
+
+    struct ProjectionScale {
+        float x;
+        float y;
+    };
+
+    ProjectionScale projection_scale_for(
+        const D3D11_TEXTURE2D_DESC& description) const {
+        constexpr float pi = 3.14159265358979323846f;
+        const float vertical_fov_radians =
+            settings_.depth_vertical_fov * pi / 180.0f;
+        const float y = 1.0f / std::tan(vertical_fov_radians * 0.5f);
+        const float aspect =
+            static_cast<float>(description.Width) /
+            static_cast<float>(description.Height);
+        return ProjectionScale{y / aspect, y};
+    }
+
+    void upload_visual_constants(
+        const FrameTargets& targets, const FramePlan& plan) {
         ShaderConstants constants = {};
-        constants.texel_size[0] = 1.0f / static_cast<float>(description.Width);
-        constants.texel_size[1] = 1.0f / static_cast<float>(description.Height);
+        constants.texel_size[0] =
+            1.0f / static_cast<float>(targets.description.Width);
+        constants.texel_size[1] =
+            1.0f / static_cast<float>(targets.description.Height);
         constants.exposure = settings_.exposure;
         constants.temperature = effective_temperature_;
         constants.contrast = settings_.contrast;
@@ -687,51 +826,51 @@ public:
         constants.black_lift[2] = settings_.black_lift_b;
         constants.highlight_rolloff = settings_.highlight_rolloff;
         constants.tint = effective_tint_;
-        constants.bloom_enabled = bloom_active ? 1.0f : 0.0f;
+        constants.bloom_enabled = plan.bloom ? 1.0f : 0.0f;
         constants.bloom_intensity = settings_.bloom_intensity;
         constants.input_needs_srgb_decode =
             scene_needs_srgb_decode_ ? 1.0f : 0.0f;
+        const bool visual_writes_to_output = !plan.ssao && !plan.temporal;
         constants.output_needs_srgb_encode =
-            (ssao_active || temporal_active) ? 0.0f :
-            (output_needs_srgb_encode ? 1.0f : 0.0f);
-        context_->UpdateSubresource(constant_buffer_, 0, nullptr, &constants, 0, 0);
+            visual_writes_to_output && targets.output_needs_srgb_encode ? 1.0f
+                                                                       : 0.0f;
+        context_->UpdateSubresource(
+            constant_buffer_, 0, nullptr, &constants, 0, 0);
+    }
 
-        const UINT depth_width =
-            depth_available ? depth_description.Width : description.Width;
-        const UINT depth_height =
-            depth_available ? depth_description.Height : description.Height;
-        const float depth_texel_x = 1.0f / static_cast<float>(depth_width);
-        const float depth_texel_y = 1.0f / static_cast<float>(depth_height);
-        constexpr float pi = 3.14159265358979323846f;
-        const float vertical_fov_radians =
-            settings_.depth_vertical_fov * pi / 180.0f;
-        const float projection_y =
-            1.0f / std::tan(vertical_fov_radians * 0.5f);
-        const float output_aspect =
-            static_cast<float>(description.Width) /
-            static_cast<float>(description.Height);
-        const float projection_x = projection_y / output_aspect;
-
+    void upload_depth_constants(
+        const FrameTargets& targets,
+        const ProjectionScale& projection,
+        float depth_texel_x,
+        float depth_texel_y) {
         DepthPreviewConstants depth_constants = {};
         depth_constants.preview_mode =
             static_cast<float>(depth_preview_mode_);
         depth_constants.output_needs_srgb_encode =
-            output_needs_srgb_encode ? 1.0f : 0.0f;
+            targets.output_needs_srgb_encode ? 1.0f : 0.0f;
         depth_constants.near_plane = settings_.depth_near_plane;
         depth_constants.preview_distance = settings_.depth_preview_distance;
         depth_constants.texel_size[0] = depth_texel_x;
         depth_constants.texel_size[1] = depth_texel_y;
-        depth_constants.projection_scale[0] = projection_x;
-        depth_constants.projection_scale[1] = projection_y;
+        depth_constants.projection_scale[0] = projection.x;
+        depth_constants.projection_scale[1] = projection.y;
         context_->UpdateSubresource(
             depth_constant_buffer_, 0, nullptr, &depth_constants, 0, 0);
+    }
 
+    void upload_ssao_constants(
+        const FrameTargets& targets,
+        const FramePlan& plan,
+        const ProjectionScale& projection,
+        float depth_texel_x,
+        float depth_texel_y) {
         SsaoConstants ssao_constants = {};
         ssao_constants.input_needs_srgb_decode =
-            ssao_preview_active && scene_needs_srgb_decode_ ? 1.0f : 0.0f;
+            plan.ssao_preview && scene_needs_srgb_decode_ ? 1.0f : 0.0f;
+        const bool ssao_writes_to_output = !plan.temporal;
         ssao_constants.output_needs_srgb_encode =
-            temporal_active ? 0.0f :
-            (output_needs_srgb_encode ? 1.0f : 0.0f);
+            ssao_writes_to_output && targets.output_needs_srgb_encode ? 1.0f
+                                                                     : 0.0f;
         ssao_constants.near_plane = settings_.depth_near_plane;
         ssao_constants.radius = settings_.ssao_radius;
         ssao_constants.intensity = settings_.ssao_intensity;
@@ -739,11 +878,11 @@ public:
         ssao_constants.fade_start = settings_.ssao_fade_start;
         ssao_constants.fade_end = settings_.ssao_fade_end;
         ssao_constants.edge_rejection = settings_.ssao_edge_rejection;
-        ssao_constants.debug_mode = ssao_preview_active ? 1.0f : 0.0f;
+        ssao_constants.debug_mode = plan.ssao_preview ? 1.0f : 0.0f;
         ssao_constants.depth_texel_size[0] = depth_texel_x;
         ssao_constants.depth_texel_size[1] = depth_texel_y;
-        ssao_constants.projection_scale[0] = projection_x;
-        ssao_constants.projection_scale[1] = projection_y;
+        ssao_constants.projection_scale[0] = projection.x;
+        ssao_constants.projection_scale[1] = projection.y;
         ssao_constants.refinement_enabled =
             settings_.ssao_refinement_enabled ? 1.0f : 0.0f;
         ssao_constants.highlight_start = settings_.ssao_highlight_start;
@@ -762,12 +901,14 @@ public:
             settings_.ssao_interior_edge_rejection;
         context_->UpdateSubresource(
             ssao_constant_buffer_, 0, nullptr, &ssao_constants, 0, 0);
+    }
 
+    void upload_temporal_constants(const FrameTargets& targets) {
         TemporalConstants temporal_constants = {};
         temporal_constants.texel_size[0] =
-            1.0f / static_cast<float>(description.Width);
+            1.0f / static_cast<float>(targets.description.Width);
         temporal_constants.texel_size[1] =
-            1.0f / static_cast<float>(description.Height);
+            1.0f / static_cast<float>(targets.description.Height);
         temporal_constants.near_plane = settings_.depth_near_plane;
         temporal_constants.history_weight =
             settings_.temporal_history_weight;
@@ -778,7 +919,7 @@ public:
         temporal_constants.history_valid =
             temporal_history_valid_ ? 1.0f : 0.0f;
         temporal_constants.output_needs_srgb_encode =
-            output_needs_srgb_encode ? 1.0f : 0.0f;
+            targets.output_needs_srgb_encode ? 1.0f : 0.0f;
         context_->UpdateSubresource(
             temporal_constant_buffer_,
             0,
@@ -786,7 +927,29 @@ public:
             &temporal_constants,
             0,
             0);
+    }
 
+    void upload_frame_constants(
+        const FrameTargets& targets, const FramePlan& plan) {
+        const D3D11_TEXTURE2D_DESC& depth_source =
+            plan.depth.available ? plan.depth.description : targets.description;
+        const float depth_texel_x =
+            1.0f / static_cast<float>(depth_source.Width);
+        const float depth_texel_y =
+            1.0f / static_cast<float>(depth_source.Height);
+        const ProjectionScale projection =
+            projection_scale_for(targets.description);
+
+        upload_visual_constants(targets, plan);
+        upload_depth_constants(
+            targets, projection, depth_texel_x, depth_texel_y);
+        upload_ssao_constants(
+            targets, plan, projection, depth_texel_x, depth_texel_y);
+        upload_temporal_constants(targets);
+    }
+
+    void bind_common_pipeline_state(
+        const D3D11_TEXTURE2D_DESC& description) {
         D3D11_VIEWPORT viewport = {};
         viewport.Width = static_cast<float>(description.Width);
         viewport.Height = static_cast<float>(description.Height);
@@ -797,169 +960,214 @@ public:
         context_->RSSetState(rasterizer_state_);
         context_->RSSetViewports(1, &viewport);
         context_->IASetInputLayout(nullptr);
-        context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        context_->IASetPrimitiveTopology(
+            D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         context_->VSSetShader(vertex_shader_, nullptr, 0);
         context_->GSSetShader(nullptr, nullptr, 0);
         context_->HSSetShader(nullptr, nullptr, 0);
         context_->DSSetShader(nullptr, nullptr, 0);
+    }
 
-        if (bloom_active) {
-            render_bloom_pyramid(description);
+    void draw_visual_pass(
+        ID3D11RenderTargetView* target, const FramePlan& plan) {
+        context_->OMSetRenderTargets(1, &target, nullptr);
+        context_->PSSetShader(pixel_shader_, nullptr, 0);
+        ID3D11ShaderResourceView* visual_resources[2] = {
+            scene_view_, plan.bloom ? bloom_views_[0] : nullptr};
+        context_->PSSetShaderResources(0, 2, visual_resources);
+        context_->PSSetSamplers(0, 1, &sampler_state_);
+        context_->PSSetConstantBuffers(0, 1, &constant_buffer_);
+        context_->Draw(3, 0);
+    }
+
+    void draw_ssao_pass(
+        ID3D11RenderTargetView* target, ID3D11ShaderResourceView* source) {
+        context_->OMSetRenderTargets(1, &target, nullptr);
+        context_->PSSetShader(ssao_shader_, nullptr, 0);
+        ID3D11ShaderResourceView* ssao_resources[2] = {
+            source, depth_copy_view_};
+        ID3D11SamplerState* ssao_samplers[2] = {
+            sampler_state_, depth_sampler_state_};
+        context_->PSSetShaderResources(0, 2, ssao_resources);
+        context_->PSSetSamplers(0, 2, ssao_samplers);
+        context_->PSSetConstantBuffers(0, 1, &ssao_constant_buffer_);
+        context_->Draw(3, 0);
+    }
+
+    void draw_bloom_preview(const FrameTargets& targets) {
+        context_->OMSetRenderTargets(1, &targets.output, nullptr);
+        context_->PSSetShader(bloom_upsample_shader_, nullptr, 0);
+        BloomConstants preview_constants = {};
+        preview_constants.source_texel_size[0] =
+            1.0f / static_cast<float>(bloom_widths_[0]);
+        preview_constants.source_texel_size[1] =
+            1.0f / static_cast<float>(bloom_heights_[0]);
+        preview_constants.threshold = settings_.bloom_threshold;
+        preview_constants.knee = settings_.bloom_knee;
+        preview_constants.output_needs_srgb_encode =
+            targets.output_needs_srgb_encode ? 1.0f : 0.0f;
+        context_->UpdateSubresource(
+            bloom_constant_buffer_, 0, nullptr, &preview_constants, 0, 0);
+        context_->PSSetShaderResources(0, 1, &bloom_views_[0]);
+        context_->PSSetSamplers(0, 1, &sampler_state_);
+        context_->PSSetConstantBuffers(0, 1, &bloom_constant_buffer_);
+        context_->Draw(3, 0);
+    }
+
+    void draw_depth_preview(const FrameTargets& targets) {
+        context_->OMSetRenderTargets(1, &targets.output, nullptr);
+        context_->PSSetShader(depth_preview_shader_, nullptr, 0);
+        context_->PSSetShaderResources(0, 1, &depth_copy_view_);
+        context_->PSSetSamplers(0, 1, &depth_sampler_state_);
+        context_->PSSetConstantBuffers(0, 1, &depth_constant_buffer_);
+        context_->Draw(3, 0);
+    }
+
+    void draw_temporal_chain(
+        const FrameTargets& targets, const FramePlan& plan) {
+        draw_visual_pass(visual_target_, plan);
+
+        context_->OMSetRenderTargets(0, nullptr, nullptr);
+        ID3D11ShaderResourceView* current_view = visual_view_;
+        if (plan.ssao) {
+            draw_ssao_pass(spatial_target_, visual_view_);
+            context_->OMSetRenderTargets(0, nullptr, nullptr);
+            ID3D11ShaderResourceView* null_ssao_resources[2] = {};
+            context_->PSSetShaderResources(0, 2, null_ssao_resources);
+            current_view = spatial_view_;
         }
 
-        if (bloom_preview_active) {
-            context_->OMSetRenderTargets(1, &output, nullptr);
-            context_->PSSetShader(bloom_upsample_shader_, nullptr, 0);
-            BloomConstants preview_constants = {};
-            preview_constants.source_texel_size[0] =
-                1.0f / static_cast<float>(bloom_widths_[0]);
-            preview_constants.source_texel_size[1] =
-                1.0f / static_cast<float>(bloom_heights_[0]);
-            preview_constants.threshold = settings_.bloom_threshold;
-            preview_constants.knee = settings_.bloom_knee;
-            preview_constants.output_needs_srgb_encode =
-                output_needs_srgb_encode ? 1.0f : 0.0f;
-            context_->UpdateSubresource(
-                bloom_constant_buffer_, 0, nullptr, &preview_constants, 0, 0);
-            context_->PSSetShaderResources(0, 1, &bloom_views_[0]);
-            context_->PSSetSamplers(0, 1, &sampler_state_);
-            context_->PSSetConstantBuffers(0, 1, &bloom_constant_buffer_);
-            context_->Draw(3, 0);
-        } else if (depth_preview_active) {
-            context_->OMSetRenderTargets(1, &output, nullptr);
-            context_->PSSetShader(depth_preview_shader_, nullptr, 0);
-            context_->PSSetShaderResources(0, 1, &depth_copy_view_);
-            context_->PSSetSamplers(0, 1, &depth_sampler_state_);
-            context_->PSSetConstantBuffers(0, 1, &depth_constant_buffer_);
-            context_->Draw(3, 0);
-        } else if (ssao_preview_active) {
-            context_->OMSetRenderTargets(1, &output, nullptr);
-            context_->PSSetShader(ssao_shader_, nullptr, 0);
-            ID3D11ShaderResourceView* ssao_resources[2] = {
-                scene_view_, depth_copy_view_};
-            ID3D11SamplerState* ssao_samplers[2] = {
-                sampler_state_, depth_sampler_state_};
-            context_->PSSetShaderResources(0, 2, ssao_resources);
-            context_->PSSetSamplers(0, 2, ssao_samplers);
-            context_->PSSetConstantBuffers(0, 1, &ssao_constant_buffer_);
-            context_->Draw(3, 0);
-        } else if (temporal_active) {
-            context_->OMSetRenderTargets(1, &visual_target_, nullptr);
-            context_->PSSetShader(pixel_shader_, nullptr, 0);
-            ID3D11ShaderResourceView* visual_resources[2] = {
-                scene_view_, bloom_active ? bloom_views_[0] : nullptr};
-            context_->PSSetShaderResources(0, 2, visual_resources);
-            context_->PSSetSamplers(0, 1, &sampler_state_);
-            context_->PSSetConstantBuffers(0, 1, &constant_buffer_);
-            context_->Draw(3, 0);
+        context_->OMSetRenderTargets(1, &targets.output, nullptr);
+        context_->PSSetShader(temporal_shader_, nullptr, 0);
+        ID3D11ShaderResourceView* temporal_resources[4] = {
+            current_view,
+            temporal_history_valid_ ? temporal_history_view_ : nullptr,
+            depth_copy_view_,
+            temporal_history_valid_ ? temporal_depth_history_view_ : nullptr};
+        ID3D11SamplerState* temporal_samplers[2] = {
+            sampler_state_, depth_sampler_state_};
+        context_->PSSetShaderResources(0, 4, temporal_resources);
+        context_->PSSetSamplers(0, 2, temporal_samplers);
+        context_->PSSetConstantBuffers(0, 1, &temporal_constant_buffer_);
+        context_->Draw(3, 0);
 
-            context_->OMSetRenderTargets(0, nullptr, nullptr);
-            ID3D11ShaderResourceView* temporal_current_view = visual_view_;
-            if (ssao_active) {
-                context_->OMSetRenderTargets(1, &spatial_target_, nullptr);
-                context_->PSSetShader(ssao_shader_, nullptr, 0);
-                ID3D11ShaderResourceView* ssao_resources[2] = {
-                    visual_view_, depth_copy_view_};
-                ID3D11SamplerState* ssao_samplers[2] = {
-                    sampler_state_, depth_sampler_state_};
-                context_->PSSetShaderResources(0, 2, ssao_resources);
-                context_->PSSetSamplers(0, 2, ssao_samplers);
-                context_->PSSetConstantBuffers(0, 1, &ssao_constant_buffer_);
-                context_->Draw(3, 0);
-                context_->OMSetRenderTargets(0, nullptr, nullptr);
-                ID3D11ShaderResourceView* null_ssao_resources[2] = {};
-                context_->PSSetShaderResources(0, 2, null_ssao_resources);
-                temporal_current_view = spatial_view_;
-            }
-
-            context_->OMSetRenderTargets(1, &output, nullptr);
-            context_->PSSetShader(temporal_shader_, nullptr, 0);
-            ID3D11ShaderResourceView* temporal_resources[4] = {
-                temporal_current_view,
-                temporal_history_valid_ ? temporal_history_view_ : nullptr,
-                depth_copy_view_,
-                temporal_history_valid_ ? temporal_depth_history_view_ : nullptr};
-            ID3D11SamplerState* temporal_samplers[2] = {
-                sampler_state_, depth_sampler_state_};
-            context_->PSSetShaderResources(0, 4, temporal_resources);
-            context_->PSSetSamplers(0, 2, temporal_samplers);
-            context_->PSSetConstantBuffers(0, 1, &temporal_constant_buffer_);
-            context_->Draw(3, 0);
-
-            context_->OMSetRenderTargets(0, nullptr, nullptr);
-            ID3D11ShaderResourceView* null_temporal_resources[4] = {};
-            context_->PSSetShaderResources(0, 4, null_temporal_resources);
-            context_->CopyResource(temporal_history_texture_, back_buffer);
-            context_->CopyResource(
-                temporal_depth_history_texture_, depth_copy_texture_);
-            if (!temporal_history_valid_) {
-                temporal_history_valid_ = true;
-                log_message(
-                    "Historico temporal 0.10.0 inicializado: color=%ux%u "
-                    "depth=%ux%u generation=%llu.",
-                    description.Width,
-                    description.Height,
-                    depth_description.Width,
-                    depth_description.Height,
-                    static_cast<unsigned long long>(depth_generation));
-            }
-        } else if (ssao_active) {
-            context_->OMSetRenderTargets(1, &visual_target_, nullptr);
-            context_->PSSetShader(pixel_shader_, nullptr, 0);
-            ID3D11ShaderResourceView* visual_resources[2] = {
-                scene_view_, bloom_active ? bloom_views_[0] : nullptr};
-            context_->PSSetShaderResources(0, 2, visual_resources);
-            context_->PSSetSamplers(0, 1, &sampler_state_);
-            context_->PSSetConstantBuffers(0, 1, &constant_buffer_);
-            context_->Draw(3, 0);
-
-            context_->OMSetRenderTargets(0, nullptr, nullptr);
-            context_->OMSetRenderTargets(1, &output, nullptr);
-            context_->PSSetShader(ssao_shader_, nullptr, 0);
-            ID3D11ShaderResourceView* ssao_resources[2] = {
-                visual_view_, depth_copy_view_};
-            ID3D11SamplerState* ssao_samplers[2] = {
-                sampler_state_, depth_sampler_state_};
-            context_->PSSetShaderResources(0, 2, ssao_resources);
-            context_->PSSetSamplers(0, 2, ssao_samplers);
-            context_->PSSetConstantBuffers(0, 1, &ssao_constant_buffer_);
-            context_->Draw(3, 0);
-        } else {
-            context_->OMSetRenderTargets(1, &output, nullptr);
-            context_->PSSetShader(pixel_shader_, nullptr, 0);
-            ID3D11ShaderResourceView* visual_resources[2] = {
-                scene_view_, bloom_active ? bloom_views_[0] : nullptr};
-            context_->PSSetShaderResources(0, 2, visual_resources);
-            context_->PSSetSamplers(0, 1, &sampler_state_);
-            context_->PSSetConstantBuffers(0, 1, &constant_buffer_);
-            context_->Draw(3, 0);
+        context_->OMSetRenderTargets(0, nullptr, nullptr);
+        ID3D11ShaderResourceView* null_temporal_resources[4] = {};
+        context_->PSSetShaderResources(0, 4, null_temporal_resources);
+        context_->CopyResource(
+            temporal_history_texture_, targets.back_buffer);
+        context_->CopyResource(
+            temporal_depth_history_texture_, depth_copy_texture_);
+        if (temporal_history_valid_) {
+            return;
         }
+        temporal_history_valid_ = true;
+        log_message(
+            "Historico temporal 0.10.0 inicializado: color=%ux%u "
+            "depth=%ux%u generation=%llu.",
+            targets.description.Width,
+            targets.description.Height,
+            plan.depth.description.Width,
+            plan.depth.description.Height,
+            static_cast<unsigned long long>(plan.depth.generation));
+    }
+
+    void draw_ssao_chain(const FrameTargets& targets, const FramePlan& plan) {
+        draw_visual_pass(visual_target_, plan);
+        context_->OMSetRenderTargets(0, nullptr, nullptr);
+        draw_ssao_pass(targets.output, visual_view_);
+    }
+
+    void compose_output(const FrameTargets& targets, const FramePlan& plan) {
+        if (plan.bloom_preview) {
+            draw_bloom_preview(targets);
+            return;
+        }
+        if (plan.depth_preview) {
+            draw_depth_preview(targets);
+            return;
+        }
+        if (plan.ssao_preview) {
+            draw_ssao_pass(targets.output, scene_view_);
+            return;
+        }
+        if (plan.temporal) {
+            draw_temporal_chain(targets, plan);
+            return;
+        }
+        if (plan.ssao) {
+            draw_ssao_chain(targets, plan);
+            return;
+        }
+        draw_visual_pass(targets.output, plan);
+    }
+
+    void log_first_processed_frame(const FrameTargets& targets) {
+        if (processed_logged_) {
+            return;
+        }
+        log_message(
+            "Primeiro frame processado: %ux%u format=%u "
+            "srgb_manual_entrada=%s srgb_manual_saida=%s "
+            "ssao_solicitado=%s temporal_solicitado=%s.",
+            targets.description.Width,
+            targets.description.Height,
+            static_cast<unsigned>(targets.description.Format),
+            scene_needs_srgb_decode_ ? "sim" : "nao",
+            targets.output_needs_srgb_encode ? "sim" : "nao",
+            settings_.ssao_enabled ? "sim" : "nao",
+            settings_.temporal_enabled ? "sim" : "nao");
+        processed_logged_ = true;
+    }
+
+    void render_frame(const FrameTargets& targets) {
+        SavedState state = {};
+        capture_state(context_, &state);
+        const bool gpu_timing_active = begin_gpu_timing();
+        context_->OMSetRenderTargets(0, nullptr, nullptr);
+
+        const FramePlan plan = plan_frame(targets.description);
+        log_frame_plan(plan, targets.description);
+        capture_scene_for_grade(plan, targets.back_buffer);
+        upload_frame_constants(targets, plan);
+        bind_common_pipeline_state(targets.description);
+
+        if (plan.bloom) {
+            render_bloom_pyramid(targets.description);
+        }
+        compose_output(targets, plan);
 
         if (gpu_timing_active) {
             end_gpu_timing();
         }
-
-        if (!processed_logged_) {
-            log_message(
-                "Primeiro frame processado: %ux%u format=%u "
-                "srgb_manual_entrada=%s srgb_manual_saida=%s "
-                "ssao_solicitado=%s temporal_solicitado=%s.",
-                description.Width,
-                description.Height,
-                static_cast<unsigned>(description.Format),
-                scene_needs_srgb_decode_ ? "sim" : "nao",
-                output_needs_srgb_encode ? "sim" : "nao",
-                settings_.ssao_enabled ? "sim" : "nao",
-                settings_.temporal_enabled ? "sim" : "nao");
-            processed_logged_ = true;
-        }
+        log_first_processed_frame(targets);
 
         ID3D11ShaderResourceView* null_resources[4] = {};
         context_->PSSetShaderResources(0, 4, null_resources);
         restore_state(context_, &state);
+    }
 
-        safe_release(output);
-        safe_release(back_buffer);
+    void render(IDXGISwapChain* swap_chain) {
+        if (swap_chain == nullptr || resize_in_progress_) {
+            return;
+        }
+
+        track_active_swap_chain(swap_chain);
+        handle_hotkeys();
+        if (!settings_.enabled) {
+            return;
+        }
+        if (!ensure_device_for(swap_chain)) {
+            return;
+        }
+
+        poll_gpu_timing();
+
+        FrameTargets targets = {};
+        if (acquire_frame_targets(swap_chain, &targets)) {
+            render_frame(targets);
+        }
+        release_frame_targets(&targets);
     }
 
     void prepare_resize(
@@ -1062,89 +1270,83 @@ private:
         return false;
     }
 
-    bool initialize_pipeline() {
-        D3D11_BUFFER_DESC buffer_description = {};
-        buffer_description.ByteWidth = sizeof(ShaderConstants);
-        buffer_description.Usage = D3D11_USAGE_DEFAULT;
-        buffer_description.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-        HRESULT result = device_->CreateBuffer(
-            &buffer_description, nullptr, &constant_buffer_);
-        if (FAILED(result)) {
-            log_message("Falha ao criar constant buffer: 0x%08X.", static_cast<unsigned>(result));
+    struct ConstantBufferSlot {
+        UINT byte_width;
+        ID3D11Buffer* PostProcessor::*member;
+        const char* description;
+    };
+
+    bool create_constant_buffers() {
+        const ConstantBufferSlot slots[] = {
+            {sizeof(ShaderConstants), &PostProcessor::constant_buffer_, ""},
+            {sizeof(DepthPreviewConstants),
+             &PostProcessor::depth_constant_buffer_, " depth"},
+            {sizeof(SsaoConstants), &PostProcessor::ssao_constant_buffer_,
+             " SSAO"},
+            {sizeof(TemporalConstants),
+             &PostProcessor::temporal_constant_buffer_, " temporal"},
+            {sizeof(BloomConstants), &PostProcessor::bloom_constant_buffer_,
+             " bloom"},
+        };
+
+        for (const ConstantBufferSlot& slot : slots) {
+            D3D11_BUFFER_DESC description = {};
+            description.ByteWidth = slot.byte_width;
+            description.Usage = D3D11_USAGE_DEFAULT;
+            description.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+            const HRESULT result = device_->CreateBuffer(
+                &description, nullptr, &(this->*slot.member));
+            if (SUCCEEDED(result)) {
+                continue;
+            }
+            log_message(
+                "Falha ao criar constant buffer%s: 0x%08X.",
+                slot.description,
+                static_cast<unsigned>(result));
             return false;
         }
+        return true;
+    }
 
-        buffer_description.ByteWidth = sizeof(DepthPreviewConstants);
-        result = device_->CreateBuffer(
-            &buffer_description, nullptr, &depth_constant_buffer_);
+    bool create_sampler_states() {
+        D3D11_SAMPLER_DESC description = {};
+        description.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+        description.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
+        description.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
+        description.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+        description.MaxLOD = FLT_MAX;
+        HRESULT result =
+            device_->CreateSamplerState(&description, &sampler_state_);
         if (FAILED(result)) {
             log_message(
-                "Falha ao criar constant buffer depth: 0x%08X.",
+                "Falha ao criar sampler: 0x%08X.",
                 static_cast<unsigned>(result));
             return false;
         }
 
-        buffer_description.ByteWidth = sizeof(SsaoConstants);
-        result = device_->CreateBuffer(
-            &buffer_description, nullptr, &ssao_constant_buffer_);
-        if (FAILED(result)) {
-            log_message(
-                "Falha ao criar constant buffer SSAO: 0x%08X.",
-                static_cast<unsigned>(result));
-            return false;
-        }
-
-        buffer_description.ByteWidth = sizeof(TemporalConstants);
-        result = device_->CreateBuffer(
-            &buffer_description, nullptr, &temporal_constant_buffer_);
-        if (FAILED(result)) {
-            log_message(
-                "Falha ao criar constant buffer temporal: 0x%08X.",
-                static_cast<unsigned>(result));
-            return false;
-        }
-
-        buffer_description.ByteWidth = sizeof(BloomConstants);
-        result = device_->CreateBuffer(
-            &buffer_description, nullptr, &bloom_constant_buffer_);
-        if (FAILED(result)) {
-            log_message(
-                "Falha ao criar constant buffer bloom: 0x%08X.",
-                static_cast<unsigned>(result));
-            return false;
-        }
-
-        D3D11_SAMPLER_DESC sampler_description = {};
-        sampler_description.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
-        sampler_description.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
-        sampler_description.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
-        sampler_description.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
-        sampler_description.MaxLOD = FLT_MAX;
-        result = device_->CreateSamplerState(
-            &sampler_description, &sampler_state_);
-        if (FAILED(result)) {
-            log_message("Falha ao criar sampler: 0x%08X.", static_cast<unsigned>(result));
-            return false;
-        }
-
-        sampler_description.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
-        result = device_->CreateSamplerState(
-            &sampler_description, &depth_sampler_state_);
+        description.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
+        result =
+            device_->CreateSamplerState(&description, &depth_sampler_state_);
         if (FAILED(result)) {
             log_message(
                 "Falha ao criar sampler depth: 0x%08X.",
                 static_cast<unsigned>(result));
             return false;
         }
+        return true;
+    }
 
+    bool create_raster_states() {
         D3D11_RASTERIZER_DESC rasterizer_description = {};
         rasterizer_description.FillMode = D3D11_FILL_SOLID;
         rasterizer_description.CullMode = D3D11_CULL_NONE;
         rasterizer_description.DepthClipEnable = TRUE;
-        result = device_->CreateRasterizerState(
+        HRESULT result = device_->CreateRasterizerState(
             &rasterizer_description, &rasterizer_state_);
         if (FAILED(result)) {
-            log_message("Falha ao criar rasterizer state: 0x%08X.", static_cast<unsigned>(result));
+            log_message(
+                "Falha ao criar rasterizer state: 0x%08X.",
+                static_cast<unsigned>(result));
             return false;
         }
 
@@ -1155,42 +1357,261 @@ private:
         result = device_->CreateDepthStencilState(
             &depth_description, &depth_state_);
         if (FAILED(result)) {
-            log_message("Falha ao criar depth state: 0x%08X.", static_cast<unsigned>(result));
-            return false;
-        }
-
-        D3D11_BLEND_DESC blend_description = {};
-        blend_description.RenderTarget[0].RenderTargetWriteMask =
-            D3D11_COLOR_WRITE_ENABLE_ALL;
-        result = device_->CreateBlendState(&blend_description, &blend_state_);
-        if (FAILED(result)) {
-            log_message("Falha ao criar blend state: 0x%08X.", static_cast<unsigned>(result));
-            return false;
-        }
-
-        D3D11_BLEND_DESC additive_description = {};
-        additive_description.RenderTarget[0].BlendEnable = TRUE;
-        additive_description.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
-        additive_description.RenderTarget[0].DestBlend = D3D11_BLEND_ONE;
-        additive_description.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
-        additive_description.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
-        additive_description.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
-        additive_description.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
-        additive_description.RenderTarget[0].RenderTargetWriteMask =
-            D3D11_COLOR_WRITE_ENABLE_ALL;
-        result = device_->CreateBlendState(
-            &additive_description, &additive_blend_state_);
-        if (FAILED(result)) {
             log_message(
-                "Falha ao criar blend aditivo do bloom: 0x%08X; "
-                "o modulo fica indisponivel.",
+                "Falha ao criar depth state: 0x%08X.",
                 static_cast<unsigned>(result));
-            safe_release(additive_blend_state_);
+            return false;
+        }
+        return true;
+    }
+
+    bool create_opaque_blend_state() {
+        D3D11_BLEND_DESC description = {};
+        description.RenderTarget[0].RenderTargetWriteMask =
+            D3D11_COLOR_WRITE_ENABLE_ALL;
+        const HRESULT result =
+            device_->CreateBlendState(&description, &blend_state_);
+        if (SUCCEEDED(result)) {
+            return true;
+        }
+        log_message(
+            "Falha ao criar blend state: 0x%08X.",
+            static_cast<unsigned>(result));
+        return false;
+    }
+
+    void create_additive_blend_state() {
+        D3D11_BLEND_DESC description = {};
+        description.RenderTarget[0].BlendEnable = TRUE;
+        description.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
+        description.RenderTarget[0].DestBlend = D3D11_BLEND_ONE;
+        description.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+        description.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+        description.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
+        description.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+        description.RenderTarget[0].RenderTargetWriteMask =
+            D3D11_COLOR_WRITE_ENABLE_ALL;
+        const HRESULT result =
+            device_->CreateBlendState(&description, &additive_blend_state_);
+        if (SUCCEEDED(result)) {
+            return;
+        }
+        log_message(
+            "Falha ao criar blend aditivo do bloom: 0x%08X; "
+            "o modulo fica indisponivel.",
+            static_cast<unsigned>(result));
+        safe_release(additive_blend_state_);
+    }
+
+    bool initialize_pipeline() {
+        if (!create_constant_buffers() || !create_sampler_states() ||
+            !create_raster_states() || !create_opaque_blend_state()) {
+            return false;
         }
 
+        create_additive_blend_state();
         initialize_gpu_timing();
-
         return compile_shaders();
+    }
+
+    ID3DBlob* compile_shader_blob(
+        CompileFromFileFunction compile_from_file,
+        const wchar_t* path,
+        const char* entry_point,
+        const char* target,
+        const char* stage) {
+        constexpr UINT kFlags =
+            D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_OPTIMIZATION_LEVEL3;
+        ID3DBlob* blob = nullptr;
+        ID3DBlob* errors = nullptr;
+        const HRESULT result = compile_from_file(
+            path,
+            nullptr,
+            D3D_COMPILE_STANDARD_FILE_INCLUDE,
+            entry_point,
+            target,
+            kFlags,
+            0,
+            &blob,
+            &errors);
+        if (FAILED(result)) {
+            log_compile_error(stage, result, errors);
+            safe_release(blob);
+        }
+        safe_release(errors);
+        return blob;
+    }
+
+    ID3D11PixelShader* create_optional_pixel_shader(
+        ID3DBlob* blob, const char* description) {
+        if (blob == nullptr) {
+            return nullptr;
+        }
+        ID3D11PixelShader* shader = nullptr;
+        const HRESULT result = device_->CreatePixelShader(
+            blob->GetBufferPointer(), blob->GetBufferSize(), nullptr, &shader);
+        if (SUCCEEDED(result)) {
+            return shader;
+        }
+        log_message(
+            "Falha ao criar shader %s: 0x%08X.",
+            description,
+            static_cast<unsigned>(result));
+        safe_release(shader);
+        return nullptr;
+    }
+
+    void adopt_optional_shader(
+        ID3D11PixelShader** slot, ID3D11PixelShader* fresh) {
+        if (fresh == nullptr) {
+            return;
+        }
+        safe_release(*slot);
+        *slot = fresh;
+    }
+
+    struct ShaderBlobs {
+        ID3DBlob* vertex;
+        ID3DBlob* pixel;
+        ID3DBlob* depth_preview;
+        ID3DBlob* ssao;
+        ID3DBlob* temporal;
+        ID3DBlob* bloom[kBloomPassCount];
+    };
+
+    void release_shader_blobs(ShaderBlobs* blobs) {
+        safe_release(blobs->vertex);
+        safe_release(blobs->pixel);
+        safe_release(blobs->depth_preview);
+        safe_release(blobs->ssao);
+        safe_release(blobs->temporal);
+        for (UINT index = 0; index < kBloomPassCount; ++index) {
+            safe_release(blobs->bloom[index]);
+        }
+    }
+
+    bool compile_shader_blobs(
+        CompileFromFileFunction compile_from_file, ShaderBlobs* blobs) {
+        blobs->vertex = compile_shader_blob(
+            compile_from_file, shader_path(), "VSMain", "vs_5_0", "vertex");
+        if (blobs->vertex == nullptr) {
+            return false;
+        }
+        blobs->pixel = compile_shader_blob(
+            compile_from_file, shader_path(), "PSMain", "ps_5_0", "pixel");
+        if (blobs->pixel == nullptr) {
+            return false;
+        }
+
+        blobs->depth_preview = compile_shader_blob(
+            compile_from_file,
+            depth_preview_shader_path(),
+            "PSDepthPreview",
+            "ps_5_0",
+            "depth preview");
+        blobs->ssao = compile_shader_blob(
+            compile_from_file, ssao_shader_path(), "PSSSAO", "ps_5_0", "SSAO");
+        blobs->temporal = compile_shader_blob(
+            compile_from_file,
+            temporal_shader_path(),
+            "PSTemporal",
+            "ps_5_0",
+            "temporal");
+        for (UINT index = 0; index < kBloomPassCount; ++index) {
+            blobs->bloom[index] = compile_shader_blob(
+                compile_from_file,
+                bloom_shader_path(),
+                kBloomEntryPoints[index],
+                "ps_5_0",
+                kBloomEntryPoints[index]);
+        }
+        return true;
+    }
+
+    struct CompiledShaders {
+        ID3D11VertexShader* vertex;
+        ID3D11PixelShader* pixel;
+        ID3D11PixelShader* depth_preview;
+        ID3D11PixelShader* ssao;
+        ID3D11PixelShader* temporal;
+        ID3D11PixelShader* bloom[kBloomPassCount];
+    };
+
+    void release_compiled_shaders(CompiledShaders* shaders) {
+        safe_release(shaders->vertex);
+        safe_release(shaders->pixel);
+        safe_release(shaders->depth_preview);
+        safe_release(shaders->ssao);
+        safe_release(shaders->temporal);
+        for (UINT index = 0; index < kBloomPassCount; ++index) {
+            safe_release(shaders->bloom[index]);
+        }
+    }
+
+    HRESULT create_core_shaders(
+        const ShaderBlobs& blobs, CompiledShaders* shaders) {
+        HRESULT result = device_->CreateVertexShader(
+            blobs.vertex->GetBufferPointer(),
+            blobs.vertex->GetBufferSize(),
+            nullptr,
+            &shaders->vertex);
+        if (FAILED(result)) {
+            return result;
+        }
+        return device_->CreatePixelShader(
+            blobs.pixel->GetBufferPointer(),
+            blobs.pixel->GetBufferSize(),
+            nullptr,
+            &shaders->pixel);
+    }
+
+    void create_optional_shaders(
+        const ShaderBlobs& blobs, CompiledShaders* shaders) {
+        shaders->depth_preview =
+            create_optional_pixel_shader(blobs.depth_preview, "de preview depth");
+        shaders->ssao = create_optional_pixel_shader(blobs.ssao, "SSAO");
+        shaders->temporal =
+            create_optional_pixel_shader(blobs.temporal, "temporal");
+        for (UINT index = 0; index < kBloomPassCount; ++index) {
+            char description[64] = {};
+            std::snprintf(
+                description,
+                sizeof(description),
+                "%s do bloom",
+                kBloomEntryPoints[index]);
+            shaders->bloom[index] =
+                create_optional_pixel_shader(blobs.bloom[index], description);
+        }
+    }
+
+    void adopt_bloom_shaders(CompiledShaders* shaders) {
+        bool complete = true;
+        for (UINT index = 0; index < kBloomPassCount; ++index) {
+            complete = complete && shaders->bloom[index] != nullptr;
+        }
+        if (!complete) {
+            for (UINT index = 0; index < kBloomPassCount; ++index) {
+                safe_release(shaders->bloom[index]);
+            }
+            return;
+        }
+        safe_release(bloom_bright_shader_);
+        safe_release(bloom_downsample_shader_);
+        safe_release(bloom_upsample_shader_);
+        bloom_bright_shader_ = shaders->bloom[0];
+        bloom_downsample_shader_ = shaders->bloom[1];
+        bloom_upsample_shader_ = shaders->bloom[2];
+    }
+
+    void adopt_compiled_shaders(CompiledShaders* shaders) {
+        safe_release(vertex_shader_);
+        safe_release(pixel_shader_);
+        vertex_shader_ = shaders->vertex;
+        pixel_shader_ = shaders->pixel;
+        adopt_optional_shader(&depth_preview_shader_, shaders->depth_preview);
+        adopt_optional_shader(&ssao_shader_, shaders->ssao);
+        adopt_optional_shader(&temporal_shader_, shaders->temporal);
+        adopt_bloom_shaders(shaders);
     }
 
     bool compile_shaders() {
@@ -1201,252 +1622,26 @@ private:
             return false;
         }
 
-        const UINT flags = D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_OPTIMIZATION_LEVEL3;
-        ID3DBlob* vertex_blob = nullptr;
-        ID3DBlob* pixel_blob = nullptr;
-        ID3DBlob* depth_preview_blob = nullptr;
-        ID3DBlob* ssao_blob = nullptr;
-        ID3DBlob* temporal_blob = nullptr;
-        ID3DBlob* bloom_blobs[kBloomPassCount] = {};
-        ID3DBlob* errors = nullptr;
-
-        HRESULT result = compile_from_file(
-            shader_path(),
-            nullptr,
-            D3D_COMPILE_STANDARD_FILE_INCLUDE,
-            "VSMain",
-            "vs_5_0",
-            flags,
-            0,
-            &vertex_blob,
-            &errors);
-        if (FAILED(result)) {
-            log_compile_error("vertex", result, errors);
-            safe_release(errors);
-            safe_release(vertex_blob);
-            return false;
-        }
-        safe_release(errors);
-
-        result = compile_from_file(
-            shader_path(),
-            nullptr,
-            D3D_COMPILE_STANDARD_FILE_INCLUDE,
-            "PSMain",
-            "ps_5_0",
-            flags,
-            0,
-            &pixel_blob,
-            &errors);
-        if (FAILED(result)) {
-            log_compile_error("pixel", result, errors);
-            safe_release(errors);
-            safe_release(vertex_blob);
-            safe_release(pixel_blob);
-            return false;
-        }
-        safe_release(errors);
-
-        const HRESULT depth_compile_result = compile_from_file(
-            depth_preview_shader_path(),
-            nullptr,
-            D3D_COMPILE_STANDARD_FILE_INCLUDE,
-            "PSDepthPreview",
-            "ps_5_0",
-            flags,
-            0,
-            &depth_preview_blob,
-            &errors);
-        if (FAILED(depth_compile_result)) {
-            log_compile_error("depth preview", depth_compile_result, errors);
-            safe_release(depth_preview_blob);
-        }
-        safe_release(errors);
-
-        const HRESULT ssao_compile_result = compile_from_file(
-            ssao_shader_path(),
-            nullptr,
-            D3D_COMPILE_STANDARD_FILE_INCLUDE,
-            "PSSSAO",
-            "ps_5_0",
-            flags,
-            0,
-            &ssao_blob,
-            &errors);
-        if (FAILED(ssao_compile_result)) {
-            log_compile_error("SSAO", ssao_compile_result, errors);
-            safe_release(ssao_blob);
-        }
-        safe_release(errors);
-
-        const HRESULT temporal_compile_result = compile_from_file(
-            temporal_shader_path(),
-            nullptr,
-            D3D_COMPILE_STANDARD_FILE_INCLUDE,
-            "PSTemporal",
-            "ps_5_0",
-            flags,
-            0,
-            &temporal_blob,
-            &errors);
-        if (FAILED(temporal_compile_result)) {
-            log_compile_error("temporal", temporal_compile_result, errors);
-            safe_release(temporal_blob);
-        }
-        safe_release(errors);
-
-        for (UINT index = 0; index < kBloomPassCount; ++index) {
-            const HRESULT bloom_compile_result = compile_from_file(
-                bloom_shader_path(),
-                nullptr,
-                D3D_COMPILE_STANDARD_FILE_INCLUDE,
-                kBloomEntryPoints[index],
-                "ps_5_0",
-                flags,
-                0,
-                &bloom_blobs[index],
-                &errors);
-            if (FAILED(bloom_compile_result)) {
-                log_compile_error(
-                    kBloomEntryPoints[index], bloom_compile_result, errors);
-                safe_release(bloom_blobs[index]);
-            }
-            safe_release(errors);
-        }
-
-        ID3D11VertexShader* new_vertex_shader = nullptr;
-        ID3D11PixelShader* new_pixel_shader = nullptr;
-        ID3D11PixelShader* new_depth_preview_shader = nullptr;
-        ID3D11PixelShader* new_ssao_shader = nullptr;
-        ID3D11PixelShader* new_temporal_shader = nullptr;
-        result = device_->CreateVertexShader(
-            vertex_blob->GetBufferPointer(),
-            vertex_blob->GetBufferSize(),
-            nullptr,
-            &new_vertex_shader);
-        if (SUCCEEDED(result)) {
-            result = device_->CreatePixelShader(
-                pixel_blob->GetBufferPointer(),
-                pixel_blob->GetBufferSize(),
-                nullptr,
-                &new_pixel_shader);
-        }
-
-        if (depth_preview_blob != nullptr) {
-            const HRESULT depth_create_result = device_->CreatePixelShader(
-                depth_preview_blob->GetBufferPointer(),
-                depth_preview_blob->GetBufferSize(),
-                nullptr,
-                &new_depth_preview_shader);
-            if (FAILED(depth_create_result)) {
-                log_message(
-                    "Falha ao criar shader de preview depth: 0x%08X.",
-                    static_cast<unsigned>(depth_create_result));
-                safe_release(new_depth_preview_shader);
-            }
-        }
-
-        if (ssao_blob != nullptr) {
-            const HRESULT ssao_create_result = device_->CreatePixelShader(
-                ssao_blob->GetBufferPointer(),
-                ssao_blob->GetBufferSize(),
-                nullptr,
-                &new_ssao_shader);
-            if (FAILED(ssao_create_result)) {
-                log_message(
-                    "Falha ao criar shader SSAO: 0x%08X.",
-                    static_cast<unsigned>(ssao_create_result));
-                safe_release(new_ssao_shader);
-            }
-        }
-
-        if (temporal_blob != nullptr) {
-            const HRESULT temporal_create_result = device_->CreatePixelShader(
-                temporal_blob->GetBufferPointer(),
-                temporal_blob->GetBufferSize(),
-                nullptr,
-                &new_temporal_shader);
-            if (FAILED(temporal_create_result)) {
-                log_message(
-                    "Falha ao criar shader temporal: 0x%08X.",
-                    static_cast<unsigned>(temporal_create_result));
-                safe_release(new_temporal_shader);
-            }
-        }
-
-        ID3D11PixelShader* new_bloom_shaders[kBloomPassCount] = {};
-        for (UINT index = 0; index < kBloomPassCount; ++index) {
-            if (bloom_blobs[index] == nullptr) {
-                continue;
-            }
-            const HRESULT bloom_create_result = device_->CreatePixelShader(
-                bloom_blobs[index]->GetBufferPointer(),
-                bloom_blobs[index]->GetBufferSize(),
-                nullptr,
-                &new_bloom_shaders[index]);
-            if (FAILED(bloom_create_result)) {
-                log_message(
-                    "Falha ao criar shader %s do bloom: 0x%08X.",
-                    kBloomEntryPoints[index],
-                    static_cast<unsigned>(bloom_create_result));
-                safe_release(new_bloom_shaders[index]);
-            }
-        }
-
-        safe_release(vertex_blob);
-        safe_release(pixel_blob);
-        safe_release(depth_preview_blob);
-        safe_release(ssao_blob);
-        safe_release(temporal_blob);
-        for (UINT index = 0; index < kBloomPassCount; ++index) {
-            safe_release(bloom_blobs[index]);
-        }
-        if (FAILED(result)) {
-            log_message("Falha ao criar shaders D3D11: 0x%08X.", static_cast<unsigned>(result));
-            safe_release(new_vertex_shader);
-            safe_release(new_pixel_shader);
-            safe_release(new_depth_preview_shader);
-            safe_release(new_ssao_shader);
-            safe_release(new_temporal_shader);
-            for (UINT index = 0; index < kBloomPassCount; ++index) {
-                safe_release(new_bloom_shaders[index]);
-            }
+        ShaderBlobs blobs = {};
+        if (!compile_shader_blobs(compile_from_file, &blobs)) {
+            release_shader_blobs(&blobs);
             return false;
         }
 
-        safe_release(vertex_shader_);
-        safe_release(pixel_shader_);
-        vertex_shader_ = new_vertex_shader;
-        pixel_shader_ = new_pixel_shader;
-        if (new_depth_preview_shader != nullptr) {
-            safe_release(depth_preview_shader_);
-            depth_preview_shader_ = new_depth_preview_shader;
-        }
-        if (new_ssao_shader != nullptr) {
-            safe_release(ssao_shader_);
-            ssao_shader_ = new_ssao_shader;
-        }
-        if (new_temporal_shader != nullptr) {
-            safe_release(temporal_shader_);
-            temporal_shader_ = new_temporal_shader;
+        CompiledShaders shaders = {};
+        const HRESULT result = create_core_shaders(blobs, &shaders);
+        create_optional_shaders(blobs, &shaders);
+        release_shader_blobs(&blobs);
+
+        if (FAILED(result)) {
+            log_message(
+                "Falha ao criar shaders D3D11: 0x%08X.",
+                static_cast<unsigned>(result));
+            release_compiled_shaders(&shaders);
+            return false;
         }
 
-        const bool bloom_complete =
-            new_bloom_shaders[0] != nullptr &&
-            new_bloom_shaders[1] != nullptr &&
-            new_bloom_shaders[2] != nullptr;
-        if (bloom_complete) {
-            safe_release(bloom_bright_shader_);
-            safe_release(bloom_downsample_shader_);
-            safe_release(bloom_upsample_shader_);
-            bloom_bright_shader_ = new_bloom_shaders[0];
-            bloom_downsample_shader_ = new_bloom_shaders[1];
-            bloom_upsample_shader_ = new_bloom_shaders[2];
-        } else {
-            for (UINT index = 0; index < kBloomPassCount; ++index) {
-                safe_release(new_bloom_shaders[index]);
-            }
-        }
+        adopt_compiled_shaders(&shaders);
         invalidate_temporal_history("recompilacao de shader");
         log_message(
             "Shaders Photorealism compilados: visual=ok depth_preview=%s "
@@ -1547,43 +1742,88 @@ private:
         }
     }
 
-    bool ensure_frame_resources(const D3D11_TEXTURE2D_DESC& source) {
-        if (scene_texture_ != nullptr && width_ == source.Width &&
-            height_ == source.Height && format_ == source.Format) {
-            return true;
-        }
+    struct IntermediateTarget {
+        ID3D11Texture2D* texture;
+        ID3D11ShaderResourceView* view;
+        ID3D11RenderTargetView* target;
+    };
 
-        safe_release(scene_view_);
-        safe_release(scene_texture_);
-        safe_release(visual_target_);
-        safe_release(visual_view_);
-        safe_release(visual_texture_);
-        safe_release(spatial_target_);
-        safe_release(spatial_view_);
-        safe_release(spatial_texture_);
-        release_bloom_resources();
-        release_temporal_resources();
+    void release_intermediate_target(IntermediateTarget* intermediate) {
+        safe_release(intermediate->target);
+        safe_release(intermediate->view);
+        safe_release(intermediate->texture);
+    }
 
+    D3D11_TEXTURE2D_DESC intermediate_description(
+        const D3D11_TEXTURE2D_DESC& source, UINT bind_flags) const {
         D3D11_TEXTURE2D_DESC description = source;
         description.Usage = D3D11_USAGE_DEFAULT;
-        description.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        description.BindFlags = bind_flags;
         description.CPUAccessFlags = 0;
         description.MiscFlags = 0;
         description.Format = typeless_format(source.Format);
+        return description;
+    }
+
+    HRESULT create_srgb_view(
+        ID3D11Texture2D* texture,
+        const D3D11_TEXTURE2D_DESC& source,
+        ID3D11ShaderResourceView** view) {
+        D3D11_SHADER_RESOURCE_VIEW_DESC description = {};
+        description.Format = srgb_view_format(source.Format);
+        description.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+        description.Texture2D.MostDetailedMip = 0;
+        description.Texture2D.MipLevels = source.MipLevels;
+        return device_->CreateShaderResourceView(texture, &description, view);
+    }
+
+    HRESULT create_srgb_target(
+        ID3D11Texture2D* texture,
+        const D3D11_TEXTURE2D_DESC& source,
+        ID3D11RenderTargetView** target) {
+        D3D11_RENDER_TARGET_VIEW_DESC description = {};
+        description.Format = srgb_view_format(source.Format);
+        description.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
+        description.Texture2D.MipSlice = 0;
+        return device_->CreateRenderTargetView(texture, &description, target);
+    }
+
+    HRESULT create_intermediate_target(
+        const D3D11_TEXTURE2D_DESC& source, IntermediateTarget* intermediate) {
+        const D3D11_TEXTURE2D_DESC description = intermediate_description(
+            source, D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET);
+        HRESULT result = device_->CreateTexture2D(
+            &description, nullptr, &intermediate->texture);
+        if (FAILED(result) || intermediate->texture == nullptr) {
+            return FAILED(result) ? result : E_FAIL;
+        }
+        result = create_srgb_view(
+            intermediate->texture, source, &intermediate->view);
+        if (FAILED(result)) {
+            return result;
+        }
+        return create_srgb_target(
+            intermediate->texture, source, &intermediate->target);
+    }
+
+    bool intermediate_is_complete(
+        HRESULT result, const IntermediateTarget& intermediate) {
+        return SUCCEEDED(result) && intermediate.texture != nullptr &&
+               intermediate.view != nullptr && intermediate.target != nullptr;
+    }
+
+    bool create_scene_texture(const D3D11_TEXTURE2D_DESC& source) {
+        D3D11_TEXTURE2D_DESC description =
+            intermediate_description(source, D3D11_BIND_SHADER_RESOURCE);
         HRESULT result = device_->CreateTexture2D(
             &description, nullptr, &scene_texture_);
         if (SUCCEEDED(result) && scene_texture_ != nullptr) {
-            D3D11_SHADER_RESOURCE_VIEW_DESC view_description = {};
-            view_description.Format = srgb_view_format(source.Format);
-            view_description.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-            view_description.Texture2D.MostDetailedMip = 0;
-            view_description.Texture2D.MipLevels = source.MipLevels;
-            result = device_->CreateShaderResourceView(
-                scene_texture_, &view_description, &scene_view_);
+            result = create_srgb_view(scene_texture_, source, &scene_view_);
         }
 
         scene_needs_srgb_decode_ = false;
-        if (FAILED(result) || scene_texture_ == nullptr || scene_view_ == nullptr) {
+        if (FAILED(result) || scene_texture_ == nullptr ||
+            scene_view_ == nullptr) {
             safe_release(scene_view_);
             safe_release(scene_texture_);
 
@@ -1601,88 +1841,92 @@ private:
                 input_fallback_logged_ = true;
             }
         }
-        if (FAILED(result) || scene_texture_ == nullptr || scene_view_ == nullptr) {
+
+        if (SUCCEEDED(result) && scene_texture_ != nullptr &&
+            scene_view_ != nullptr) {
+            return true;
+        }
+        log_message(
+            "Falha ao criar recursos intermediarios: 0x%08X.",
+            static_cast<unsigned>(result));
+        safe_release(scene_view_);
+        safe_release(scene_texture_);
+        return false;
+    }
+
+    void create_visual_target(const D3D11_TEXTURE2D_DESC& source) {
+        IntermediateTarget created = {};
+        const HRESULT result = create_intermediate_target(source, &created);
+        if (intermediate_is_complete(result, created)) {
+            visual_texture_ = created.texture;
+            visual_view_ = created.view;
+            visual_target_ = created.target;
+            return;
+        }
+        if (!ssao_resources_failure_logged_) {
             log_message(
-                "Falha ao criar recursos intermediarios: 0x%08X.",
+                "SSAO 0.9.1 sem textura intermediaria: 0x%08X; "
+                "mantendo o passe visual normal.",
                 static_cast<unsigned>(result));
-            safe_release(scene_view_);
-            safe_release(scene_texture_);
+            ssao_resources_failure_logged_ = true;
+        }
+        release_intermediate_target(&created);
+    }
+
+    void create_spatial_target(const D3D11_TEXTURE2D_DESC& source) {
+        IntermediateTarget created = {};
+        const HRESULT result = create_intermediate_target(source, &created);
+        if (intermediate_is_complete(result, created)) {
+            spatial_texture_ = created.texture;
+            spatial_view_ = created.view;
+            spatial_target_ = created.target;
+            return;
+        }
+        if (!temporal_resources_failure_logged_) {
+            log_message(
+                "Temporal 0.10.0 sem textura espacial: 0x%08X; "
+                "mantendo a pilha visual/SSAO anterior.",
+                static_cast<unsigned>(result));
+            temporal_resources_failure_logged_ = true;
+        }
+        release_intermediate_target(&created);
+    }
+
+    void release_scene_textures() {
+        safe_release(spatial_target_);
+        safe_release(spatial_view_);
+        safe_release(spatial_texture_);
+        safe_release(visual_target_);
+        safe_release(visual_view_);
+        safe_release(visual_texture_);
+        safe_release(scene_view_);
+        safe_release(scene_texture_);
+    }
+
+    void release_frame_intermediates() {
+        release_scene_textures();
+        release_bloom_resources();
+        release_temporal_resources();
+    }
+
+    bool frame_resources_match(const D3D11_TEXTURE2D_DESC& source) const {
+        return scene_texture_ != nullptr && width_ == source.Width &&
+               height_ == source.Height && format_ == source.Format;
+    }
+
+    bool ensure_frame_resources(const D3D11_TEXTURE2D_DESC& source) {
+        if (frame_resources_match(source)) {
+            return true;
+        }
+
+        release_frame_intermediates();
+        if (!create_scene_texture(source)) {
             return false;
         }
 
-        D3D11_TEXTURE2D_DESC visual_description = source;
-        visual_description.Usage = D3D11_USAGE_DEFAULT;
-        visual_description.BindFlags =
-            D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
-        visual_description.CPUAccessFlags = 0;
-        visual_description.MiscFlags = 0;
-        visual_description.Format = typeless_format(source.Format);
-        result = device_->CreateTexture2D(
-            &visual_description, nullptr, &visual_texture_);
-        if (SUCCEEDED(result) && visual_texture_ != nullptr) {
-            D3D11_SHADER_RESOURCE_VIEW_DESC view_description = {};
-            view_description.Format = srgb_view_format(source.Format);
-            view_description.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-            view_description.Texture2D.MostDetailedMip = 0;
-            view_description.Texture2D.MipLevels = source.MipLevels;
-            result = device_->CreateShaderResourceView(
-                visual_texture_, &view_description, &visual_view_);
-        }
-        if (SUCCEEDED(result) && visual_texture_ != nullptr) {
-            D3D11_RENDER_TARGET_VIEW_DESC target_description = {};
-            target_description.Format = srgb_view_format(source.Format);
-            target_description.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
-            target_description.Texture2D.MipSlice = 0;
-            result = device_->CreateRenderTargetView(
-                visual_texture_, &target_description, &visual_target_);
-        }
-        if (FAILED(result) || visual_texture_ == nullptr ||
-            visual_view_ == nullptr || visual_target_ == nullptr) {
-            if (!ssao_resources_failure_logged_) {
-                log_message(
-                    "SSAO 0.9.1 sem textura intermediaria: 0x%08X; "
-                    "mantendo o passe visual normal.",
-                    static_cast<unsigned>(result));
-                ssao_resources_failure_logged_ = true;
-            }
-            safe_release(visual_target_);
-            safe_release(visual_view_);
-            safe_release(visual_texture_);
-        }
-
+        create_visual_target(source);
         if (visual_target_ != nullptr) {
-            result = device_->CreateTexture2D(
-                &visual_description, nullptr, &spatial_texture_);
-            if (SUCCEEDED(result) && spatial_texture_ != nullptr) {
-                D3D11_SHADER_RESOURCE_VIEW_DESC view_description = {};
-                view_description.Format = srgb_view_format(source.Format);
-                view_description.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-                view_description.Texture2D.MostDetailedMip = 0;
-                view_description.Texture2D.MipLevels = source.MipLevels;
-                result = device_->CreateShaderResourceView(
-                    spatial_texture_, &view_description, &spatial_view_);
-            }
-            if (SUCCEEDED(result) && spatial_texture_ != nullptr) {
-                D3D11_RENDER_TARGET_VIEW_DESC target_description = {};
-                target_description.Format = srgb_view_format(source.Format);
-                target_description.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
-                target_description.Texture2D.MipSlice = 0;
-                result = device_->CreateRenderTargetView(
-                    spatial_texture_, &target_description, &spatial_target_);
-            }
-            if (FAILED(result) || spatial_texture_ == nullptr ||
-                spatial_view_ == nullptr || spatial_target_ == nullptr) {
-                if (!temporal_resources_failure_logged_) {
-                    log_message(
-                        "Temporal 0.10.0 sem textura espacial: 0x%08X; "
-                        "mantendo a pilha visual/SSAO anterior.",
-                        static_cast<unsigned>(result));
-                    temporal_resources_failure_logged_ = true;
-                }
-                safe_release(spatial_target_);
-                safe_release(spatial_view_);
-                safe_release(spatial_texture_);
-            }
+            create_spatial_target(source);
         }
 
         width_ = source.Width;
@@ -2151,14 +2395,7 @@ private:
         release_bloom_resources();
 
         scene_observer_.release();
-        safe_release(spatial_target_);
-        safe_release(spatial_view_);
-        safe_release(spatial_texture_);
-        safe_release(visual_target_);
-        safe_release(visual_view_);
-        safe_release(visual_texture_);
-        safe_release(scene_view_);
-        safe_release(scene_texture_);
+        release_scene_textures();
         width_ = 0;
         height_ = 0;
         format_ = DXGI_FORMAT_UNKNOWN;

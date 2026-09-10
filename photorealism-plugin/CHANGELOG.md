@@ -1,5 +1,74 @@
 # Changelog
 
+## Pacote 0.19.3 - 2026-09-10
+
+Refatoracao de `src/postprocess.cpp`, pedida pelo usuario. Sem mudanca de
+comportamento.
+
+| | antes | depois |
+| --- | --- | --- |
+| **maior funcao** | **694 linhas** | **73** |
+| metodos | 34 | 76 |
+| `else if` | 13 | 1 |
+| `if (` | 174 | 157 |
+| `if`/`for` no nivel 4 | 5 | **0** |
+| `if`/`for` no nivel 3 | 50 | **25** |
+
+O arquivo foi de 2547 para 2784 linhas. Achatar custa linhas: cada bloco
+extraido ganha assinatura e chaves. O que caiu foi a profundidade, que e o que
+torna um trecho dificil de seguir.
+
+### `render()`: 694 linhas fazendo tres coisas ao mesmo tempo
+
+Ela decidia o que ativar, registrava o que decidiu, e desenhava -- tudo
+entrelacado, com as decisoes espalhadas por dez variaveis locais que iam sendo
+corrigidas ao longo da funcao. Agora sao tres etapas separadas:
+
+- `plan_frame()` devolve um `FramePlan` com o estado do depth e os seis
+  interruptores de passe. Decidir virou uma coisa so, num lugar so.
+- `log_frame_plan()` recebe o plano pronto e registra. Antes cada bloco de
+  decisao carregava seu proprio `if` de log no meio.
+- `compose_output()` le o plano e desenha. A cadeia de seis `else if` virou
+  seis retornos antecipados, cada um chamando um passe nomeado.
+
+`render()` tem hoje 17 linhas e le como um roteiro.
+
+A leitura do depth, que era o trecho mais profundo do arquivo (quatro niveis de
+`if` encaixados para decidir se o depth ainda esta vivo), virou tres funcoes
+nomeadas -- `note_depth_active`, `note_depth_idle`, `depth_is_safe_for_scene` --
+cada uma com um nivel.
+
+O passe visual aparecia identico em tres ramos e o passe SSAO em tres tambem;
+viraram `draw_visual_pass` e `draw_ssao_pass`, cada um chamado onde era copiado.
+
+### `compile_shaders()`: 264 -> 38 linhas
+
+Eram cinco blocos de compilacao e quatro de criacao, quase identicos, cada um
+com seu proprio tratamento de erro e liberacao. `compile_shader_blob` e
+`create_optional_pixel_shader` absorveram o padrao; o que sobra sao as chamadas,
+uma por shader. As mensagens de log continuam identicas, incluindo a do bloom
+que interpola o nome do entry point.
+
+### `initialize_pipeline()` e `ensure_frame_resources()`
+
+Os cinco constant buffers eram cinco blocos iguais variando so o `sizeof` e o
+membro de destino; viraram uma tabela com ponteiro-para-membro. O trio
+textura + SRV + RTV de `ensure_frame_resources` aparecia duas vezes, para as
+texturas visual e espacial; virou `create_intermediate_target`.
+
+`release_frame_resources` e a liberacao feita ao recriar os recursos
+compartilhavam oito linhas mas nao sao a mesma coisa -- a primeira nao solta os
+recursos temporais. A parte comum virou `release_scene_textures` e a diferenca
+ficou visivel em vez de escondida em duas listas parecidas.
+
+### Verificacao
+
+Build e `validate.sh` verdes apos cada uma das quatro etapas, nao so no fim. Os
+onze testes passam. Os literais que o `validate.sh` exige deste arquivo --
+incluindo `scene_observer_.observe(device_, context_, scene_texture_);` e
+`update_condition_adaptation();`, que fixam o ponto de medicao pre-grade --
+foram conferidos antes de comecar e continuam intactos.
+
 ## Pacote 0.19.2 - 2026-09-10
 
 Refatoracao de `src/dxgi_proxy.cpp`, pedida pelo usuario. Sem mudanca de
