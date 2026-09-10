@@ -10,7 +10,11 @@
 #include "device_state.hpp"
 #include "gpu_timer.hpp"
 #include "shader_constants.hpp"
+#include "bloom_pyramid.hpp"
+#include "depth_capture.hpp"
+#include "format_utils.hpp"
 #include "shader_library.hpp"
+#include "temporal_history.hpp"
 
 #include <d3d11.h>
 #include <d3dcompiler.h>
@@ -330,10 +334,14 @@ public:
 
         const bool safe = depth_is_safe_for_scene(depth.generation, serial);
         depth.available =
-            safe && ensure_depth_capture_resources(
-                        candidate, depth.description, depth.generation);
+            safe && depth_capture_.ensure(
+                        candidate,
+                        depth.description,
+                        depth.generation,
+                        shaders_.depth_preview() != nullptr ||
+                            shaders_.ssao() != nullptr);
         if (depth.available) {
-            context_->CopyResource(depth_copy_texture_, candidate);
+            depth_capture_.copy_from(candidate);
         }
         safe_release(candidate);
         return depth;
@@ -350,8 +358,12 @@ public:
         if (!eligible) {
             return false;
         }
-        if (!ensure_temporal_resources(
-                description, depth.description, depth.generation)) {
+        if (!temporal_.ensure(
+                description,
+                depth.description,
+                depth.generation,
+                shaders_.temporal() != nullptr,
+                depth_capture_.texture())) {
             return false;
         }
         const bool spatial_missing =
@@ -368,9 +380,9 @@ public:
         if (!eligible) {
             return false;
         }
-        return ensure_bloom_resources(
+        return bloom_.ensure(
             description,
-            bloom_levels_for_radius(
+            BloomPyramid::levels_for_radius(
                 settings_.bloom_radius, description.Height));
     }
 
@@ -390,7 +402,7 @@ public:
             visual_target_ != nullptr && visual_view_ != nullptr;
         plan.temporal = plan_temporal(description, plan.depth, plan.ssao);
 
-        if (!plan.temporal && temporal_history_valid_) {
+        if (!plan.temporal && temporal_.valid()) {
             invalidate_temporal_history("depth ou passe temporal indisponivel");
         }
 
@@ -407,16 +419,16 @@ public:
     void log_bloom_state(const FramePlan& plan) {
         if (plan.bloom) {
             bloom_wait_logged_ = false;
-            if (bloom_active_logged_levels_ != bloom_level_count_) {
+            if (bloom_active_logged_levels_ != bloom_.level_count()) {
                 log_message(
                     "Bloom 0.17.0 ativo: niveis=%u threshold=%.3f knee=%.3f "
                     "intensity=%.3f radius=%.4f.",
-                    bloom_level_count_,
+                    bloom_.level_count(),
                     settings_.bloom_threshold,
                     settings_.bloom_knee,
                     settings_.bloom_intensity,
                     settings_.bloom_radius);
-                bloom_active_logged_levels_ = bloom_level_count_;
+                bloom_active_logged_levels_ = bloom_.level_count();
             }
             return;
         }
@@ -690,7 +702,7 @@ public:
         temporal_constants.color_rejection =
             settings_.temporal_color_rejection;
         temporal_constants.history_valid =
-            temporal_history_valid_ ? 1.0f : 0.0f;
+            temporal_.valid() ? 1.0f : 0.0f;
         temporal_constants.output_needs_srgb_encode =
             targets.output_needs_srgb_encode ? 1.0f : 0.0f;
         context_->UpdateSubresource(
@@ -721,6 +733,19 @@ public:
         upload_temporal_constants(targets);
     }
 
+    BloomFrame bloom_frame() const {
+        BloomFrame frame = {};
+        frame.shaders = &shaders_;
+        frame.sampler = sampler_state_;
+        frame.scene_view = scene_view_;
+        frame.additive_blend = additive_blend_state_;
+        frame.opaque_blend = blend_state_;
+        frame.scene_needs_srgb_decode = scene_needs_srgb_decode_;
+        frame.threshold = settings_.bloom_threshold;
+        frame.knee = settings_.bloom_knee;
+        return frame;
+    }
+
     void bind_common_pipeline_state(
         const D3D11_TEXTURE2D_DESC& description) {
         D3D11_VIEWPORT viewport = {};
@@ -746,7 +771,7 @@ public:
         context_->OMSetRenderTargets(1, &target, nullptr);
         context_->PSSetShader(shaders_.visual(), nullptr, 0);
         ID3D11ShaderResourceView* visual_resources[2] = {
-            scene_view_, plan.bloom ? bloom_views_[0] : nullptr};
+            scene_view_, plan.bloom ? bloom_.top_view() : nullptr};
         context_->PSSetShaderResources(0, 2, visual_resources);
         context_->PSSetSamplers(0, 1, &sampler_state_);
         context_->PSSetConstantBuffers(0, 1, &constant_buffer_);
@@ -758,7 +783,7 @@ public:
         context_->OMSetRenderTargets(1, &target, nullptr);
         context_->PSSetShader(shaders_.ssao(), nullptr, 0);
         ID3D11ShaderResourceView* ssao_resources[2] = {
-            source, depth_copy_view_};
+            source, depth_capture_.view()};
         ID3D11SamplerState* ssao_samplers[2] = {
             sampler_state_, depth_sampler_state_};
         context_->PSSetShaderResources(0, 2, ssao_resources);
@@ -767,30 +792,12 @@ public:
         context_->Draw(3, 0);
     }
 
-    void draw_bloom_preview(const FrameTargets& targets) {
-        context_->OMSetRenderTargets(1, &targets.output, nullptr);
-        context_->PSSetShader(shaders_.bloom_upsample(), nullptr, 0);
-        BloomConstants preview_constants = {};
-        preview_constants.source_texel_size[0] =
-            1.0f / static_cast<float>(bloom_widths_[0]);
-        preview_constants.source_texel_size[1] =
-            1.0f / static_cast<float>(bloom_heights_[0]);
-        preview_constants.threshold = settings_.bloom_threshold;
-        preview_constants.knee = settings_.bloom_knee;
-        preview_constants.output_needs_srgb_encode =
-            targets.output_needs_srgb_encode ? 1.0f : 0.0f;
-        context_->UpdateSubresource(
-            bloom_constant_buffer_, 0, nullptr, &preview_constants, 0, 0);
-        context_->PSSetShaderResources(0, 1, &bloom_views_[0]);
-        context_->PSSetSamplers(0, 1, &sampler_state_);
-        context_->PSSetConstantBuffers(0, 1, &bloom_constant_buffer_);
-        context_->Draw(3, 0);
-    }
 
     void draw_depth_preview(const FrameTargets& targets) {
         context_->OMSetRenderTargets(1, &targets.output, nullptr);
         context_->PSSetShader(shaders_.depth_preview(), nullptr, 0);
-        context_->PSSetShaderResources(0, 1, &depth_copy_view_);
+        ID3D11ShaderResourceView* depth_view = depth_capture_.view();
+        context_->PSSetShaderResources(0, 1, &depth_view);
         context_->PSSetSamplers(0, 1, &depth_sampler_state_);
         context_->PSSetConstantBuffers(0, 1, &depth_constant_buffer_);
         context_->Draw(3, 0);
@@ -814,9 +821,9 @@ public:
         context_->PSSetShader(shaders_.temporal(), nullptr, 0);
         ID3D11ShaderResourceView* temporal_resources[4] = {
             current_view,
-            temporal_history_valid_ ? temporal_history_view_ : nullptr,
-            depth_copy_view_,
-            temporal_history_valid_ ? temporal_depth_history_view_ : nullptr};
+            temporal_.valid() ? temporal_.color_view() : nullptr,
+            depth_capture_.view(),
+            temporal_.valid() ? temporal_.depth_view() : nullptr};
         ID3D11SamplerState* temporal_samplers[2] = {
             sampler_state_, depth_sampler_state_};
         context_->PSSetShaderResources(0, 4, temporal_resources);
@@ -827,14 +834,11 @@ public:
         context_->OMSetRenderTargets(0, nullptr, nullptr);
         ID3D11ShaderResourceView* null_temporal_resources[4] = {};
         context_->PSSetShaderResources(0, 4, null_temporal_resources);
-        context_->CopyResource(
-            temporal_history_texture_, targets.back_buffer);
-        context_->CopyResource(
-            temporal_depth_history_texture_, depth_copy_texture_);
-        if (temporal_history_valid_) {
+        temporal_.store(targets.back_buffer, depth_capture_.texture());
+        if (temporal_.valid()) {
             return;
         }
-        temporal_history_valid_ = true;
+        temporal_.mark_valid();
         log_message(
             "Historico temporal 0.10.0 inicializado: color=%ux%u "
             "depth=%ux%u generation=%llu.",
@@ -853,7 +857,10 @@ public:
 
     void compose_output(const FrameTargets& targets, const FramePlan& plan) {
         if (plan.bloom_preview) {
-            draw_bloom_preview(targets);
+            bloom_.draw_preview(
+                targets.output,
+                bloom_frame(),
+                targets.output_needs_srgb_encode);
             return;
         }
         if (plan.depth_preview) {
@@ -906,7 +913,7 @@ public:
         bind_common_pipeline_state(targets.description);
 
         if (plan.bloom) {
-            render_bloom_pyramid(targets.description);
+            bloom_.render(targets.description, bloom_frame());
         }
         compose_output(targets, plan);
 
@@ -980,68 +987,6 @@ public:
     }
 
 private:
-    bool is_unorm_format(DXGI_FORMAT format) const {
-        return format == DXGI_FORMAT_B8G8R8A8_UNORM ||
-               format == DXGI_FORMAT_R8G8B8A8_UNORM;
-    }
-
-    DXGI_FORMAT typeless_format(DXGI_FORMAT format) const {
-        if (format == DXGI_FORMAT_B8G8R8A8_UNORM ||
-            format == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB) {
-            return DXGI_FORMAT_B8G8R8A8_TYPELESS;
-        }
-        return DXGI_FORMAT_R8G8B8A8_TYPELESS;
-    }
-
-    DXGI_FORMAT srgb_view_format(DXGI_FORMAT format) const {
-        if (format == DXGI_FORMAT_B8G8R8A8_UNORM ||
-            format == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB) {
-            return DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
-        }
-        return DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-    }
-
-    bool is_supported_format(DXGI_FORMAT format) const {
-        return format == DXGI_FORMAT_B8G8R8A8_UNORM ||
-               format == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB ||
-               format == DXGI_FORMAT_R8G8B8A8_UNORM ||
-               format == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-    }
-
-    bool depth_copy_formats(
-        DXGI_FORMAT source,
-        DXGI_FORMAT* resource_format,
-        DXGI_FORMAT* view_format) const {
-        if (resource_format == nullptr || view_format == nullptr) {
-            return false;
-        }
-
-        if (source == DXGI_FORMAT_D32_FLOAT_S8X24_UINT ||
-            source == DXGI_FORMAT_R32G8X24_TYPELESS) {
-            *resource_format = DXGI_FORMAT_R32G8X24_TYPELESS;
-            *view_format = DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS;
-            return true;
-        }
-        if (source == DXGI_FORMAT_D32_FLOAT ||
-            source == DXGI_FORMAT_R32_TYPELESS) {
-            *resource_format = DXGI_FORMAT_R32_TYPELESS;
-            *view_format = DXGI_FORMAT_R32_FLOAT;
-            return true;
-        }
-        if (source == DXGI_FORMAT_D24_UNORM_S8_UINT ||
-            source == DXGI_FORMAT_R24G8_TYPELESS) {
-            *resource_format = DXGI_FORMAT_R24G8_TYPELESS;
-            *view_format = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
-            return true;
-        }
-        if (source == DXGI_FORMAT_D16_UNORM ||
-            source == DXGI_FORMAT_R16_TYPELESS) {
-            *resource_format = DXGI_FORMAT_R16_TYPELESS;
-            *view_format = DXGI_FORMAT_R16_UNORM;
-            return true;
-        }
-        return false;
-    }
 
     struct ConstantBufferSlot {
         UINT byte_width;
@@ -1058,8 +1003,6 @@ private:
              " SSAO"},
             {sizeof(TemporalConstants),
              &PostProcessor::temporal_constant_buffer_, " temporal"},
-            {sizeof(BloomConstants), &PostProcessor::bloom_constant_buffer_,
-             " bloom"},
         };
 
         for (const ConstantBufferSlot& slot : slots) {
@@ -1192,6 +1135,12 @@ private:
         }
 
         create_additive_blend_state();
+        if (!bloom_.attach(device_, context_)) {
+            log_message("Falha ao criar constant buffer bloom.");
+            return false;
+        }
+        depth_capture_.attach(device_, context_);
+        temporal_.attach(device_, context_);
         gpu_timer_.attach(device_, context_);
         return recompile_shaders();
     }
@@ -1412,12 +1361,12 @@ private:
             spatial_target_ = created.target;
             return;
         }
-        if (!temporal_resources_failure_logged_) {
+        if (!temporal_.failure_logged()) {
             log_message(
                 "Temporal 0.10.0 sem textura espacial: 0x%08X; "
                 "mantendo a pilha visual/SSAO anterior.",
                 static_cast<unsigned>(result));
-            temporal_resources_failure_logged_ = true;
+            temporal_.set_failure_logged(true);
         }
         release_intermediate_target(&created);
     }
@@ -1435,8 +1384,10 @@ private:
 
     void release_frame_intermediates() {
         release_scene_textures();
-        release_bloom_resources();
-        release_temporal_resources();
+        bloom_.release();
+        temporal_.release();
+        temporal_active_logged_generation_ = 0;
+        temporal_wait_logged_ = false;
     }
 
     bool frame_resources_match(const D3D11_TEXTURE2D_DESC& source) const {
@@ -1473,427 +1424,27 @@ private:
         return true;
     }
 
-    UINT bloom_levels_for_radius(float radius, UINT height) const {
-        if (radius <= 0.0f || height == 0) {
-            return 1;
-        }
-        const float target = radius * static_cast<float>(height) / 1.5f;
-        UINT levels = 1;
-        while (levels < kBloomMaxLevels &&
-               static_cast<float>(1u << levels) < target) {
-            ++levels;
-        }
-        return levels;
-    }
 
-    void release_bloom_resources() {
-        for (UINT index = 0; index < kBloomMaxLevels; ++index) {
-            safe_release(bloom_targets_[index]);
-            safe_release(bloom_views_[index]);
-            safe_release(bloom_textures_[index]);
-            bloom_widths_[index] = 0;
-            bloom_heights_[index] = 0;
-        }
-        bloom_level_count_ = 0;
-    }
 
-    bool ensure_bloom_resources(
-        const D3D11_TEXTURE2D_DESC& source, UINT requested_levels) {
-        if (bloom_level_count_ == requested_levels &&
-            bloom_textures_[0] != nullptr &&
-            bloom_widths_[0] == std::max(source.Width >> 1, 1u) &&
-            bloom_heights_[0] == std::max(source.Height >> 1, 1u)) {
-            return true;
-        }
 
-        release_bloom_resources();
 
-        HRESULT result = S_OK;
-        for (UINT index = 0; index < requested_levels; ++index) {
-            const UINT level_width =
-                std::max(source.Width >> (index + 1), 1u);
-            const UINT level_height =
-                std::max(source.Height >> (index + 1), 1u);
 
-            if (level_width < 8 || level_height < 8) {
-                break;
-            }
-
-            D3D11_TEXTURE2D_DESC description = source;
-            description.Width = level_width;
-            description.Height = level_height;
-            description.MipLevels = 1;
-            description.ArraySize = 1;
-            description.SampleDesc.Count = 1;
-            description.SampleDesc.Quality = 0;
-            description.Usage = D3D11_USAGE_DEFAULT;
-            description.BindFlags =
-                D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
-            description.CPUAccessFlags = 0;
-            description.MiscFlags = 0;
-            description.Format = typeless_format(source.Format);
-
-            result = device_->CreateTexture2D(
-                &description, nullptr, &bloom_textures_[index]);
-            if (SUCCEEDED(result)) {
-                D3D11_SHADER_RESOURCE_VIEW_DESC view_description = {};
-                view_description.Format = srgb_view_format(source.Format);
-                view_description.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-                view_description.Texture2D.MostDetailedMip = 0;
-                view_description.Texture2D.MipLevels = 1;
-                result = device_->CreateShaderResourceView(
-                    bloom_textures_[index],
-                    &view_description,
-                    &bloom_views_[index]);
-            }
-            if (SUCCEEDED(result)) {
-                D3D11_RENDER_TARGET_VIEW_DESC target_description = {};
-                target_description.Format = srgb_view_format(source.Format);
-                target_description.ViewDimension =
-                    D3D11_RTV_DIMENSION_TEXTURE2D;
-                target_description.Texture2D.MipSlice = 0;
-                result = device_->CreateRenderTargetView(
-                    bloom_textures_[index],
-                    &target_description,
-                    &bloom_targets_[index]);
-            }
-            if (FAILED(result)) {
-                break;
-            }
-
-            bloom_widths_[index] = level_width;
-            bloom_heights_[index] = level_height;
-            ++bloom_level_count_;
-        }
-
-        if (bloom_level_count_ < 2) {
-            if (!bloom_resources_failure_logged_) {
-                log_message(
-                    "Bloom 0.17.0 sem piramide utilizavel (niveis=%u, "
-                    "0x%08X); mantendo a pilha visual aprovada.",
-                    bloom_level_count_,
-                    static_cast<unsigned>(result));
-                bloom_resources_failure_logged_ = true;
-            }
-            release_bloom_resources();
-            return false;
-        }
-
-        log_message(
-            "Bloom 0.17.0 com piramide de %u niveis: %ux%u ate %ux%u.",
-            bloom_level_count_,
-            bloom_widths_[0],
-            bloom_heights_[0],
-            bloom_widths_[bloom_level_count_ - 1],
-            bloom_heights_[bloom_level_count_ - 1]);
-        return true;
-    }
-
-    void render_bloom_pyramid(const D3D11_TEXTURE2D_DESC& description) {
-        BloomConstants constants = {};
-        constants.threshold = settings_.bloom_threshold;
-        constants.knee = settings_.bloom_knee;
-        constants.input_needs_srgb_decode =
-            scene_needs_srgb_decode_ ? 1.0f : 0.0f;
-        constants.filter_radius[0] = 1.0f;
-        constants.filter_radius[1] = 1.0f;
-
-        D3D11_VIEWPORT viewport = {};
-        viewport.MaxDepth = 1.0f;
-
-        for (UINT index = 0; index < bloom_level_count_; ++index) {
-            const UINT source_width =
-                index == 0 ? description.Width : bloom_widths_[index - 1];
-            const UINT source_height =
-                index == 0 ? description.Height : bloom_heights_[index - 1];
-            constants.source_texel_size[0] =
-                1.0f / static_cast<float>(source_width);
-            constants.source_texel_size[1] =
-                1.0f / static_cast<float>(source_height);
-            context_->UpdateSubresource(
-                bloom_constant_buffer_, 0, nullptr, &constants, 0, 0);
-
-            viewport.Width = static_cast<float>(bloom_widths_[index]);
-            viewport.Height = static_cast<float>(bloom_heights_[index]);
-            context_->RSSetViewports(1, &viewport);
-            context_->OMSetRenderTargets(1, &bloom_targets_[index], nullptr);
-            context_->PSSetShader(
-                index == 0 ? shaders_.bloom_bright() : shaders_.bloom_downsample(),
-                nullptr,
-                0);
-            ID3D11ShaderResourceView* source_view =
-                index == 0 ? scene_view_ : bloom_views_[index - 1];
-            context_->PSSetShaderResources(0, 1, &source_view);
-            context_->PSSetSamplers(0, 1, &sampler_state_);
-            context_->PSSetConstantBuffers(0, 1, &bloom_constant_buffer_);
-            context_->Draw(3, 0);
-            context_->OMSetRenderTargets(0, nullptr, nullptr);
-        }
-
-        context_->OMSetBlendState(
-            additive_blend_state_, nullptr, 0xFFFFFFFFu);
-        for (UINT index = bloom_level_count_ - 1; index > 0; --index) {
-            constants.source_texel_size[0] =
-                1.0f / static_cast<float>(bloom_widths_[index]);
-            constants.source_texel_size[1] =
-                1.0f / static_cast<float>(bloom_heights_[index]);
-            context_->UpdateSubresource(
-                bloom_constant_buffer_, 0, nullptr, &constants, 0, 0);
-
-            viewport.Width = static_cast<float>(bloom_widths_[index - 1]);
-            viewport.Height = static_cast<float>(bloom_heights_[index - 1]);
-            context_->RSSetViewports(1, &viewport);
-            context_->OMSetRenderTargets(
-                1, &bloom_targets_[index - 1], nullptr);
-            context_->PSSetShader(shaders_.bloom_upsample(), nullptr, 0);
-            context_->PSSetShaderResources(0, 1, &bloom_views_[index]);
-            context_->PSSetSamplers(0, 1, &sampler_state_);
-            context_->PSSetConstantBuffers(0, 1, &bloom_constant_buffer_);
-            context_->Draw(3, 0);
-            context_->OMSetRenderTargets(0, nullptr, nullptr);
-            ID3D11ShaderResourceView* null_view = nullptr;
-            context_->PSSetShaderResources(0, 1, &null_view);
-        }
-        context_->OMSetBlendState(blend_state_, nullptr, 0xFFFFFFFFu);
-
-        viewport.Width = static_cast<float>(description.Width);
-        viewport.Height = static_cast<float>(description.Height);
-        context_->RSSetViewports(1, &viewport);
-    }
-
-    bool ensure_depth_capture_resources(
-        ID3D11Texture2D* source,
-        const D3D11_TEXTURE2D_DESC& source_description,
-        std::uint64_t generation) {
-        if (source == nullptr || device_ == nullptr ||
-            (shaders_.depth_preview() == nullptr && shaders_.ssao() == nullptr) ||
-            generation == 0) {
-            return false;
-        }
-        if (depth_copy_texture_ != nullptr && depth_copy_view_ != nullptr &&
-            depth_candidate_generation_ == generation) {
-            return true;
-        }
-        if (depth_failed_generation_ == generation) {
-            return false;
-        }
-
-        release_depth_capture_resources(false);
-
-        ID3D11Device* source_device = nullptr;
-        source->GetDevice(&source_device);
-        const bool same_device = source_device == device_;
-        safe_release(source_device);
-        if (!same_device) {
-            log_message(
-                "Candidato depth pertence a outro dispositivo; "
-                "captura recusada.");
-            depth_failed_generation_ = generation;
-            return false;
-        }
-
-        DXGI_FORMAT resource_format = DXGI_FORMAT_UNKNOWN;
-        DXGI_FORMAT view_format = DXGI_FORMAT_UNKNOWN;
-        if (source_description.SampleDesc.Count != 1 ||
-            source_description.ArraySize != 1 ||
-            !depth_copy_formats(
-                source_description.Format, &resource_format, &view_format)) {
-            log_message(
-                "Candidato depth incompativel com copia 0.9.1: "
-                "size=%ux%u format=%u samples=%u array=%u.",
-                source_description.Width,
-                source_description.Height,
-                static_cast<unsigned>(source_description.Format),
-                source_description.SampleDesc.Count,
-                source_description.ArraySize);
-            depth_failed_generation_ = generation;
-            return false;
-        }
-
-        D3D11_TEXTURE2D_DESC copy_description = source_description;
-        copy_description.Format = resource_format;
-        copy_description.Usage = D3D11_USAGE_DEFAULT;
-        copy_description.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-        copy_description.CPUAccessFlags = 0;
-        copy_description.MiscFlags = 0;
-        HRESULT result = device_->CreateTexture2D(
-            &copy_description, nullptr, &depth_copy_texture_);
-        if (SUCCEEDED(result) && depth_copy_texture_ != nullptr) {
-            D3D11_SHADER_RESOURCE_VIEW_DESC view_description = {};
-            view_description.Format = view_format;
-            view_description.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-            view_description.Texture2D.MostDetailedMip = 0;
-            view_description.Texture2D.MipLevels = 1;
-            result = device_->CreateShaderResourceView(
-                depth_copy_texture_, &view_description, &depth_copy_view_);
-        }
-        if (FAILED(result) || depth_copy_texture_ == nullptr ||
-            depth_copy_view_ == nullptr) {
-            log_message(
-                "Falha ao criar copia depth legivel: result=0x%08X "
-                "source_format=%u resource_format=%u view_format=%u.",
-                static_cast<unsigned>(result),
-                static_cast<unsigned>(source_description.Format),
-                static_cast<unsigned>(resource_format),
-                static_cast<unsigned>(view_format));
-            safe_release(depth_copy_view_);
-            safe_release(depth_copy_texture_);
-            depth_failed_generation_ = generation;
-            return false;
-        }
-
-        depth_candidate_generation_ = generation;
-        depth_failed_generation_ = 0;
-        log_message(
-            "Recursos de copia depth criados: generation=%llu size=%ux%u "
-            "source_format=%u resource_format=%u view_format=%u.",
-            static_cast<unsigned long long>(generation),
-            source_description.Width,
-            source_description.Height,
-            static_cast<unsigned>(source_description.Format),
-            static_cast<unsigned>(resource_format),
-            static_cast<unsigned>(view_format));
-        return true;
-    }
-
-    bool ensure_temporal_resources(
-        const D3D11_TEXTURE2D_DESC& frame_description,
-        const D3D11_TEXTURE2D_DESC& depth_description,
-        std::uint64_t generation) {
-        if (device_ == nullptr || depth_copy_texture_ == nullptr ||
-            shaders_.temporal() == nullptr || generation == 0) {
-            return false;
-        }
-        if (temporal_history_texture_ != nullptr &&
-            temporal_history_view_ != nullptr &&
-            temporal_depth_history_texture_ != nullptr &&
-            temporal_depth_history_view_ != nullptr &&
-            temporal_history_generation_ == generation &&
-            temporal_depth_width_ == depth_description.Width &&
-            temporal_depth_height_ == depth_description.Height) {
-            return true;
-        }
-
-        release_temporal_resources();
-
-        D3D11_TEXTURE2D_DESC color_description = frame_description;
-        color_description.Usage = D3D11_USAGE_DEFAULT;
-        color_description.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-        color_description.CPUAccessFlags = 0;
-        color_description.MiscFlags = 0;
-        color_description.Format = typeless_format(frame_description.Format);
-        HRESULT result = device_->CreateTexture2D(
-            &color_description, nullptr, &temporal_history_texture_);
-        if (SUCCEEDED(result) && temporal_history_texture_ != nullptr) {
-            D3D11_SHADER_RESOURCE_VIEW_DESC view_description = {};
-            view_description.Format = srgb_view_format(frame_description.Format);
-            view_description.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-            view_description.Texture2D.MostDetailedMip = 0;
-            view_description.Texture2D.MipLevels = frame_description.MipLevels;
-            result = device_->CreateShaderResourceView(
-                temporal_history_texture_,
-                &view_description,
-                &temporal_history_view_);
-        }
-
-        DXGI_FORMAT depth_resource_format = DXGI_FORMAT_UNKNOWN;
-        DXGI_FORMAT depth_view_format = DXGI_FORMAT_UNKNOWN;
-        if (SUCCEEDED(result) &&
-            depth_copy_formats(
-                depth_description.Format,
-                &depth_resource_format,
-                &depth_view_format)) {
-            D3D11_TEXTURE2D_DESC history_depth_description = depth_description;
-            history_depth_description.Format = depth_resource_format;
-            history_depth_description.Usage = D3D11_USAGE_DEFAULT;
-            history_depth_description.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-            history_depth_description.CPUAccessFlags = 0;
-            history_depth_description.MiscFlags = 0;
-            result = device_->CreateTexture2D(
-                &history_depth_description,
-                nullptr,
-                &temporal_depth_history_texture_);
-            if (SUCCEEDED(result) &&
-                temporal_depth_history_texture_ != nullptr) {
-                D3D11_SHADER_RESOURCE_VIEW_DESC view_description = {};
-                view_description.Format = depth_view_format;
-                view_description.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-                view_description.Texture2D.MostDetailedMip = 0;
-                view_description.Texture2D.MipLevels = 1;
-                result = device_->CreateShaderResourceView(
-                    temporal_depth_history_texture_,
-                    &view_description,
-                    &temporal_depth_history_view_);
-            }
-        } else if (SUCCEEDED(result)) {
-            result = E_INVALIDARG;
-        }
-
-        if (FAILED(result) || temporal_history_texture_ == nullptr ||
-            temporal_history_view_ == nullptr ||
-            temporal_depth_history_texture_ == nullptr ||
-            temporal_depth_history_view_ == nullptr) {
-            if (!temporal_resources_failure_logged_) {
-                log_message(
-                    "Falha ao criar historico temporal 0.10.0: "
-                    "result=0x%08X color=%ux%u depth=%ux%u format=%u.",
-                    static_cast<unsigned>(result),
-                    frame_description.Width,
-                    frame_description.Height,
-                    depth_description.Width,
-                    depth_description.Height,
-                    static_cast<unsigned>(depth_description.Format));
-                temporal_resources_failure_logged_ = true;
-            }
-            release_temporal_resources();
-            return false;
-        }
-
-        temporal_history_generation_ = generation;
-        temporal_depth_width_ = depth_description.Width;
-        temporal_depth_height_ = depth_description.Height;
-        temporal_history_valid_ = false;
-        temporal_resources_failure_logged_ = false;
-        log_message(
-            "Recursos temporais 0.10.0 criados: color=%ux%u depth=%ux%u "
-            "generation=%llu.",
-            frame_description.Width,
-            frame_description.Height,
-            depth_description.Width,
-            depth_description.Height,
-            static_cast<unsigned long long>(generation));
-        return true;
-    }
 
     void invalidate_temporal_history(const char* reason) {
-        if (!temporal_history_valid_) {
+        if (!temporal_.invalidate()) {
             return;
         }
-        temporal_history_valid_ = false;
         log_message(
             "Historico temporal 0.10.0 invalidado: %s.",
             reason != nullptr ? reason : "motivo nao informado");
     }
 
-    void release_temporal_resources() {
-        safe_release(temporal_depth_history_view_);
-        safe_release(temporal_depth_history_texture_);
-        safe_release(temporal_history_view_);
-        safe_release(temporal_history_texture_);
-        temporal_history_generation_ = 0;
-        temporal_depth_width_ = 0;
-        temporal_depth_height_ = 0;
-        temporal_history_valid_ = false;
-        temporal_active_logged_generation_ = 0;
-        temporal_wait_logged_ = false;
-    }
 
     void release_depth_capture_resources(bool reset_liveness = true) {
-        release_temporal_resources();
-        safe_release(depth_copy_view_);
-        safe_release(depth_copy_texture_);
-        depth_candidate_generation_ = 0;
-        depth_failed_generation_ = 0;
+        temporal_.release();
+        temporal_active_logged_generation_ = 0;
+        temporal_wait_logged_ = false;
+        depth_capture_.release();
         depth_preview_logged_mode_ = 0;
         depth_preview_wait_logged_ = false;
         ssao_active_logged_generation_ = 0;
@@ -1922,7 +1473,7 @@ private:
 
     void release_frame_resources() {
         release_depth_capture_resources();
-        release_bloom_resources();
+        bloom_.release();
 
         scene_observer_.release();
         release_scene_textures();
@@ -1932,8 +1483,8 @@ private:
         scene_needs_srgb_decode_ = false;
         unsupported_logged_ = false;
         processed_logged_ = false;
-        temporal_resources_failure_logged_ = false;
-        bloom_resources_failure_logged_ = false;
+        temporal_.set_failure_logged(false);
+        bloom_.set_failure_logged(false);
         bloom_active_logged_levels_ = 0;
     }
 
@@ -1953,7 +1504,7 @@ private:
         safe_release(depth_constant_buffer_);
         safe_release(ssao_constant_buffer_);
         safe_release(temporal_constant_buffer_);
-        safe_release(bloom_constant_buffer_);
+        bloom_.release_constant_buffer();
         safe_release(sampler_state_);
         safe_release(depth_sampler_state_);
         safe_release(rasterizer_state_);
@@ -1968,6 +1519,9 @@ private:
     SceneObserver scene_observer_;
     GpuTimer gpu_timer_;
     ShaderLibrary shaders_;
+    BloomPyramid bloom_;
+    TemporalHistory temporal_;
+    DepthCapture depth_capture_;
     ID3D11Device* device_ = nullptr;
     ID3D11DeviceContext* context_ = nullptr;
 
@@ -1983,28 +1537,14 @@ private:
     ID3D11Texture2D* visual_texture_ = nullptr;
     ID3D11ShaderResourceView* visual_view_ = nullptr;
     ID3D11RenderTargetView* visual_target_ = nullptr;
-    static constexpr UINT kBloomMaxLevels = 6;
-    ID3D11Texture2D* bloom_textures_[kBloomMaxLevels] = {};
-    ID3D11ShaderResourceView* bloom_views_[kBloomMaxLevels] = {};
-    ID3D11RenderTargetView* bloom_targets_[kBloomMaxLevels] = {};
-    UINT bloom_widths_[kBloomMaxLevels] = {};
-    UINT bloom_heights_[kBloomMaxLevels] = {};
-    UINT bloom_level_count_ = 0;
     ID3D11Texture2D* spatial_texture_ = nullptr;
     ID3D11ShaderResourceView* spatial_view_ = nullptr;
     ID3D11RenderTargetView* spatial_target_ = nullptr;
-    ID3D11Texture2D* depth_copy_texture_ = nullptr;
-    ID3D11ShaderResourceView* depth_copy_view_ = nullptr;
 
-    ID3D11Texture2D* temporal_history_texture_ = nullptr;
-    ID3D11ShaderResourceView* temporal_history_view_ = nullptr;
-    ID3D11Texture2D* temporal_depth_history_texture_ = nullptr;
-    ID3D11ShaderResourceView* temporal_depth_history_view_ = nullptr;
     ID3D11Buffer* constant_buffer_ = nullptr;
     ID3D11Buffer* depth_constant_buffer_ = nullptr;
     ID3D11Buffer* ssao_constant_buffer_ = nullptr;
     ID3D11Buffer* temporal_constant_buffer_ = nullptr;
-    ID3D11Buffer* bloom_constant_buffer_ = nullptr;
     ID3D11SamplerState* sampler_state_ = nullptr;
     ID3D11SamplerState* depth_sampler_state_ = nullptr;
     ID3D11RasterizerState* rasterizer_state_ = nullptr;
@@ -2021,8 +1561,6 @@ private:
     bool input_fallback_logged_ = false;
     bool output_fallback_logged_ = false;
     bool ssao_resources_failure_logged_ = false;
-    bool temporal_resources_failure_logged_ = false;
-    bool bloom_resources_failure_logged_ = false;
     bool bloom_wait_logged_ = false;
     bool resize_in_progress_ = false;
     bool home_key_down_ = false;
@@ -2033,15 +1571,9 @@ private:
     bool depth_preview_wait_logged_ = false;
     bool ssao_wait_logged_ = false;
     bool temporal_wait_logged_ = false;
-    std::uint64_t depth_candidate_generation_ = 0;
-    std::uint64_t depth_failed_generation_ = 0;
     std::uint64_t ssao_active_logged_generation_ = 0;
-    std::uint64_t temporal_history_generation_ = 0;
     std::uint64_t temporal_active_logged_generation_ = 0;
     UINT bloom_active_logged_levels_ = 0;
-    UINT temporal_depth_width_ = 0;
-    UINT temporal_depth_height_ = 0;
-    bool temporal_history_valid_ = false;
     std::uint64_t depth_liveness_generation_ = 0;
     std::uint64_t depth_last_binding_serial_ = 0;
     UINT depth_stale_frame_count_ = 0;

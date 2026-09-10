@@ -44,6 +44,9 @@ common_flags=(
   "${project_dir}/src/postprocess/device_state.cpp" \
   "${project_dir}/src/postprocess/gpu_timer.cpp" \
   "${project_dir}/src/postprocess/shader_library.cpp" \
+  "${project_dir}/src/postprocess/bloom_pyramid.cpp" \
+  "${project_dir}/src/postprocess/temporal_history.cpp" \
+  "${project_dir}/src/postprocess/depth_capture.cpp" \
   "${project_dir}/src/steam_screenshots.cpp" \
   "${project_dir}/src/config.cpp" \
   "${project_dir}/src/resource_observer.cpp" \

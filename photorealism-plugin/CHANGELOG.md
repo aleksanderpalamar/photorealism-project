@@ -1,5 +1,63 @@
 # Changelog
 
+## Pacote 0.19.5 - 2026-09-10
+
+Continuacao da separacao de `src/postprocess/`. Quatro modulos novos. Sem
+mudanca de comportamento.
+
+```
+postprocess.hpp         16   interface publica
+com_utils.hpp           14   safe_release
+depth_capture.hpp/cpp  162   DepthCapture: a copia legivel do depth buffer
+format_utils.hpp        70   familias de DXGI: typeless, sRGB, copia de depth
+device_state.hpp/cpp   111   SavedState: salvar e restaurar o device
+temporal_history       198   TemporalHistory: historico de cor e de depth
+gpu_timer              265   GpuTimer: anel de queries e relatorio
+bloom_pyramid          293   BloomPyramid: niveis, glow e preview
+shader_constants.hpp   114   os cinco layouts de constant buffer
+shader_library         368   ShaderLibrary: compilar e guardar oito shaders
+postprocessor.cpp     1623   orquestrador
+```
+
+O orquestrador foi de **2091 para 1623 linhas**, e de 2784 no inicio da serie.
+
+### Onde a fronteira ficou desta vez
+
+**`BloomPyramid`** recebe um `BloomFrame` -- shaders, sampler, view da cena,
+blends, limiar e joelho. Ele nao sabe que existe um `PostProcessor`, e passou a
+ser dono do proprio constant buffer, que era o unico que so ele usava.
+
+**`TemporalHistory`** guarda as duas texturas de historico e o bit de validade.
+O `invalidate()` devolve se de fato invalidou, e quem registra o motivo no log
+e o orquestrador -- porque o motivo e uma decisao dele, nao do historico.
+
+**`DepthCapture`** guarda a copia legivel do depth. A vivacidade -- decidir se
+o depth ainda esta sendo usado pela cena -- ficou no orquestrador de proposito:
+ela depende do `resource_observer` e do que se quer registrar, e nao do recurso.
+
+**`format_utils.hpp`** reuniu as familias de DXGI que estavam como metodos
+privados de uma classe de 2000 linhas. Sao funcoes puras sobre um enum.
+
+### O que continua junto, e por que
+
+`release_depth_capture_resources` mistura soltar texturas com zerar contadores
+de throttling de log. So a primeira metade virou `DepthCapture::release()`; os
+contadores ficaram onde os logs estao. Separar um do outro deixou visivel que
+eram duas coisas.
+
+### Verificacao
+
+Build e `validate.sh` verdes apos cada extracao. Os onze testes passam.
+
+Cada modulo foi verificado por **quebra deliberada** -- renomear
+`BloomPyramid::render`, `ShaderLibrary::compile`, `TemporalHistory::ensure` ou
+`DepthCapture::ensure` produz erro de link. Se algum fosse codigo morto, o build
+seguiria verde, que foi exatamente a armadilha da 0.19.4.
+
+Uma funcao foi truncada durante a extracao dos formatos e o build acusou na
+hora; `depth_copy_formats` foi recuperada do commit anterior e conferida linha a
+linha contra o original antes de seguir.
+
 ## Pacote 0.19.4 - 2026-09-10
 
 `src/postprocess.cpp` virou `src/postprocess/`, com quatro modulos separados por
