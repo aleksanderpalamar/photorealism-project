@@ -1,5 +1,62 @@
 # Changelog
 
+## Pacote 0.19.10 - 2026-09-10
+
+`src/resource_observer.cpp` -- 882 linhas, o maior arquivo do projeto -- virou
+`src/resource_observer/`. Sem mudanca de comportamento. Nenhum arquivo passa de
+200 linhas.
+
+```
+src/resource_observer/
+  observer_state.cpp    192  catalogo, cache de views e selecao de slot
+  discovery_scan.cpp    174  janela, snapshot, selecao e agrupamento
+  discovery_report.cpp  166  as linhas de grupo e de recurso no log
+  depth_observation.cpp 164  observar bind e atividade do depth
+  candidate_access.cpp   71  entregar e invalidar o candidato
+  discovery_control.cpp  70  assinatura do backbuffer e reinicios
+  discovery.cpp          57  o orquestrador do ciclo
+  format_names.cpp       37  DXGI_FORMAT -> nome legivel
+  observer_lock.hpp      39  WriteLock e ReadLock em RAII
+  types.hpp              69  as quatro structs e as constantes
+```
+
+### `finish_discovery_if_due` tinha 309 linhas
+
+Ela fazia cinco coisas em sequencia, sem separacao: decidir se a janela fechou,
+tirar um retrato do catalogo, pontuar e escolher o candidato, agrupar por
+resolucao, e escrever oito tipos de linha no log. Agora sao cinco funcoes com
+nome, e um `DiscoveryScan` que carrega o resultado de uma para a outra.
+
+O orquestrador ficou com **19 linhas** e mostra a forma do ciclo: amostrar uma
+vez em cada 256 chamadas, tomar a trava, rodar a passagem, soltar a trava,
+relatar.
+
+### A trava virou RAII, e isso corrigiu um risco real
+
+O `SRWLOCK` era tomado e solto **a mao**, com tres `ReleaseSRWLockExclusive`
+espalhados por caminhos de retorno diferentes dentro da mesma funcao de 309
+linhas. Qualquer `return` novo escrito ali sairia com a trava presa e travaria o
+jogo no proximo `Present`.
+
+`WriteLock` e `ReadLock` fecham isso pelo destrutor. O ponto em que a trava e
+solta continua exatamente onde estava -- **antes** do relatorio, porque escrever
+oito linhas de log segurando a trava do observador atrasaria o `Present` --
+agora expresso por um bloco em vez de uma chamada solta no meio.
+
+### Verificacao
+
+O observador nao tem teste unitario: ele so existe enquanto o jogo desenha.
+A verificacao foi a mesma dos hooks -- **todas as mensagens de log com formato
+do arquivo antigo foram extraidas do commit anterior e procuradas no DLL
+construido.** Nenhuma faltou.
+
+Build e `validate.sh` verdes. Os onze testes passam. Cinco modulos verificados
+por quebra deliberada.
+
+A guarda que exige o motivo de rejeicao nas linhas de recurso -- `elegibilidade=`
+com `bindings-insuficientes` -- foi reapontada para `discovery_report.cpp`,
+que e onde essas linhas passaram a ser escritas.
+
 ## Pacote 0.19.9 - 2026-09-10
 
 `src/hook.cpp` virou `src/hooks/`. Sem mudanca de comportamento. Nenhum arquivo

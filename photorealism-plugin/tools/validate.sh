@@ -419,7 +419,7 @@ for depth_eligibility_marker in \
   fi
 done
 if ! grep -Fq 'elegibilidade=%s' \
-    "${project_dir}/src/resource_observer.cpp"; then
+    "${project_dir}/src/resource_observer/discovery_report.cpp"; then
   echo "Motivo de rejeicao ausente no log de recursos depth." >&2
   exit 1
 fi

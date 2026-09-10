@@ -1,7 +1,7 @@
 #include "postprocess.hpp"
 
 #include "../config/config.hpp"
-#include "../resource_observer.hpp"
+#include "../resource_observer/resource_observer.hpp"
 #include "../runtime.hpp"
 
 #include "../scene/observer.hpp"

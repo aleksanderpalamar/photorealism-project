@@ -1,6 +1,6 @@
 #include "context_hooks.hpp"
 
-#include "../resource_observer.hpp"
+#include "../resource_observer/resource_observer.hpp"
 #include "../postprocess/postprocess.hpp"
 #include "hook_state.hpp"
 

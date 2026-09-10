@@ -70,7 +70,14 @@ common_flags=(
   "${project_dir}/src/config/grade_fields.cpp" \
   "${project_dir}/src/config/limits.cpp" \
   "${project_dir}/src/config/logging.cpp" \
-  "${project_dir}/src/resource_observer.cpp" \
+  "${project_dir}/src/resource_observer/discovery_control.cpp" \
+  "${project_dir}/src/resource_observer/depth_observation.cpp" \
+  "${project_dir}/src/resource_observer/candidate_access.cpp" \
+  "${project_dir}/src/resource_observer/discovery.cpp" \
+  "${project_dir}/src/resource_observer/discovery_scan.cpp" \
+  "${project_dir}/src/resource_observer/discovery_report.cpp" \
+  "${project_dir}/src/resource_observer/observer_state.cpp" \
+  "${project_dir}/src/resource_observer/format_names.cpp" \
   "${project_dir}/src/scene/sampler.cpp" \
   "${project_dir}/src/scene/sampler_resources.cpp" \
   "${project_dir}/src/scene/observer.cpp" \

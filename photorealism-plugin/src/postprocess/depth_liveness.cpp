@@ -1,6 +1,6 @@
 #include "depth_liveness.hpp"
 
-#include "../resource_observer.hpp"
+#include "../resource_observer/resource_observer.hpp"
 #include "../runtime.hpp"
 
 namespace photorealism {
