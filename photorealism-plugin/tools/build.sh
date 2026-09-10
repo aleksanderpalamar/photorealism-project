@@ -57,7 +57,12 @@ common_flags=(
   "${project_dir}/src/postprocess/frame_log.cpp" \
   "${project_dir}/src/postprocess/frame_passes.cpp" \
   "${project_dir}/src/steam_screenshots.cpp" \
-  "${project_dir}/src/config.cpp" \
+  "${project_dir}/src/config/loader.cpp" \
+  "${project_dir}/src/config/defaults.cpp" \
+  "${project_dir}/src/config/section_table.cpp" \
+  "${project_dir}/src/config/grade_fields.cpp" \
+  "${project_dir}/src/config/limits.cpp" \
+  "${project_dir}/src/config/logging.cpp" \
   "${project_dir}/src/resource_observer.cpp" \
   "${project_dir}/src/scene/sampler.cpp" \
   "${project_dir}/src/scene/sampler_resources.cpp" \

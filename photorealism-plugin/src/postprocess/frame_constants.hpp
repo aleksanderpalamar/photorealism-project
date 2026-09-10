@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../config.hpp"
+#include "../config/config.hpp"
 #include "pipeline_state.hpp"
 
 #include <d3d11.h>

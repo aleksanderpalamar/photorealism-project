@@ -1,6 +1,6 @@
 #include "postprocess.hpp"
 
-#include "../config.hpp"
+#include "../config/config.hpp"
 #include "../resource_observer.hpp"
 #include "../runtime.hpp"
 

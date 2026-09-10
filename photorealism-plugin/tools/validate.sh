@@ -445,7 +445,7 @@ for tone_default in \
   'layer.black_lift_b = 0.001888f;' \
   'layer.highlight_rolloff = 0.35f;' \
   'layer.tint = 0.35f;'; do
-  if ! grep -Fq "${tone_default}" "${project_dir}/src/config.cpp"; then
+  if ! grep -Fq "${tone_default}" "${project_dir}/src/config/defaults.cpp"; then
     echo "Default interno da curva de tom 0.14.0 divergiu do cfg: \
 ${tone_default}" >&2
     exit 1
@@ -728,11 +728,11 @@ fi
 
 # A leitura e dirigida por tabela desde a 0.19.1. Se voltarem as cadeias de
 # else-if, um parametro novo volta a precisar de cinco lugares certos.
-if ! grep -Fq 'const SectionSpec kSections[]' "${project_dir}/src/config.cpp"; then
+if ! grep -Fq 'const SectionSpec kSections[]' "${project_dir}/src/config/section_table.cpp"; then
   echo "config.cpp deixou de ser dirigido por tabela de secoes." >&2
   exit 1
 fi
-if ! grep -Fq 'constexpr GradeField kGradeFields[]' "${project_dir}/src/config.cpp"; then
+if ! grep -Fq 'constexpr GradeField kGradeFields[]' "${project_dir}/src/config/grade_fields.cpp"; then
   echo "config.cpp deixou de ter a tabela unica de parametros de cor: parse e \
 composicao voltam a poder divergir." >&2
   exit 1
@@ -755,6 +755,12 @@ config_load_test="/tmp/photorealism-config-load-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
   -I"${project_dir}/tests/support" -I"${project_dir}/src" \
   "${project_dir}/tests/config_load_test.cpp" \
+  "${project_dir}/src/config/loader.cpp" \
+  "${project_dir}/src/config/defaults.cpp" \
+  "${project_dir}/src/config/section_table.cpp" \
+  "${project_dir}/src/config/grade_fields.cpp" \
+  "${project_dir}/src/config/limits.cpp" \
+  "${project_dir}/src/config/logging.cpp" \
   -o "${config_load_test}"
 PHOTOREALISM_PROJECT_DIR="${project_dir}" "${config_load_test}"
 

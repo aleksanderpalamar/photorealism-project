@@ -1,6 +1,7 @@
 #pragma once
 
 namespace photorealism {
+
 struct Settings {
     bool enabled;
     float temperature;
@@ -72,6 +73,4 @@ struct Settings {
     float condition_night_tint;
 };
 
-Settings default_settings();
-bool load_settings(Settings* settings);
 }

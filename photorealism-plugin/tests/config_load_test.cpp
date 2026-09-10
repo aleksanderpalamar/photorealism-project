@@ -1,6 +1,6 @@
 #include <windows.h>
 
-#include "../src/config.hpp"
+#include "../src/config/config.hpp"
 
 #include <cassert>
 #include <cmath>
@@ -27,7 +27,6 @@ const wchar_t* temporal_shader_path() { return L"."; }
 const wchar_t* bloom_shader_path() { return L"."; }
 }
 
-#include "../src/config.cpp"
 
 using namespace photorealism;
 

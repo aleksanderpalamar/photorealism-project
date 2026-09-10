@@ -1,5 +1,67 @@
 # Changelog
 
+## Pacote 0.19.8 - 2026-09-10
+
+`src/config.cpp` e `src/config.hpp` viraram `src/config/`. Sem mudanca de
+comportamento. Nenhum arquivo passa de 200 linhas.
+
+```
+src/config/
+  defaults.cpp      153  os valores medidos das tres camadas
+  section_table.cpp 145  as secoes do cfg e suas chaves
+  logging.cpp       132  as linhas de perfil, balanco e modulos
+  loader.cpp        107  ler o arquivo, compor e expor a API
+  grade_fields.cpp  103  os dezessete parametros de cor
+  limits.cpp         99  clamps e pares que precisam ficar em ordem
+  settings.hpp       76  a struct que todo mundo consome
+  text_utils.hpp     38  trim, clamp, to_number, parse_bool
+  calibration.hpp    35  CalibrationLayer e CalibrationStack
+  section_table.hpp  30  ModuleField e SectionSpec
+  (mais cinco headers de interface, de 9 a 13 linhas)
+```
+
+### As responsabilidades que estavam juntas
+
+Um arquivo de 766 linhas fazia nove coisas: definir a struct publica, aparar
+texto, mapear chave em campo de cor, mapear secao em modulo, guardar os valores
+de referencia, limitar faixas, compor as camadas, registrar no log, e ler o
+arquivo. Agora sao nove arquivos, e o nome de cada um diz qual das nove.
+
+**`settings.hpp` separou-se de `config.hpp`.** A struct e consumida por todo o
+`postprocess/`; a API de carga so interessa a quem inicializa. Quem precisa de
+`Settings` nao arrasta mais `load_settings` junto.
+
+**`defaults.cpp` guarda os numeros medidos** -- piso de preto por canal, limiar
+do bloom, ancoras de condicao. E o unico arquivo que muda quando uma medicao
+nova chega, e agora da para abri-lo sem passar por parser nenhum.
+
+**`text_utils.hpp` ficou header-only e sem estado.** Sao quatro funcoes puras
+sobre `char*` e `float`. Virar `.cpp` custaria uma chamada por chave lida sem
+ganho nenhum.
+
+### O teste parou de espiar a implementacao
+
+`config_load_test.cpp` incluia `../src/config.cpp` inteiro para alcancar o que
+estava no namespace anonimo. Agora ele inclui so `config/config.hpp` e e
+linkado contra os seis `.cpp`. O teste passou a exercitar a **interface**, que e
+o que ele deveria ter feito desde o inicio -- a inclusao do `.cpp` era um
+sintoma do arquivo unico, nao uma escolha.
+
+### Verificacao
+
+Os 132 campos de `Settings` foram despejados de novo, nos dois cenarios
+(defaults internos e parse do cfg entregue), e comparados com o despejo guardado
+da 0.19.1: **identico nos 132**.
+
+Build e `validate.sh` verdes. Os onze testes passam. Os cinco modulos
+verificados por quebra deliberada.
+
+Tres guardas do `validate.sh` mudaram de caminho, e cada uma foi apontada para
+o arquivo onde o codigo guardado realmente esta: o piso de preto para
+`defaults.cpp`, `kSections` para `section_table.cpp`, `kGradeFields` para
+`grade_fields.cpp`. Apontar as tres para o mesmo arquivo teria passado no build
+e deixado duas sem guardar nada.
+
 ## Pacote 0.19.7 - 2026-09-10
 
 `src/scene_*` virou `src/scene/`. Sem mudanca de comportamento. Nenhum arquivo

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../config.hpp"
+#include "../config/config.hpp"
 #include "../scene/condition_model.hpp"
 #include "../scene/condition_smoother.hpp"
 #include "../scene/features.hpp"
