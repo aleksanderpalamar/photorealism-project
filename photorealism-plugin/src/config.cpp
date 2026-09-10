@@ -1,6 +1,7 @@
 #include "config.hpp"
 
 #include "runtime.hpp"
+#include "scene_conditions.hpp"
 
 #include <cctype>
 #include <cmath>
@@ -73,6 +74,20 @@ struct CalibrationStack {
     bool scene_observer_enabled;
     float scene_observer_interval_frames;
     float scene_observer_log_seconds;
+    bool condition_adaptation_enabled;
+    float condition_time_constant_seconds;
+    float condition_log_seconds;
+    float condition_daylight_median_low;
+    float condition_daylight_median_high;
+    float condition_overcast_saturation_low;
+    float condition_overcast_saturation_high;
+    float condition_minimum_dynamic_range;
+    float condition_sun_temperature;
+    float condition_sun_tint;
+    float condition_rain_temperature;
+    float condition_rain_tint;
+    float condition_night_temperature;
+    float condition_night_tint;
 };
 
 enum class Section {
@@ -87,6 +102,7 @@ enum class Section {
     temporal_0_10_0,
     bloom_0_17_0,
     scene_observer_0_18_0,
+    condition_adaptation_0_19_0,
     unknown,
 };
 
@@ -152,6 +168,9 @@ Section parse_section(const char* name) {
     }
     if (_stricmp(name, "module.scene_observer.0.18.0") == 0) {
         return Section::scene_observer_0_18_0;
+    }
+    if (_stricmp(name, "module.condition_adaptation.0.19.0") == 0) {
+        return Section::condition_adaptation_0_19_0;
     }
     return Section::unknown;
 }
@@ -351,6 +370,45 @@ void assign_bloom_value(
         stack->bloom_intensity = number;
     } else if (_stricmp(key, "radius") == 0) {
         stack->bloom_radius = number;
+    }
+}
+
+void assign_condition_value(
+    CalibrationStack* stack, const char* key, const char* value) {
+    if (stack == nullptr) {
+        return;
+    }
+    if (_stricmp(key, "enabled") == 0) {
+        stack->condition_adaptation_enabled = parse_bool(value);
+        return;
+    }
+    const float number = static_cast<float>(std::strtod(value, nullptr));
+    if (_stricmp(key, "time_constant_seconds") == 0) {
+        stack->condition_time_constant_seconds = number;
+    } else if (_stricmp(key, "log_seconds") == 0) {
+        stack->condition_log_seconds = number;
+    } else if (_stricmp(key, "daylight_median_low") == 0) {
+        stack->condition_daylight_median_low = number;
+    } else if (_stricmp(key, "daylight_median_high") == 0) {
+        stack->condition_daylight_median_high = number;
+    } else if (_stricmp(key, "overcast_saturation_low") == 0) {
+        stack->condition_overcast_saturation_low = number;
+    } else if (_stricmp(key, "overcast_saturation_high") == 0) {
+        stack->condition_overcast_saturation_high = number;
+    } else if (_stricmp(key, "minimum_dynamic_range") == 0) {
+        stack->condition_minimum_dynamic_range = number;
+    } else if (_stricmp(key, "sun_temperature") == 0) {
+        stack->condition_sun_temperature = number;
+    } else if (_stricmp(key, "sun_tint") == 0) {
+        stack->condition_sun_tint = number;
+    } else if (_stricmp(key, "rain_temperature") == 0) {
+        stack->condition_rain_temperature = number;
+    } else if (_stricmp(key, "rain_tint") == 0) {
+        stack->condition_rain_tint = number;
+    } else if (_stricmp(key, "night_temperature") == 0) {
+        stack->condition_night_temperature = number;
+    } else if (_stricmp(key, "night_tint") == 0) {
+        stack->condition_night_tint = number;
     }
 }
 
@@ -559,6 +617,24 @@ CalibrationStack reference_stack() {
     stack.scene_observer_enabled = true;
     stack.scene_observer_interval_frames = 30.0f;
     stack.scene_observer_log_seconds = 30.0f;
+    {
+        const ConditionThresholds t = default_condition_thresholds();
+        const ConditionAnchors a = default_condition_anchors();
+        stack.condition_adaptation_enabled = true;
+        stack.condition_time_constant_seconds = 180.0f;
+        stack.condition_log_seconds = 30.0f;
+        stack.condition_daylight_median_low = t.daylight_median_low;
+        stack.condition_daylight_median_high = t.daylight_median_high;
+        stack.condition_overcast_saturation_low = t.overcast_saturation_low;
+        stack.condition_overcast_saturation_high = t.overcast_saturation_high;
+        stack.condition_minimum_dynamic_range = t.minimum_dynamic_range;
+        stack.condition_sun_temperature = a.sun_temperature;
+        stack.condition_sun_tint = a.sun_tint;
+        stack.condition_rain_temperature = a.rain_temperature;
+        stack.condition_rain_tint = a.rain_tint;
+        stack.condition_night_temperature = a.night_temperature;
+        stack.condition_night_tint = a.night_tint;
+    }
     return stack;
 }
 
@@ -644,6 +720,25 @@ Settings compose_stack(const CalibrationStack& stack) {
     settings.scene_observer_interval_frames =
         stack.scene_observer_interval_frames;
     settings.scene_observer_log_seconds = stack.scene_observer_log_seconds;
+    settings.condition_adaptation_enabled = stack.condition_adaptation_enabled;
+    settings.condition_time_constant_seconds =
+        stack.condition_time_constant_seconds;
+    settings.condition_log_seconds = stack.condition_log_seconds;
+    settings.condition_daylight_median_low = stack.condition_daylight_median_low;
+    settings.condition_daylight_median_high =
+        stack.condition_daylight_median_high;
+    settings.condition_overcast_saturation_low =
+        stack.condition_overcast_saturation_low;
+    settings.condition_overcast_saturation_high =
+        stack.condition_overcast_saturation_high;
+    settings.condition_minimum_dynamic_range =
+        stack.condition_minimum_dynamic_range;
+    settings.condition_sun_temperature = stack.condition_sun_temperature;
+    settings.condition_sun_tint = stack.condition_sun_tint;
+    settings.condition_rain_temperature = stack.condition_rain_temperature;
+    settings.condition_rain_tint = stack.condition_rain_tint;
+    settings.condition_night_temperature = stack.condition_night_temperature;
+    settings.condition_night_tint = stack.condition_night_tint;
 
     settings.temperature = clamp_value(settings.temperature, 3000.0f, 9000.0f);
     settings.exposure = clamp_value(settings.exposure, -2.0f, 2.0f);
@@ -724,6 +819,40 @@ Settings compose_stack(const CalibrationStack& stack) {
         clamp_value(settings.scene_observer_interval_frames, 1.0f, 600.0f);
     settings.scene_observer_log_seconds =
         clamp_value(settings.scene_observer_log_seconds, 0.0f, 3600.0f);
+
+    // As ancoras usam a mesma faixa que temperature e tint estaticos, senao um
+    // cfg editado a mao poderia levar a adaptacao a um lugar onde o perfil fixo
+    // nao pode ir.
+    settings.condition_time_constant_seconds =
+        clamp_value(settings.condition_time_constant_seconds, 1.0f, 1800.0f);
+    settings.condition_log_seconds =
+        clamp_value(settings.condition_log_seconds, 0.0f, 3600.0f);
+    settings.condition_minimum_dynamic_range =
+        clamp_value(settings.condition_minimum_dynamic_range, 0.0f, 255.0f);
+    settings.condition_sun_temperature =
+        clamp_value(settings.condition_sun_temperature, 3000.0f, 9000.0f);
+    settings.condition_rain_temperature =
+        clamp_value(settings.condition_rain_temperature, 3000.0f, 9000.0f);
+    settings.condition_night_temperature =
+        clamp_value(settings.condition_night_temperature, 3000.0f, 9000.0f);
+    settings.condition_sun_tint =
+        clamp_value(settings.condition_sun_tint, -1.0f, 1.0f);
+    settings.condition_rain_tint =
+        clamp_value(settings.condition_rain_tint, -1.0f, 1.0f);
+    settings.condition_night_tint =
+        clamp_value(settings.condition_night_tint, -1.0f, 1.0f);
+    // A banda tem que ser crescente; invertida, o smoothstep degenera em
+    // degrau e a classe volta a ser dura sem ninguem perceber.
+    if (settings.condition_daylight_median_high <=
+        settings.condition_daylight_median_low) {
+        settings.condition_daylight_median_high =
+            settings.condition_daylight_median_low + 1.0f;
+    }
+    if (settings.condition_overcast_saturation_high <=
+        settings.condition_overcast_saturation_low) {
+        settings.condition_overcast_saturation_high =
+            settings.condition_overcast_saturation_low + 0.01f;
+    }
     return settings;
 }
 
@@ -850,6 +979,29 @@ void log_stack(const CalibrationStack& stack, const Settings& settings) {
         settings.scene_observer_enabled ? "ativo" : "inativo",
         settings.scene_observer_interval_frames,
         settings.scene_observer_log_seconds);
+
+    log_message(
+        "Modulo adaptacao por condicao 0.19.0: %s tau=%.0fs log=%.0fs "
+        "dia=%.1f-%.1f encoberto_sat=%.3f-%.3f porta_faixa=%.1f.",
+        settings.condition_adaptation_enabled ? "ativo" : "inativo",
+        static_cast<double>(settings.condition_time_constant_seconds),
+        static_cast<double>(settings.condition_log_seconds),
+        static_cast<double>(settings.condition_daylight_median_low),
+        static_cast<double>(settings.condition_daylight_median_high),
+        static_cast<double>(settings.condition_overcast_saturation_low),
+        static_cast<double>(settings.condition_overcast_saturation_high),
+        static_cast<double>(settings.condition_minimum_dynamic_range));
+    log_message(
+        "Ancoras 0.19.0: sol=%.0fK/%.3f chuva=%.0fK/%.3f noite=%.0fK/%.3f "
+        "(perfil fixo era %.0fK/%.3f em toda condicao).",
+        static_cast<double>(settings.condition_sun_temperature),
+        static_cast<double>(settings.condition_sun_tint),
+        static_cast<double>(settings.condition_rain_temperature),
+        static_cast<double>(settings.condition_rain_tint),
+        static_cast<double>(settings.condition_night_temperature),
+        static_cast<double>(settings.condition_night_tint),
+        static_cast<double>(settings.temperature),
+        static_cast<double>(settings.tint));
 }
 
 }  // namespace
@@ -924,6 +1076,9 @@ bool load_settings(Settings* settings) {
         if (section == Section::bloom_0_17_0) {
             assign_bloom_value(&stack, key, value);
             continue;
+        }
+        if (section == Section::condition_adaptation_0_19_0) {
+            assign_condition_value(&stack, key, value);
         }
         if (section == Section::scene_observer_0_18_0) {
             assign_scene_observer_value(&stack, key, value);

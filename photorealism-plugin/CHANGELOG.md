@@ -1,5 +1,85 @@
 # Changelog
 
+## Pacote 0.19.0 - 2026-09-10
+
+**A cor passa a seguir a condicao.** Ate a 0.18.2 o perfil era unico --
+`temperature=6400`, `tint=0.500` -- chovendo ou com sol. Nao era descuido: era
+a media de condicoes que nao se parecem, e era a origem do esverdeado constante
+de que o usuario reclamou duas vezes.
+
+### Os limiares sao medidos, e sao do ETS2
+
+386 amostras em quatro sessoes, agrupadas por **duracao**: nenhuma condicao de
+tempo dura 30 segundos e nenhum artefato dura dez minutos, entao um bloco
+sustentado se rotula sozinho.
+
+| condicao        |   n | min |   ceu R/B (p10-p90)   | mediana | saturacao (p10-p90)  |
+| --------------- | --- | --- | --------------------- | ------- | -------------------- |
+| sol / ceu limpo | 216 | 108 | 0,885 (0,770 a 1,075) |  57,1   | 0,240 (0,198 a 0,302)|
+| nublado / chuva |  46 |  23 | 1,001 (0,988 a 1,004) |  76,8   | 0,064 (0,057 a 0,075)|
+| noite / escuro  |  41 |  20 | 0,957 (0,875 a 1,190) |   3,0   | 0,077 (0,058 a 0,104)|
+
+Os dois blocos de chuva, de 9 e 14 minutos em sessoes separadas por seis dias,
+devolveram `ceu R/B` 1,001 e 1,000 e `saturacao` 0,065 e 0,064 -- reproducao
+quase exata. **O usuario confirmou que eram chuva.**
+
+A **saturacao** separa sol de chuva sem sobreposicao alguma: o vao entre 0,075
+e 0,198 e maior que as duas faixas somadas. A **mediana** separa noite de
+chuva, 3,0 contra 76,8. Sao essas duas que decidem.
+
+### O cuidado que decidiu o desenho
+
+`ceu R/B` da chuva (1,001) e **maior** que o do ceu limpo (0,885): a regiao de
+ceu mede a cor do ceu, e ceu limpo e azul. A feature detecta bem e seria um
+alvo pessimo -- ligar `temperature` proporcionalmente a ela deixaria o sol frio
+e a chuva quente, o oposto do pedido. Por isso a cor vem de **ancoras por
+condicao**, nunca de realimentacao da feature.
+
+As ancoras sao escolha de look e moram no cfg. Os defaults sao os valores
+fotograficos de sempre: 5900 K no sol (luz solar direta e ~5500 K), 7500 K na
+chuva (encoberto e sombra), 7000 K a noite. `tint` cai de 0,500 para
+0,44 / 0,30 / 0,34, com a chuva no menor de todos para ler como azul e nao
+como verde-azulado.
+
+### Nenhuma classe dura, e agora e medido
+
+Aplicar limiar duro amostra a amostra troca de classe **16 vezes por hora** em
+jogo, e suavizar satura em 5 -- cada troca seria um salto de cor visivel. Dois
+eixos com `smoothstep` e pesos que somam 1 fazem uma amostra no meio do caminho
+sair no meio do caminho. `tests/scene_conditions_test.cpp` varre a saturacao em
+passos de 0,001 e exige que a temperatura nunca de degrau; trocar o smoothstep
+por um `if` derruba o teste.
+
+Suavizacao exponencial de **180 s** sobre as features, em tempo e nao em
+amostras. E o meio da regiao chata medida pelo erro de previsao causal (minimo
+em 1,5 min numa sessao e 4 min noutra). A banda dia/noite ficou em 3-30 e nao
+colada no vao medido: com 6-20 a reproducao das 386 amostras chegou a andar
+1074 K em 30 s, porque o `smoothstep` e ingreme no meio; com 3-30 o pior caso
+cai para 609 K.
+
+Reproduzindo as amostras reais pelo detector compilado, os dois blocos de chuva
+dao peso 0,925 e 0,892 e o bloco de sol de 61 minutos da 0,995.
+
+### CORRECAO: a porta de jogo descartava a chuva
+
+A porta proposta na 0.18.1 era `p90-p10 > 20` **e** `saturacao > 0,09`. Nestas
+sessoes ela descartou 117 de 386 amostras, e **111 cairam so pela saturacao** --
+com mediana 48, faixa 70 e media 52, ou seja cena de jogo bem iluminada.
+Saturacao baixa nao e quadro invalido: **e o que encoberto e chuva parecem**. A
+porta descartava 57 das 60 amostras de chuva.
+
+A porta correta usa **so estrutura**, e derruba 6 de 386. `validate.sh` recusa
+o build se `saturacao` voltar a aparecer nela.
+
+### O que nao mudou
+
+Com `enabled=false` a saida e identica a 0.18.2, e o mesmo vale para ancoras
+iguais entre si -- ha teste para as duas coisas. Sem amostra valida ainda, o
+perfil fixo do cfg continua valendo, entao a entrada no jogo comeca no que o
+usuario aprovou. Um quadro preto ou de carregamento **segura** o estado em vez
+de zera-lo: um quadro preto chegou a devolver `ceu R/B` = 1,596, o valor mais
+quente de uma sessao inteira.
+
 ## Pacote 0.18.2 - 2026-09-04
 
 O balanco de branco carregava exposicao, e a imagem nao muda.

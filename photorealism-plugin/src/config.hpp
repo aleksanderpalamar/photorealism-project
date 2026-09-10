@@ -60,6 +60,23 @@ struct Settings {
     bool scene_observer_enabled;
     float scene_observer_interval_frames;
     float scene_observer_log_seconds;
+    // 0.19.0. Adaptacao de cor por condicao. Os limiares saem das 386
+    // amostras medidas no ETS2; as ancoras sao escolha de look, e por isso
+    // moram no cfg em vez de ficarem cravadas no codigo.
+    bool condition_adaptation_enabled;
+    float condition_time_constant_seconds;
+    float condition_log_seconds;
+    float condition_daylight_median_low;
+    float condition_daylight_median_high;
+    float condition_overcast_saturation_low;
+    float condition_overcast_saturation_high;
+    float condition_minimum_dynamic_range;
+    float condition_sun_temperature;
+    float condition_sun_tint;
+    float condition_rain_temperature;
+    float condition_rain_tint;
+    float condition_night_temperature;
+    float condition_night_tint;
 };
 
 Settings default_settings();

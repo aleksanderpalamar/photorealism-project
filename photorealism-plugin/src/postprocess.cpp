@@ -4,6 +4,7 @@
 #include "resource_observer.hpp"
 #include "runtime.hpp"
 #include "scene_observer.hpp"
+#include "scene_conditions.hpp"
 #include "steam_screenshots.hpp"
 
 #include <d3d11.h>
@@ -671,6 +672,10 @@ public:
             // das features e as features funcao da cor -- e a imagem
             // caminharia sozinha sem que nada no cfg tivesse mudado.
             scene_observer_.observe(device_, context_, scene_texture_);
+            // 0.19.0. A adaptacao consome o que o observador acabou de medir,
+            // no mesmo ponto e pelo mesmo motivo: e o frame do jogo, antes do
+            // nosso grade. Alimenta-la com a saida fecharia a realimentacao.
+            update_condition_adaptation();
             // errada de que o depth faltava no modo 6.
             if (depth_preview_mode_ != 0 && !ssao_preview_active &&
                 !bloom_preview_active && !depth_preview_wait_logged_) {
@@ -685,7 +690,7 @@ public:
         constants.texel_size[0] = 1.0f / static_cast<float>(description.Width);
         constants.texel_size[1] = 1.0f / static_cast<float>(description.Height);
         constants.exposure = settings_.exposure;
-        constants.temperature = settings_.temperature;
+        constants.temperature = effective_temperature_;
         constants.contrast = settings_.contrast;
         constants.saturation = settings_.saturation;
         constants.vibrance = settings_.vibrance;
@@ -700,7 +705,7 @@ public:
         constants.black_lift[1] = settings_.black_lift_g;
         constants.black_lift[2] = settings_.black_lift_b;
         constants.highlight_rolloff = settings_.highlight_rolloff;
-        constants.tint = settings_.tint;
+        constants.tint = effective_tint_;
         constants.bloom_enabled = bloom_active ? 1.0f : 0.0f;
         constants.bloom_intensity = settings_.bloom_intensity;
         constants.input_needs_srgb_decode =
@@ -1516,6 +1521,89 @@ private:
         }
     }
 
+    // Adaptacao de cor por condicao -- 0.19.0.
+    //
+    // Le as features que o observador acabou de medir no frame PRE-GRADE,
+    // suaviza, e produz um par (temperature, tint) continuo entre tres
+    // ancoras. Nao ha classe dura em lugar nenhum: medido em jogo, um limiar
+    // duro troca de classe 16 vezes por hora, e cada troca seria um salto.
+    void update_condition_adaptation() {
+        if (!settings_.condition_adaptation_enabled) {
+            effective_temperature_ = settings_.temperature;
+            effective_tint_ = settings_.tint;
+            return;
+        }
+
+        ConditionThresholds thresholds = {};
+        thresholds.daylight_median_low = settings_.condition_daylight_median_low;
+        thresholds.daylight_median_high =
+            settings_.condition_daylight_median_high;
+        thresholds.overcast_saturation_low =
+            settings_.condition_overcast_saturation_low;
+        thresholds.overcast_saturation_high =
+            settings_.condition_overcast_saturation_high;
+        thresholds.minimum_dynamic_range =
+            settings_.condition_minimum_dynamic_range;
+
+        const unsigned long long now = GetTickCount64();
+        float elapsed = 0.0f;
+        if (condition_last_update_ms_ != 0ull && now > condition_last_update_ms_) {
+            elapsed =
+                static_cast<float>(now - condition_last_update_ms_) / 1000.0f;
+        }
+        condition_last_update_ms_ = now;
+
+        if (!condition_smoother_.update(
+                scene_observer_.latest(),
+                elapsed,
+                settings_.condition_time_constant_seconds,
+                thresholds)) {
+            // Ainda sem amostra valida: o perfil fixo do cfg continua valendo,
+            // que e o comportamento da 0.18.2. Melhor comecar no que o usuario
+            // aprovou do que numa ancora arbitrada.
+            effective_temperature_ = settings_.temperature;
+            effective_tint_ = settings_.tint;
+            return;
+        }
+
+        ConditionAnchors anchors = {};
+        anchors.sun_temperature = settings_.condition_sun_temperature;
+        anchors.sun_tint = settings_.condition_sun_tint;
+        anchors.rain_temperature = settings_.condition_rain_temperature;
+        anchors.rain_tint = settings_.condition_rain_tint;
+        anchors.night_temperature = settings_.condition_night_temperature;
+        anchors.night_tint = settings_.condition_night_tint;
+
+        const ConditionWeights weights = compute_condition_weights(
+            condition_smoother_.median(),
+            condition_smoother_.saturation(),
+            thresholds);
+        const ConditionGrade grade = blend_condition_grade(weights, anchors);
+        effective_temperature_ = grade.temperature;
+        effective_tint_ = grade.tint;
+
+        const float log_seconds = settings_.condition_log_seconds;
+        const bool due =
+            log_seconds > 0.0f &&
+            now - condition_last_log_ms_ >=
+                static_cast<unsigned long long>(log_seconds * 1000.0f);
+        if (!condition_logged_once_ || due) {
+            log_message(
+                "Condicao 0.19.0: sol=%.3f chuva=%.3f noite=%.3f "
+                "(mediana=%.1f saturacao=%.3f suavizadas) -> "
+                "temperature=%.0fK tint=%.3f.",
+                static_cast<double>(weights.sun),
+                static_cast<double>(weights.rain),
+                static_cast<double>(weights.night),
+                static_cast<double>(condition_smoother_.median()),
+                static_cast<double>(condition_smoother_.saturation()),
+                static_cast<double>(effective_temperature_),
+                static_cast<double>(effective_tint_));
+            condition_last_log_ms_ = now;
+            condition_logged_once_ = true;
+        }
+    }
+
     bool ensure_frame_resources(const D3D11_TEXTURE2D_DESC& source) {
         if (scene_texture_ != nullptr && width_ == source.Width &&
             height_ == source.Height && format_ == source.Format) {
@@ -2140,6 +2228,18 @@ private:
             settings_.scene_observer_enabled,
             static_cast<unsigned>(settings_.scene_observer_interval_frames),
             settings_.scene_observer_log_seconds);
+
+        // 0.19.0. Uma recarga por End tem que poder trocar as ancoras e ver o
+        // efeito, mas NAO deve zerar o estado suavizado: reiniciar a
+        // suavizacao daria varios minutos de cor errada logo apos o ajuste,
+        // que e exatamente quando o usuario esta comparando. So o gatilho do
+        // log e liberado, para a proxima linha sair na hora.
+        condition_logged_once_ = false;
+        if (!settings_.condition_adaptation_enabled) {
+            condition_smoother_.reset();
+            effective_temperature_ = settings_.temperature;
+            effective_tint_ = settings_.tint;
+        }
     }
 
     void release_frame_resources() {
@@ -2403,6 +2503,16 @@ private:
     SceneObserver scene_observer_;
     ID3D11Device* device_ = nullptr;
     ID3D11DeviceContext* context_ = nullptr;
+    // 0.19.0. O que efetivamente vai para o cbuffer. Com a adaptacao
+    // desligada sao copias exatas de settings_, e a imagem e identica a
+    // 0.18.2 codigo por codigo.
+    float effective_temperature_ = 6500.0f;
+    float effective_tint_ = 0.0f;
+    ConditionSmoother condition_smoother_;
+    unsigned long long condition_last_update_ms_ = 0ull;
+    unsigned long long condition_last_log_ms_ = 0ull;
+    bool condition_logged_once_ = false;
+
     ID3D11Texture2D* scene_texture_ = nullptr;
     ID3D11ShaderResourceView* scene_view_ = nullptr;
     ID3D11Texture2D* visual_texture_ = nullptr;

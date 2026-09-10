@@ -472,29 +472,13 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   era a razao de ter subido, era o RTGI e nao o SSAO. Continua valendo por si
   -- calibracao afinada sobre um buffer, rodando sobre outro -- mas sem
   sintoma reportado atras dela;
-- **0.19.0 (proxima)** adaptacao de cor por condicao, em cima do observador da
-  0.18.0. A calibracao de hoje e a media de cinco condicoes diferentes, e um
-  `tint` unico nao alcanca as cinco: e por isso que o valor efetivo de 0,50
-  cai entre o alvo de dia claro e o de encoberto errando os dois. Precisa,
-  nesta ordem: limiares medidos no ETS2 a partir das linhas `Cena 0.18.0:` do
-  log; ancoras de `temperature`/`tint` por condicao; interpolacao **continua**
-  entre elas, porque a margem entre condicoes e de so 1,5x sobre a dispersao
-  interna e classe dura saltaria a cor ao virar a cabine; e suavizacao com
-  **constante de tempo de 2 a 3 minutos** mais histerese. Cuidado central: o
-  jogo ja renderiza a cor da hora. **Medido no ETS2 na 0.18.1**
-  (`references/scene-baseline-ets2-0.18.1.md`, 36 amostras de jogo): o ceu R/B
-  sobe +0,0152 por minuto sozinho, antes do grade, e a hora do dia explica 58%
-  de toda a variacao de cor da sessao. Somar uma rampa de relogio por cima
-  conta duas vezes. O alvo e o ajuste que **falta** em cada condicao, nao uma
-  rampa artistica. Tres numeros ja saem medidos e substituem estimativa:
-  a faixa do ceu R/B no ETS2 e 4,2x mais larga que a do ATS, entao **nenhum
-  limiar do ATS serve**; o residuo depois da hora do dia tem desvio 0,069 e
-  decorrelaciona em menos de um minuto, o que e a camera virando e nao mudanca
-  de tempo, e e o que fixa a janela em 2-3 minutos; e 10% das amostras nao sao
-  jogo (carregamento, fade, mapa), uma delas devolvendo o valor mais quente da
-  sessao a partir de um quadro quase preto, entao a porta de jogo vem antes do
-  detector. Falta o que so o usuario pode dar: **as linhas rotuladas pela
-  condicao na tela**, sem as quais nao ha ancora de cor por condicao;
+- **0.19.0 (entregue)** adaptacao de cor por condicao. Detalhes em
+  `references/scene-baseline-ets2-0.18.1.md` e no CHANGELOG. Tres ancoras
+  interpoladas continuamente a partir de duas features suavizadas, com
+  limiares medidos em 386 amostras do ETS2. O que ficou de fora e vale
+  medir depois: a chuva foi confirmada pelo usuario mas neblina, neve e
+  tunel nao aparecem em nenhum bloco sustentado, entao a adaptacao os trata
+  como interpolacao entre as tres que existem em vez de ancoras proprias;
 - **0.20.0** raios de sol. E o efeito que as referencias realmente
   mostram, e que a medicao do bloom revelou: estriados radiais saindo do sol
   atras da linha de arvores, projetados no teto escuro da cabine. Sao

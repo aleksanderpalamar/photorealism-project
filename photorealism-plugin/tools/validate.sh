@@ -209,7 +209,10 @@ for scene_observer_message in \
   'Modulo observador de cena 0.18.0' \
   'Cena 0.18.0: ceu_R/B=%.3f mediana=%.1f faixa_p90-p10=%.1f' \
   'Perfil efetivo (cor): tint=%.3f' \
-  'Balanco de branco 0.18.2: bruto=%.4f/%.4f/%.4f luma_bruta=%.6f'; do
+  'Balanco de branco 0.18.2: bruto=%.4f/%.4f/%.4f luma_bruta=%.6f' \
+  'Modulo adaptacao por condicao 0.19.0' \
+  'Ancoras 0.19.0: sol=%.0fK/%.3f chuva=%.0fK/%.3f noite=%.0fK/%.3f' \
+  'Condicao 0.19.0: sol=%.3f chuva=%.3f noite=%.3f'; do
   if ! grep -Fq "${scene_observer_message}" "${dxgi_strings}"; then
     echo "Observador de cena 0.18.0 incompleto: ${scene_observer_message}" >&2
     exit 1
@@ -661,6 +664,57 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   -o "${white_balance_test}"
 "${white_balance_test}"
 
+# 0.19.0. A porta de jogo tem que ser SO ESTRUTURA. A porta anterior exigia
+# saturacao > 0,09 e descartava 57 das 60 amostras de chuva medidas no ETS2 --
+# saturacao baixa nao e quadro invalido, e o que encoberto e chuva parecem.
+# Usar uma feature como criterio de validade remove do conjunto justamente os
+# extremos que ela deveria medir.
+if grep -Fq 'features.saturation <=' "${project_dir}/src/scene_conditions.hpp"; then
+  echo "A porta de jogo voltou a usar saturacao: isso descarta a chuva, que e \
+a condicao que a adaptacao existe para detectar." >&2
+  exit 1
+fi
+
+# A interpolacao tem que ser continua. Medido em jogo: limiar duro troca de
+# classe 16 vezes por hora, e cada troca e um salto de cor.
+if ! grep -Fq 'return t * t * (3.0f - 2.0f * t);' \
+  "${project_dir}/src/scene_conditions.hpp"; then
+  echo "compute_condition_weights parou de interpolar continuamente: classe \
+dura salta a cor ao virar a cabine." >&2
+  exit 1
+fi
+if ! grep -Fq 'assert(biggest_step < 60.0f);' \
+  "${project_dir}/tests/scene_conditions_test.cpp"; then
+  echo "O teste parou de exigir que a saida nao de degrau ao varrer a \
+saturacao." >&2
+  exit 1
+fi
+
+# A adaptacao le o frame PRE-GRADE, pelo mesmo motivo do observador: alimentar
+# com a saida fecharia a realimentacao entre a cor e as features.
+if ! grep -Fq 'update_condition_adaptation();' \
+  "${project_dir}/src/postprocess.cpp"; then
+  echo "A adaptacao por condicao nao e mais chamada no ponto pre-grade." >&2
+  exit 1
+fi
+if ! grep -Fq 'constants.temperature = effective_temperature_;' \
+  "${project_dir}/src/postprocess.cpp"; then
+  echo "O cbuffer voltou a receber a temperatura estatica: a adaptacao \
+calcularia e ninguem usaria." >&2
+  exit 1
+fi
+if ! grep -Fq 'constants.tint = effective_tint_;' \
+  "${project_dir}/src/postprocess.cpp"; then
+  echo "O cbuffer voltou a receber o tint estatico." >&2
+  exit 1
+fi
+
+scene_conditions_test="/tmp/photorealism-scene-conditions-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/scene_conditions_test.cpp" \
+  -o "${scene_conditions_test}"
+"${scene_conditions_test}"
+
 scene_formats_test="/tmp/photorealism-scene-formats-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/tests/scene_formats_test.cpp" \
@@ -703,7 +757,7 @@ effective_profile="$(awk -F= '
 # que importa. Uma guarda que explica uma regressao sutil so serve se for ela
 # a falar. Nesta ordem o hash continua pegando tudo que as guardas nao
 # cobrem, e so isso.
-expected_cfg_sha256="32d9b5860594e327c7b8fa68860a1611e15409e4f681d34e3e88ef65b5ee5edf"
+expected_cfg_sha256="9879d1ad2371bd6de2f643c42f6331585df1ea6e26380c4e9b46b8006d5b046c"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
