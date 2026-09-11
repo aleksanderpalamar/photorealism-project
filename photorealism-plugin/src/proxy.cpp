@@ -5,6 +5,7 @@
 
 #include <cwchar>
 
+#include "dinput/input_gate.hpp"
 #include "native_aa/native_aa_config.hpp"
 
 namespace {
@@ -70,9 +71,15 @@ extern "C" HRESULT WINAPI DirectInput8Create(
     LPUNKNOWN outer) {
     using Function = HRESULT(WINAPI*)(HINSTANCE, DWORD, REFIID, LPVOID*, LPUNKNOWN);
     Function function = reinterpret_cast<Function>(real_export("DirectInput8Create"));
-    return function != nullptr
-               ? function(instance, version, interface_id, output, outer)
-               : E_FAIL;
+    if (function == nullptr) {
+        return E_FAIL;
+    }
+    const HRESULT result =
+        function(instance, version, interface_id, output, outer);
+    if (SUCCEEDED(result) && output != nullptr) {
+        photorealism::dinput::install_input_gate(*output);
+    }
+    return result;
 }
 
 extern "C" HRESULT WINAPI DllCanUnloadNow() {

@@ -3,3 +3,5 @@ EXPORTS
     CreateDXGIFactory @1
     CreateDXGIFactory1 @2
     CreateDXGIFactory2 @3
+    photorealism_menu_capturing @4
+    photorealism_log_line @5

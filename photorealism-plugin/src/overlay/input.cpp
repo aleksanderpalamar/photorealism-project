@@ -1,6 +1,7 @@
 #include "input.hpp"
 
 #include "../runtime.hpp"
+#include "raw_input.hpp"
 
 namespace photorealism {
 namespace overlay {
@@ -94,7 +95,10 @@ void InputHook::set_capturing(bool capturing) {
     if (capturing_.exchange(capturing, std::memory_order_acq_rel) == capturing) {
         return;
     }
-    if (!capturing) {
+    if (capturing) {
+        raw_input_block().suspend();
+    } else {
+        raw_input_block().restore();
         log_message(
             "Menu bloqueou %u mensagens de entrada bruta enquanto esteve aberto.",
             raw_input_.load(std::memory_order_acquire));

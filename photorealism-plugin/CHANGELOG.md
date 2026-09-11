@@ -1,5 +1,68 @@
 # Changelog
 
+## Pacote 0.20.2 - 2026-09-11
+
+**O mouse continuava girando a camera com o menu aberto. Faltava fechar os dois
+caminhos por onde o ETS2 le o mouse, e nenhum deles era mensagem de janela.**
+
+A 0.20.1 engoliu `WM_INPUT` e mesmo assim a camera girava. Isso ja era resposta:
+se engolir a mensagem nao muda nada, o jogo **nao le o mouse por mensagem de
+janela**. Sobravam dois caminhos, e esta versao fecha os dois de uma vez em vez
+de tentar um e esperar o proximo teste.
+
+### DirectInput, que e provavelmente o caminho de verdade
+
+O plugin entra no jogo como `dinput8.dll` -- ele so funciona porque o ETS2
+importa essa DLL. E o ETS2 deixa mapear eixo de mouse para a direcao, que e
+coisa de DirectInput, nao de `WM_MOUSEMOVE`.
+
+Entao a propria DLL de bootstrap passou a ser porteira. Em vez de embrulhar as
+41 funcoes das duas interfaces COM, usa a mesma tecnica de vtable que os hooks
+de DXGI ja usavam: tres slots, nao 41.
+
+- `IDirectInput8::CreateDevice`, slot 3 -- ve todo dispositivo que o jogo cria;
+- `GetDeviceState`, slot 9 -- zera o buffer com o menu aberto;
+- `GetDeviceData`, slot 10 -- devolve zero eventos com o menu aberto.
+
+O tipo vem do proprio `GetCapabilities`, nao do GUID pedido, entao o volante e
+os pedais continuam passando mesmo que o jogo use GUID de instancia. A vtable e
+compartilhada, entao os ponteiros de mouse e teclado ficam num conjunto e so
+eles sao silenciados.
+
+O `dinput8.dll` pergunta ao `dxgi.dll` se o menu esta aberto, por
+`GetProcAddress` em dois exports novos. Um erro de digitacao nesse nome nao
+quebraria build nem link -- voltaria nulo e a porteira ficaria muda -- entao ha
+guarda cruzando os nomes que o `dinput8` procura com os que o `dxgi.def`
+publica.
+
+### Entrada bruta, pelo registro e nao pela mensagem
+
+Engolir `WM_INPUT` so funciona se a nossa subclasse estiver na janela certa.
+Mais robusto e tirar o registro: `GetRegisteredRawInputDevices` para ler o que o
+jogo registrou, `RIDEV_REMOVE` nas entradas de mouse e teclado enquanto o menu
+estiver aberto, e o registro original de volta ao fechar. Nao depende de
+adivinhar qual HWND recebe a entrada.
+
+A metade que machuca e a devolucao: sem ela o mouse do jogo morreria depois do
+primeiro Ctrl+P. A guarda exige a chamada de registro **dentro** do corpo de
+`restore`, porque guardar o nome da funcao nao serve de nada -- um corpo vazio
+mantem o nome. Ela foi escrita errada primeiro, do jeito que so olha o nome, e
+nao pegou o corpo esvaziado.
+
+### Se ainda assim girar, o log diz por que
+
+Nao ha como eu testar isso aqui, entao cada caminho se declara no log:
+
+- quantos registros de entrada bruta foram suspensos, ou que o jogo nao
+  registrou nenhum;
+- que tipo de dispositivo o DirectInput criou, um por um, e quais entraram na
+  porteira;
+- quantas mensagens de entrada bruta a janela engoliu enquanto o menu esteve
+  aberto.
+
+Se a camera continuar girando, essas tres linhas dizem qual dos caminhos o ETS2
+usa, em vez de eu chutar de novo.
+
 ## Pacote 0.20.1 - 2026-09-11
 
 **Menu in-game funcional no Ctrl+P: 64 controles em quatro paginas, ao vivo, com

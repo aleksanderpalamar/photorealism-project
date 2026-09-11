@@ -1093,6 +1093,59 @@ fi
 # A conta inteira do menu de uma ponta a outra: o que o slider mostrava tem que
 # voltar identico depois de gravar e reler, e as tres camadas medidas e os
 # comentarios do arquivo tem que sair intactos.
+# O dinput8.dll pergunta ao dxgi.dll se o menu esta aberto, por nome, em tempo
+# de execucao. Um erro de digitacao de um lado nao quebra build nem link: o
+# GetProcAddress volta nulo, a porteira fica muda e o mouse continua girando a
+# camera sem nenhum aviso. Os nomes tem que bater com src/dxgi.def.
+while IFS= read -r exported_name; do
+  if ! grep -Fq "${exported_name}" "${project_dir}/src/dxgi.def"; then
+    echo "O dinput8.dll procura o export ${exported_name}, que nao existe em \
+src/dxgi.def. GetProcAddress voltaria nulo em silencio e a porteira de \
+DirectInput nunca silenciaria o mouse." >&2
+    exit 1
+  fi
+done < <(grep -oE '"photorealism_[a-z_]+"' "${project_dir}/src/dinput/menu_gate.cpp" |
+  tr -d '"' | sort -u)
+
+# A porteira so existe se o DirectInput8Create a instalar.
+if ! grep -Fq 'install_input_gate' "${project_dir}/src/proxy.cpp"; then
+  echo "DirectInput8Create parou de instalar a porteira de entrada: o menu \
+volta a dividir o mouse com o jogo." >&2
+  exit 1
+fi
+
+# Os tres slots de vtable sao a unica coisa que liga a porteira ao DirectInput,
+# e errar um deles chama a funcao errada com os argumentos de outra.
+for gate_slot in \
+  'kCreateDeviceSlot = 3' \
+  'kGetDeviceStateSlot = 9' \
+  'kGetDeviceDataSlot = 10'; do
+  if ! grep -Fq "${gate_slot}" "${project_dir}/src/dinput/input_gate.cpp"; then
+    echo "Slot de vtable do DirectInput mudou: ${gate_slot}. Um slot errado \
+chama outro metodo com os argumentos deste." >&2
+    exit 1
+  fi
+done
+
+# Entrada bruta: suspender e devolver sao as duas metades, e a segunda e a que
+# machuca se sumir -- o mouse do jogo morre depois do primeiro Ctrl+P. Guardar
+# o nome da funcao nao serve: um corpo vazio mantem o nome. O que se exige e a
+# chamada de registro DENTRO de cada corpo.
+raw_input_suspend="$(awk '/^void RawInputBlock::suspend/,/^}/' \
+  "${project_dir}/src/overlay/raw_input.cpp")"
+raw_input_restore="$(awk '/^void RawInputBlock::restore/,/^}/' \
+  "${project_dir}/src/overlay/raw_input.cpp")"
+if ! grep -Fq 'RIDEV_REMOVE' <<<"${raw_input_suspend}"; then
+  echo "RawInputBlock::suspend parou de remover o registro de entrada bruta: \
+o jogo continua recebendo o mouse com o menu aberto." >&2
+  exit 1
+fi
+if ! grep -Fq 'RegisterRawInputDevices' <<<"${raw_input_restore}"; then
+  echo "RawInputBlock::restore parou de devolver o registro ao jogo: o mouse \
+do jogo morre depois do primeiro Ctrl+P." >&2
+  exit 1
+fi
+
 menu_roundtrip_test="/tmp/photorealism-menu-roundtrip-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
   -I"${project_dir}/tests/support" -I"${project_dir}/src" \

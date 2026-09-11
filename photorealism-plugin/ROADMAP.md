@@ -479,13 +479,13 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   medir depois: a chuva foi confirmada pelo usuario mas neblina, neve e
   tunel nao aparecem em nenhum bloco sustentado, entao a adaptacao os trata
   como interpolacao entre as tres que existem em vez de ancoras proprias;
-- **0.20.1 (entregue)** menu in-game no Ctrl+P: 64 controles em quatro
-  paginas, ao vivo, com gravacao no `.cfg`. Os 17 campos de cor nao sao
-  gravados onde estao -- o valor efetivo e a soma de tres camadas medidas --
-  e sim numa quarta camada, `[module.user.0.20.0]`, somada por ultimo, com o
-  menu gravando a diferenca. O que falta e o que nenhum teste alcanca: se a
-  camera ainda girar com o menu aberto, o ETS2 le o mouse por DirectInput e
-  nao por entrada bruta, e o contador de mensagens no log diz qual dos dois;
+- **0.20.2 (entregue)** menu in-game no Ctrl+P: 64 controles em quatro
+  paginas, ao vivo, com gravacao no `.cfg`. Os 17 campos de cor vao para uma
+  quarta camada, `[module.user.0.20.0]`, somada por ultimo, com o menu gravando
+  so a diferenca -- as tres camadas medidas ficam intocaveis. O mouse e tirado
+  do jogo por dois caminhos: porteira de vtable no DirectInput, pelo proprio
+  `dinput8.dll`, e remocao do registro de entrada bruta enquanto o menu estiver
+  aberto;
 - **0.21.0** raios de sol. E o efeito que as referencias realmente
   mostram, e que a medicao do bloom revelou: estriados radiais saindo do sol
   atras da linha de arvores, projetados no teto escuro da cabine. Sao
