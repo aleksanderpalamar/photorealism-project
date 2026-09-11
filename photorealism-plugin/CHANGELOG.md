@@ -1,5 +1,57 @@
 # Changelog
 
+## Pacote 0.20.4 - 2026-09-11
+
+**A seta parou de andar porque eu mesmo cortei a fonte de dados dela. Dois
+defeitos meus, e um caminho novo que nao depende de nenhum dos dois.**
+
+### O primeiro defeito: matei o que alimenta o DirectInput
+
+A 0.20.2 removia o registro de entrada bruta do processo enquanto o menu
+estivesse aberto. No Wine e **de la que o proprio DirectInput se alimenta** --
+removendo o registro, o buffer do mouse passou a chegar zerado. A camera parou
+de girar por isso, nao pela porteira, e a seta do menu parou junto.
+
+A remocao saiu inteira, e o modulo dela tambem: sem chamador, ele seria codigo
+morto. Ha guarda proibindo `RIDEV_REMOVE` em todo o `src/`, com a razao escrita
+ao lado.
+
+A porteira de vtable continua, e e ela que silencia o mouse para o jogo -- os
+dados chegam, o jogo recebe zero, o menu le o delta.
+
+### O segundo defeito: travei a fonte do ponteiro no relatorio vazio
+
+O menu aceita delta de dois ganchos e trava no primeiro que aparecer, para nao
+contar o mesmo movimento duas vezes. So que ele travava tambem num relatorio
+**sem dado nenhum**: se o jogo chama `GetDeviceData` sem eventos antes de
+`GetDeviceState`, a trava caia na fonte errada e todo movimento real era
+descartado depois.
+
+Agora so trava um relatorio que carregue movimento de verdade. Os botoes
+continuam passando antes disso, para um clique sem mexer o mouse nao se perder.
+
+### O caminho que nao depende de mouse
+
+Tres versoes seguidas o caminho do mouse quebrou por uma razao diferente, e em
+todas o menu ficou inutilizavel. Entao o menu passou a andar por teclado
+tambem, o que nao depende de DirectInput, de entrada bruta nem de posicao de
+cursor:
+
+- **setas para cima e para baixo** trocam a linha selecionada, rolando a pagina
+  sozinha para mante-la visivel;
+- **setas para os lados** ajustam o valor em passos de 1% da faixa;
+- **enter** ou **espaco** liga e desliga um interruptor, ou devolve um slider ao
+  valor de referencia;
+- **tab** troca de aba.
+
+A linha selecionada fica destacada e clicar numa linha com o mouse tambem a
+seleciona, entao os dois caminhos funcionam juntos. O cabecalho da pagina
+mostra os atalhos.
+
+Ha guarda exigindo que esse caminho exista. Escrita primeiro com `grep -F`, ela
+nao pegou a propria quebra de teste: renomear `kKeyLeft` para `kKeyLeftRemovido`
+mantem a substring. Agora casa palavra inteira.
+
 ## Pacote 0.20.3 - 2026-09-11
 
 **A camera parou de girar, mas a seta do menu travava no centro da tela. A

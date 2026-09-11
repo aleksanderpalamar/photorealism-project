@@ -109,7 +109,7 @@ HRESULT STDMETHODCALLTYPE hooked_get_device_data(
     if (!is_gated(device) || !menu_is_capturing()) {
         return result;
     }
-    if (is_mouse(device) && axes_are_relative(device)) {
+    if (is_mouse(device) && axes_are_relative(device) && *count > 0) {
         report_data(data, *count);
     }
     *count = 0;

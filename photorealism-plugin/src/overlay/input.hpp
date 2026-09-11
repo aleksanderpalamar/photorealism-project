@@ -22,6 +22,7 @@ class InputHook {
 
     bool handle(UINT message, WPARAM wparam, LPARAM lparam);
     PointerState poll();
+    unsigned poll_keys();
 
   private:
     void reset_events();
@@ -34,6 +35,7 @@ class InputHook {
     std::atomic<unsigned> released_{0};
     std::atomic<int> wheel_{0};
     std::atomic<unsigned> raw_input_{0};
+    std::atomic<unsigned> keys_{0};
 };
 
 InputHook& input_hook();

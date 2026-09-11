@@ -24,19 +24,32 @@ PointerFeed& pointer_feed() {
 
 void PointerFeed::push(
     PointerSource source, long dx, long dy, long wheel, int buttons) {
-    PointerSource expected = PointerSource::None;
-    if (source_.compare_exchange_strong(expected, source)) {
-        log_message(
-            "Menu passou a mover o ponteiro pelos deltas do DirectInput (%s).",
-            source == PointerSource::DeviceState ? "estado" : "buffer");
-    } else if (expected != source) {
+    buttons_.store(buttons, std::memory_order_release);
+
+    const bool carries_motion = dx != 0 || dy != 0 || wheel != 0;
+    PointerSource owner = source_.load(std::memory_order_acquire);
+    if (owner == PointerSource::None) {
+        if (!carries_motion) {
+            return;
+        }
+        PointerSource expected = PointerSource::None;
+        if (source_.compare_exchange_strong(expected, source)) {
+            log_message(
+                "Menu passou a mover o ponteiro por delta do DirectInput "
+                "(%s), primeiro movimento dx=%ld dy=%ld.",
+                source == PointerSource::DeviceState ? "estado" : "buffer",
+                dx,
+                dy);
+        }
+        owner = source_.load(std::memory_order_acquire);
+    }
+    if (owner != source) {
         return;
     }
 
     dx_.fetch_add(dx, std::memory_order_acq_rel);
     dy_.fetch_add(dy, std::memory_order_acq_rel);
     wheel_.fetch_add(wheel, std::memory_order_acq_rel);
-    buttons_.store(buttons, std::memory_order_release);
 }
 
 void PointerFeed::reset() {

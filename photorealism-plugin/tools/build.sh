@@ -119,7 +119,6 @@ common_flags=(
   "${project_dir}/src/overlay/renderer_states.cpp" \
   "${project_dir}/src/overlay/renderer_buffers.cpp" \
   "${project_dir}/src/overlay/overlay.cpp" \
-  "${project_dir}/src/overlay/raw_input.cpp" \
   "${project_dir}/src/overlay/pointer_feed.cpp" \
   "${project_dir}/src/overlay/menu_export.cpp" \
   "${project_dir}/src/runtime.cpp" \

@@ -118,8 +118,19 @@ void Menu::draw_chrome(UiContext& ui, const MenuFrame& frame) {
         tabs_top + kTabHeight + gap,
         frame.body.width,
         kHeaderHeight};
-    draw_text_centered(
-        *ui.list, *ui.font, header, setting_pages()[page_].title, theme::kTextDim);
+    draw_text(
+        *ui.list,
+        *ui.font,
+        header.x,
+        header.y + (header.height - ui.font->line_height()) * 0.5f,
+        setting_pages()[page_].title,
+        theme::kText);
+    draw_text_right(
+        *ui.list,
+        *ui.font,
+        header,
+        "setas ajustam  enter reinicia  tab troca de aba",
+        theme::kTextDim);
 }
 
 void Menu::draw_footer(UiContext& ui, const MenuFrame& frame) {

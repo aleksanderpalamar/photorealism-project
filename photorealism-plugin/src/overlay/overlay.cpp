@@ -156,6 +156,13 @@ void Menu::render(
     }
     ensure_baseline();
 
+    keys_ = input_hook().poll_keys();
+    if ((keys_ & kKeyTab) != 0) {
+        page_ = (page_ + 1) % setting_page_count();
+        selected_ = 0;
+        scroll_ = 0.0f;
+    }
+
     UiContext ui;
     ui.list = &list_;
     ui.font = &view_;

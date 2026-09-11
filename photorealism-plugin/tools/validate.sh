@@ -1127,41 +1127,18 @@ chama outro metodo com os argumentos deste." >&2
   fi
 done
 
-# Entrada bruta: suspender e devolver sao as duas metades, e a segunda e a que
-# machuca se sumir -- o mouse do jogo morre depois do primeiro Ctrl+P. Guardar
-# o nome da funcao nao serve: um corpo vazio mantem o nome. O que se exige e a
-# chamada de registro DENTRO de cada corpo.
-raw_input_suspend="$(awk '/^void RawInputBlock::suspend/,/^}/' \
-  "${project_dir}/src/overlay/raw_input.cpp")"
-raw_input_restore="$(awk '/^void RawInputBlock::restore/,/^}/' \
-  "${project_dir}/src/overlay/raw_input.cpp")"
-if ! grep -Fq 'RIDEV_REMOVE' <<<"${raw_input_suspend}"; then
-  echo "RawInputBlock::suspend parou de remover o registro de entrada bruta: \
-o jogo continua recebendo o mouse com o menu aberto." >&2
-  exit 1
-fi
-if ! grep -Fq 'RegisterRawInputDevices' <<<"${raw_input_restore}"; then
-  echo "RawInputBlock::restore parou de devolver o registro ao jogo: o mouse \
-do jogo morre depois do primeiro Ctrl+P." >&2
-  exit 1
-fi
-
-menu_roundtrip_test="/tmp/photorealism-menu-roundtrip-test"
-g++ -std=c++20 -Wall -Wextra -Werror \
-  -I"${project_dir}/tests/support" -I"${project_dir}/src" \
-  "${project_dir}/tests/menu_roundtrip_test.cpp" \
-  "${project_dir}/src/config/loader.cpp" \
-  "${project_dir}/src/config/defaults.cpp" \
-  "${project_dir}/src/config/section_table.cpp" \
-  "${project_dir}/src/config/grade_fields.cpp" \
-  "${project_dir}/src/config/limits.cpp" \
-  "${project_dir}/src/config/logging.cpp" \
-  -o "${menu_roundtrip_test}"
-"${menu_roundtrip_test}"
-
 # O ponteiro do menu anda por DELTA, nao por posicao. O jogo recentraliza o
 # cursor do sistema a cada quadro para o DirectInput funcionar em modo
 # relativo, entao ler GetCursorPos devolve o centro da tela sempre.
+#
+# E o menu NAO pode mexer no registro de entrada bruta do processo: no Wine e
+# de la que o proprio DirectInput se alimenta, e remover o registro fez o
+# buffer do mouse chegar zerado, deixando a seta parada no centro. Foi o
+# defeito da 0.20.3.
+if grep -rFq 'RIDEV_REMOVE' "${project_dir}/src"; then
+  echo "Alguem voltou a remover o registro de entrada bruta do processo. No Wine isso mata a fonte que alimenta o DirectInput, e a seta do menu para de andar." >&2
+  exit 1
+fi
 overlay_pointer_feed_test="/tmp/photorealism-overlay-pointer-feed-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
   -I"${project_dir}/tests/support" \
@@ -1197,6 +1174,24 @@ fi
 if [[ "${state_read}" -gt "${state_clear}" || "${data_read}" -gt "${data_clear}" ]]; then
   echo "A porteira apaga o buffer do DirectInput antes de ler o delta: o menu \
 zera o proprio movimento e o ponteiro nao anda." >&2
+  exit 1
+fi
+
+# O menu tem que continuar utilizavel sem mouse nenhum. Tres vezes seguidas o
+# caminho do mouse quebrou por uma razao diferente, e em todas o menu ficou
+# inutilizavel. A navegacao por teclado nao depende de DirectInput, de entrada
+# bruta nem de posicao de cursor.
+for keyboard_path in 'kKeyUp' 'kKeyDown' 'kKeyLeft' 'kKeyRight' 'kKeyEnter' 'kKeyTab'; do
+  if ! grep -rFqw "${keyboard_path}" "${project_dir}/src/overlay/page_view.cpp" \
+    "${project_dir}/src/overlay/overlay.cpp"; then
+    echo "A navegacao por teclado do menu perdeu ${keyboard_path}: sem ela, \
+qualquer defeito no caminho do mouse deixa o menu inutilizavel." >&2
+    exit 1
+  fi
+done
+if ! grep -Fqw 'poll_keys' "${project_dir}/src/overlay/input.cpp"; then
+  echo "O menu parou de ler o teclado da janela: some o unico caminho que nao \
+depende do mouse." >&2
   exit 1
 fi
 

@@ -2,7 +2,6 @@
 
 #include "../runtime.hpp"
 #include "pointer_feed.hpp"
-#include "raw_input.hpp"
 
 namespace photorealism {
 namespace overlay {
@@ -18,6 +17,28 @@ bool is_pointer_message(UINT message) {
            message == WM_RBUTTONDOWN || message == WM_RBUTTONUP ||
            message == WM_MBUTTONDOWN || message == WM_MBUTTONUP ||
            message == WM_MOUSEWHEEL || message == WM_SETCURSOR;
+}
+
+unsigned key_bit(WPARAM key) {
+    if (key == VK_UP) {
+        return kKeyUp;
+    }
+    if (key == VK_DOWN) {
+        return kKeyDown;
+    }
+    if (key == VK_LEFT) {
+        return kKeyLeft;
+    }
+    if (key == VK_RIGHT) {
+        return kKeyRight;
+    }
+    if (key == VK_RETURN || key == VK_SPACE) {
+        return kKeyEnter;
+    }
+    if (key == VK_TAB) {
+        return kKeyTab;
+    }
+    return 0;
 }
 
 bool is_keyboard_message(UINT message) {
@@ -90,6 +111,7 @@ void InputHook::reset_events() {
     released_.store(0, std::memory_order_release);
     wheel_.store(0, std::memory_order_release);
     raw_input_.store(0, std::memory_order_release);
+    keys_.store(0, std::memory_order_release);
 }
 
 void InputHook::set_capturing(bool capturing) {
@@ -98,9 +120,7 @@ void InputHook::set_capturing(bool capturing) {
     }
     if (capturing) {
         pointer_feed().reset();
-        raw_input_block().suspend();
     } else {
-        raw_input_block().restore();
         log_message(
             "Menu bloqueou %u mensagens de entrada bruta enquanto esteve aberto.",
             raw_input_.load(std::memory_order_acquire));
@@ -128,11 +148,19 @@ bool InputHook::handle(UINT message, WPARAM wparam, LPARAM lparam) {
             GET_WHEEL_DELTA_WPARAM(wparam), std::memory_order_acq_rel);
         return true;
     }
+    if (message == WM_KEYDOWN || message == WM_SYSKEYDOWN) {
+        keys_.fetch_or(key_bit(wparam), std::memory_order_acq_rel);
+        return true;
+    }
     if (is_raw_input_message(message)) {
         raw_input_.fetch_add(1, std::memory_order_acq_rel);
         return true;
     }
     return is_pointer_message(message) || is_keyboard_message(message);
+}
+
+unsigned InputHook::poll_keys() {
+    return keys_.exchange(0, std::memory_order_acq_rel);
 }
 
 PointerState InputHook::poll() {
