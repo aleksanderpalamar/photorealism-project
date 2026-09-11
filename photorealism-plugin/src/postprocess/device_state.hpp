@@ -24,6 +24,7 @@ struct SavedState {
     ID3D11GeometryShader* geometry_shader = nullptr;
     ID3D11HullShader* hull_shader = nullptr;
     ID3D11DomainShader* domain_shader = nullptr;
+    ID3D11ShaderResourceView* vertex_resource = nullptr;
     ID3D11ShaderResourceView* pixel_resources[4] = {};
     ID3D11SamplerState* pixel_samplers[2] = {};
     ID3D11Buffer* pixel_constant_buffer = nullptr;

@@ -91,10 +91,20 @@ common_flags=(
   "${project_dir}/src/scene/sampler.cpp" \
   "${project_dir}/src/scene/sampler_resources.cpp" \
   "${project_dir}/src/scene/observer.cpp" \
+  "${project_dir}/src/overlay/draw_list.cpp" \
+  "${project_dir}/src/overlay/font.cpp" \
+  "${project_dir}/src/overlay/font_bitmap.cpp" \
+  "${project_dir}/src/overlay/text.cpp" \
+  "${project_dir}/src/overlay/input.cpp" \
+  "${project_dir}/src/overlay/renderer.cpp" \
+  "${project_dir}/src/overlay/renderer_states.cpp" \
+  "${project_dir}/src/overlay/renderer_buffers.cpp" \
+  "${project_dir}/src/overlay/overlay.cpp" \
   "${project_dir}/src/runtime.cpp" \
   "${project_dir}/src/dxgi.def" \
   -o "${build_dir}/dxgi.dll" \
   -luser32 \
+  -lgdi32 \
   -lole32
 
 echo "Gerado: ${build_dir}/dinput8.dll"

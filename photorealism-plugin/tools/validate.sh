@@ -971,4 +971,111 @@ roda em toda chamada de desenho do jogo." >&2
   fi
 done
 
+# Todo .cpp sob src/ precisa estar em build.sh. A 0.19.4 mostrou o custo de nao
+# ter esta guarda: os modulos extraidos foram compilados fora do binario, o
+# original continuou vivo no namespace anonimo, e build e validate ficaram
+# verdes sobre codigo morto.
+missing_from_build=""
+while IFS= read -r source_file; do
+  relative="${source_file#${project_dir}/}"
+  if ! grep -Fq "${relative}" "${project_dir}/tools/build.sh"; then
+    missing_from_build="${missing_from_build}${relative}"$'\n'
+  fi
+done < <(find "${project_dir}/src" -name '*.cpp' | sort)
+if [[ -n "${missing_from_build}" ]]; then
+  echo "Arquivo .cpp fora de tools/build.sh: ele compila nos testes mas nao \
+entra no DLL, e o binario roda sem ele sem nenhum aviso." >&2
+  echo "${missing_from_build}" >&2
+  exit 1
+fi
+
+# O menu desenha DEPOIS da captura do Steam. Se subir para antes, ele passa a
+# aparecer dentro dos screenshots do jogo.
+for present_hook in 'hooked_present' 'hooked_present1'; do
+  capture_line="$(grep -n "observe_postprocessed_frame" \
+    "${project_dir}/src/hooks/swap_chain_hooks.cpp" | head -1 | cut -d: -f1)"
+  overlay_line="$(grep -n "draw_overlay_frame" \
+    "${project_dir}/src/hooks/swap_chain_hooks.cpp" | head -1 | cut -d: -f1)"
+  if [[ -z "${overlay_line}" || -z "${capture_line}" ]]; then
+    echo "O menu ou a captura do Steam sumiu de ${present_hook}." >&2
+    exit 1
+  fi
+  if [[ "${overlay_line}" -lt "${capture_line}" ]]; then
+    echo "draw_overlay_frame subiu para antes de observe_postprocessed_frame: \
+o menu passa a ser gravado dentro dos screenshots do Steam." >&2
+    exit 1
+  fi
+done
+
+# O menu roda fora do process_frame, entao precisa levantar a mesma flag. Sem
+# ela is_processing_frame() fica falso e o proprio OMSetRenderTargets do menu
+# entra no observador de depth como candidato.
+if ! grep -A 4 'void draw_overlay_frame' \
+  "${project_dir}/src/postprocess/postprocessor.cpp" | grep -Fq 'ProcessorScope'; then
+  echo "draw_overlay_frame parou de usar ProcessorScope: o menu passa a \
+desenhar com is_processing_frame() falso e envenena a descoberta de depth." >&2
+  exit 1
+fi
+
+# O menu liga uma SRV no vertex shader. Sem salvar esse slot, o proximo desenho
+# do jogo herda o buffer de vertices do overlay.
+for vertex_slot_call in 'VSGetShaderResources' 'VSSetShaderResources'; do
+  if ! grep -Fq "${vertex_slot_call}" \
+    "${project_dir}/src/postprocess/device_state.cpp"; then
+    echo "SavedState parou de cobrir a SRV do vertex shader \
+(${vertex_slot_call}): o menu vaza o proprio buffer de vertices para o jogo." >&2
+    exit 1
+  fi
+done
+
+# O menu nunca grava sobre a calibracao medida. As tres camadas abaixo sao
+# resultado de 541 amostras de jogo e so mudam por medicao nova.
+for measured_layer in 'base.0.1.2' 'module.visual.0.2.0' 'module.rain_overcast.0.3.0'; do
+  if grep -rFq "${measured_layer}" "${project_dir}/src/overlay"; then
+    echo "O menu citou a camada medida ${measured_layer}. Ele so pode escrever \
+na camada do usuario -- as medidas nao se ajustam por slider." >&2
+    exit 1
+  fi
+done
+
+# Aplicar um ajuste do menu nao pode passar por reload_configuration: ela
+# recompila sete entry points de shader dentro do Present e reinicia a
+# descoberta de depth.
+if grep -rFq 'reload_configuration' "${project_dir}/src/overlay"; then
+  echo "O menu chamou reload_configuration: mover um slider passaria a \
+recompilar sete shaders dentro do Present." >&2
+  exit 1
+fi
+
+# A fonte embutida e assada por GDI, que so entra no DLL com -lgdi32.
+if ! grep -Fq -- '-lgdi32' "${project_dir}/tools/build.sh"; then
+  echo "dxgi.dll perdeu -lgdi32: o atlas de fonte do menu nao linka." >&2
+  exit 1
+fi
+
+# O vertex do menu atravessa a fronteira CPU/GPU sem input layout: o VS le o
+# StructuredBuffer por SV_VertexID. Nada no compilador liga os dois lados, e um
+# campo a mais de um lado so aparece como menu embaralhado na tela. O
+# static_assert prende o lado C++; esta contagem prende o lado HLSL.
+overlay_vertex_floats="$(awk '/^struct OverlayVertex/,/^};/' \
+  "${project_dir}/shaders/overlay.hlsl" | grep -oE '^ +float[234]?' |
+  sed 's/[^0-9]//g' | awk '{ s += ($1 == "" ? 1 : $1) } END { print s+0 }')"
+if [[ "${overlay_vertex_floats}" -ne 16 ]]; then
+  echo "OverlayVertex no shader tem ${overlay_vertex_floats} floats e o Vertex \
+em C++ tem 16: o menu passa a ler os campos deslocados." >&2
+  exit 1
+fi
+if ! grep -Fq 'static_assert(sizeof(Vertex) == 64)' \
+  "${project_dir}/src/overlay/draw_list.hpp"; then
+  echo "O Vertex do overlay perdeu o static_assert de 64 bytes, que e o unico \
+lado C++ do acordo de layout com o StructuredBuffer do shader." >&2
+  exit 1
+fi
+
+overlay_draw_list_test="/tmp/photorealism-overlay-draw-list-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/overlay_draw_list_test.cpp" \
+  -o "${overlay_draw_list_test}"
+"${overlay_draw_list_test}"
+
 echo "Proxies, core Photorealism, captura Steam, depth, SSAO, telemetria, perfil, shaders e numeracao de versao validados."

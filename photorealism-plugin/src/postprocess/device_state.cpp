@@ -23,6 +23,7 @@ void capture_state(ID3D11DeviceContext* context, SavedState* state) {
     context->GSGetShader(&state->geometry_shader, nullptr, nullptr);
     context->HSGetShader(&state->hull_shader, nullptr, nullptr);
     context->DSGetShader(&state->domain_shader, nullptr, nullptr);
+    context->VSGetShaderResources(0, 1, &state->vertex_resource);
     context->PSGetShaderResources(0, 4, state->pixel_resources);
     context->PSGetSamplers(0, 2, state->pixel_samplers);
     context->PSGetConstantBuffers(0, 1, &state->pixel_constant_buffer);
@@ -47,6 +48,7 @@ void restore_state(ID3D11DeviceContext* context, SavedState* state) {
     context->GSSetShader(state->geometry_shader, nullptr, 0);
     context->HSSetShader(state->hull_shader, nullptr, 0);
     context->DSSetShader(state->domain_shader, nullptr, 0);
+    context->VSSetShaderResources(0, 1, &state->vertex_resource);
     context->PSSetShaderResources(0, 4, state->pixel_resources);
     context->PSSetSamplers(0, 2, state->pixel_samplers);
     context->PSSetConstantBuffers(0, 1, &state->pixel_constant_buffer);
@@ -64,6 +66,7 @@ void restore_state(ID3D11DeviceContext* context, SavedState* state) {
     safe_release(state->geometry_shader);
     safe_release(state->hull_shader);
     safe_release(state->domain_shader);
+    safe_release(state->vertex_resource);
     for (ID3D11ShaderResourceView*& resource : state->pixel_resources) {
         safe_release(resource);
     }

@@ -16,6 +16,7 @@ HRESULT STDMETHODCALLTYPE hooked_present(
     if (dispatch.should_process()) {
         process_frame(swap_chain);
         observe_postprocessed_frame(swap_chain);
+        draw_overlay_frame(swap_chain);
     }
     if (!g_present_runtime_audited.exchange(true, std::memory_order_acq_rel)) {
         log_present_entry(
@@ -43,6 +44,7 @@ HRESULT STDMETHODCALLTYPE hooked_present1(
     if (dispatch.should_process()) {
         process_frame(swap_chain);
         observe_postprocessed_frame(swap_chain);
+        draw_overlay_frame(swap_chain);
     }
     if (!g_present1_runtime_audited.exchange(true, std::memory_order_acq_rel)) {
         log_present_entry(

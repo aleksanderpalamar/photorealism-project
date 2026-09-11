@@ -1,5 +1,112 @@
 # Changelog
 
+## Pacote 0.20.0 - 2026-09-11
+
+**Base do menu in-game: abre no Ctrl+P, desenha e responde ao mouse.**
+Primeiro de quatro estagios. Este entrega o caminho de desenho, a entrada e a
+fonte -- os widgets, as paginas e a gravacao no `.cfg` vem a seguir.
+
+### O que nao existia
+
+Nada disso estava no repo: mouse, WndProc, HWND do jogo, fonte, vertex buffer,
+input layout, blend com alpha, textura criada a partir de dados da CPU. O unico
+`GetAsyncKeyState` era o de Home/End/Insert e o unico `HWND` era a janela-sonda
+escondida que existe so para ler vtables.
+
+### Onde o menu desenha, e por que ali
+
+Terceira chamada no `Present`, **depois** de `observe_postprocessed_frame`:
+
+```
+process_frame(swap_chain);
+observe_postprocessed_frame(swap_chain);
+draw_overlay_frame(swap_chain);
+```
+
+Depois da captura, porque a captura do Steam le o backbuffer ja graduado -- se
+o menu subisse para antes, ele passaria a ser gravado dentro dos screenshots do
+jogo. Fora do `render_frame`, porque o menu nao e parte da imagem graduada e
+porque assim ele continua funcionando com o efeito desligado no Home.
+
+### Quatro achados que mudaram o desenho
+
+**`is_processing_frame()` nao cobre quem desenha fora do `process_frame`.** Ela
+le um `thread_local` que so o `process_frame` levanta, e os hooks de contexto a
+consultam para separar um `OMSetRenderTargets` do jogo de um nosso. Um menu
+desenhando sem essa flag entrega o proprio render target ao observador de depth
+como candidato. O `draw_overlay_frame` usa o mesmo `ProcessorScope`, extraido
+agora em RAII para os dois caminhos.
+
+**O `SavedState` tinha exatamente um buraco no caminho do menu.** Ele ja salvava
+RTVs, blend, depth-stencil, rasterizer, viewports, scissors, input layout,
+topologia, os cinco shaders, PS SRV 0..3, PS sampler 0..1 e PS constant buffer
+0. Nao salvava SRV de vertex shader, constant buffer de vertex shader, vertex
+buffer nem index buffer. Escolhendo uma geometria sem IA e sem constant buffer
+de vertex, sobrou um unico slot a acrescentar: a SRV do vertex shader.
+
+**Geometria sem tocar o Input Assembler.** Um `StructuredBuffer` dinamico lido
+pelo vertex shader por `SV_VertexID`, com as posicoes ja em NDC vindas da CPU --
+o mesmo idioma sem-IA do triangulo de tela cheia que o plugin ja usava. Seis
+vertices por quad, cantos arredondados por SDF no pixel shader, recorte feito na
+CPU. Resultado: um unico `Draw` por frame, nenhum input layout, nenhum scissor
+state, e o rasterizer padrao serve como esta.
+
+**O RTV do backbuffer ja resolve sRGB, e o menu herda isso.** O
+`create_output_view` tenta um RTV `_SRGB` e cai para codificacao manual quando
+ele falha. As cores do tema sao autorais em sRGB, entao o pixel shader decide
+pelo mesmo flag, que viaja no PS constant buffer slot 0 -- que ja era salvo.
+
+### Fonte: a embutida primeiro, de proposito
+
+O menu assa um atlas 96x48 a partir de uma tabela 5x7 `constexpr` de 95 glifos.
+Nao depende de nada. O atlas por GDI entra no estagio 2, com queda para esta.
+
+A ordem e deliberada: "meu renderer de quads funciona" e "o stack de fontes do
+Wine funciona" sao dois riscos independentes, e testar os dois de uma vez nao
+diz qual falhou.
+
+### O acordo de layout que nada verificava
+
+O vertex atravessa a fronteira CPU/GPU sem input layout: o shader le o
+`StructuredBuffer` por indice. Nenhum compilador liga os dois lados -- um campo
+a mais de um lado apareceria so como menu embaralhado na tela. O disassembly
+confirma `dcl_resource_structured t0, 64`, batendo com o `sizeof(Vertex)` em
+C++, e agora um `static_assert` prende o lado C++ enquanto uma contagem de
+floats prende o lado HLSL.
+
+### Guardas novas
+
+- **todo `.cpp` sob `src/` precisa estar em `tools/build.sh`**. E a classe de
+  erro da 0.19.4, em que modulos extraidos foram compilados fora do binario e
+  build e validate ficaram verdes sobre codigo morto;
+- `draw_overlay_frame` nao pode subir para antes de `observe_postprocessed_frame`;
+- `draw_overlay_frame` nao pode largar o `ProcessorScope`;
+- `SavedState` nao pode perder a SRV do vertex shader;
+- `src/overlay` nao pode citar `base.0.1.2`, `module.visual.0.2.0` nem
+  `module.rain_overcast.0.3.0`: o menu nunca grava sobre calibracao medida;
+- `src/overlay` nao pode chamar `reload_configuration`, que recompilaria sete
+  entry points de shader dentro do `Present` a cada slider;
+- `dxgi.dll` precisa de `-lgdi32`;
+- `overlay.hlsl` entra no `package.sh` e no `shader_check.sh`.
+
+As sete foram quebradas de proposito, uma por vez, e todas dispararam.
+
+### O que esta provado e o que nao esta
+
+Provado: compila, linka, os literais sobrevivem no DLL, o `VSOverlay` e o
+`PSOverlay` compilam no `d3dcompiler_47.dll` do Wine, o stride do buffer bate
+nos dois lados, e dez testes cobrem geometria, recorte, atlas e largura de
+texto.
+
+**Nao provado ainda:** nada disso rodou no jogo. Faltam duas hipoteses a
+verificar no ETS2 -- que o cursor do sistema esta livre (o menu desenha o
+proprio ponteiro a partir do `GetCursorPos`, o que evita brigar com
+`ShowCursor`/`ClipCursor`), e que engolir as mensagens de janela basta para o
+caminhao parar de responder. Se o jogo ler teclado por DirectInput, nao basta.
+
+**O menu nao pausa o jogo.** Nao ha como pausar o ETS2 de fora. Abrir dirigindo
+a 90 km/h continua dirigindo a 90 km/h.
+
 ## Pacote 0.19.13 - 2026-09-11
 
 **A suavizacao da adaptacao por condicao nunca funcionou acima de 64 fps.**

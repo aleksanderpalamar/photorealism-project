@@ -39,7 +39,7 @@ CompileFromFileFunction resolve_shader_compiler() {
 }
 
 
-ID3DBlob* ShaderLibrary::compile_shader_blob(
+ID3DBlob* compile_shader_blob(
     CompileFromFileFunction compile_from_file,
     const wchar_t* path,
     const char* entry_point,
