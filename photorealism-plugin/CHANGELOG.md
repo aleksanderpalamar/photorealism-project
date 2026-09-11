@@ -1,5 +1,103 @@
 # Changelog
 
+## Pacote 0.20.1 - 2026-09-11
+
+**Menu in-game funcional no Ctrl+P: 64 controles em quatro paginas, ao vivo, com
+gravacao no `.cfg`.**
+
+A 0.20.0 abaixo entregou so o esqueleto -- uma janela sem nenhuma opcao. Isso
+nao era o pedido e o estagiamento foi decisao errada: reduzir o escopo de uma
+entrega e decisao do usuario, nao de quem implementa.
+
+### O menu
+
+Quatro paginas em abas, corpo com rolagem por roda do mouse:
+
+- **Cor e curva de tom**, 17 controles: exposicao, contraste, saturacao,
+  vibracao, sombras, altas luzes, pretos, brancos, contraste local, nitidez,
+  vinheta, joelho de altas luzes, os tres pisos de preto, e a temperatura e o
+  matiz de reserva;
+- **Renderizacao e iluminacao**, 27 controles: oclusao de ambiente e seus seis
+  parametros, refino em altas luzes, oclusao de interior, resolve temporal e
+  bloom, com os quatro interruptores de modulo;
+- **Clima e condicao**, 20 controles: o interruptor da adaptacao, a constante
+  de tempo, as seis ancoras de sol/chuva/noite e os cinco limiares;
+- **Observador e profundidade**, 6 controles.
+
+Cada slider tem rotulo, trilho, valor numerico e um botao **R** que devolve o
+campo ao valor de referencia. Os interruptores dizem o proprio estado. Mover
+qualquer coisa vale **no quadro seguinte**: os quatro constant buffers ja eram
+reenviados a cada `Present`, entao escrever em `settings_` basta. Nenhum shader
+e recompilado -- `reload_configuration`, que recompila sete entry points dentro
+do `Present`, esta proibida dentro de `src/overlay` por guarda.
+
+Todo valor passa pelo mesmo `apply_limits` do carregador, entao o menu nao
+produz estado que o `.cfg` rejeitaria.
+
+### Gravar sem destruir a calibracao
+
+Os 17 campos de cor **nao podem** ser gravados onde estao: o valor efetivo e a
+soma de `base.0.1.2` mais dois deltas, resultado de 541 amostras medidas no
+ETS2. Um slider gravando ali apagaria a medicao.
+
+Entao eles ganharam uma quarta camada, `[module.user.0.20.0]`, somada por
+ultimo. O menu grava **so** nela, e grava a diferenca entre o que esta na tela e
+o que as medidas dizem. O "R" zera essa diferenca. As tres camadas medidas
+ficam intocaveis -- ha guarda proibindo `src/overlay` de sequer citar o nome
+delas.
+
+Os ajustes de modulo, que nao tem camadas, sao gravados no lugar, na propria
+secao. O escritor novo e escopado por secao, o que importa porque `radius`,
+`intensity`, `bias` e `log_seconds` se repetem em secoes diferentes, e troca
+**so o texto do valor** -- o `.cfg` tem ~60% de linhas de justificativa medida
+que precisam sair intactas.
+
+Nao havia escritor de INI no repo: o que existia era o do dialeto `uset` do
+jogo, que nem insere chave ausente. O IO de arquivo atomico que o AA nativo ja
+tinha desceu para `src/config/file_io.cpp`, e o `path_utils` saiu de
+`src/native_aa/` -- nao havia nada de AA nativo em juntar dois caminhos.
+
+### A entrada bruta
+
+O menu engolia `WM_MOUSEMOVE` e mesmo assim mover o mouse girava a camera. A
+razao: o ETS2 le o mouse por **entrada bruta**, que chega como `WM_INPUT`, e
+essa mensagem nao estava na lista. Agora esta, junto com
+`WM_INPUT_DEVICE_CHANGE`.
+
+Para nao ficar no achismo, o menu **conta** quantas mensagens de entrada bruta
+engoliu e registra o total ao fechar. Se a camera ainda girar com esse numero em
+zero, o jogo le o mouse por DirectInput e o proximo passo e outro -- o log
+responde qual, em vez de se adivinhar.
+
+### O que continua sem prova
+
+O `[native_aa.0.12.2]` ficou de fora do menu de proposito: ele e aplicado pelo
+`dinput8.dll` no inicio do jogo e mexer nele no meio da sessao nao teria efeito
+visivel ate reiniciar.
+
+`bloom_threshold` e `bloom_knee` aparecem **esmaecidos** e nao sao graváveis:
+`BloomPyramid::render()` nao tem nenhum call site e `bloom_frame()` nunca os
+atribui, entao hoje eles nao chegam a lugar nenhum. Mostrar um slider que nao
+faz nada seria pior que mostrar um desligado.
+
+**O menu nao pausa o jogo.** Nao ha como pausar o ETS2 de fora.
+
+### Testes
+
+- `menu_roundtrip_test` -- a conta inteira: o valor que o slider mostrava volta
+  identico depois de gravar e reler; as tres camadas medidas e os comentarios do
+  arquivo saem intactos; uma camada do usuario zerada nao muda nada;
+- `overlay_bindings_test` -- **todo** controle das quatro paginas resolve para
+  onde sera gravado: os 17 de cor para uma chave `_delta`, o resto para a secao
+  e a chave que o proprio leitor usa;
+- `config_writer_test` -- nove casos, incluindo chave homonima em outra secao,
+  chave comentada, colisao de prefixo (`r_aa` contra `r_aa_quality`) e `\r\n`.
+
+Guardas novas, todas quebradas de proposito para provar que disparam: a camada
+do usuario tem que ser a ultima soma; o menu precisa ter pelo menos cinquenta
+controles declarados -- uma janela vazia compila e passa em tudo, que foi
+exatamente o que aconteceu na 0.20.1.
+
 ## Pacote 0.20.0 - 2026-09-11
 
 **Base do menu in-game: abre no Ctrl+P, desenha e responde ao mouse.**

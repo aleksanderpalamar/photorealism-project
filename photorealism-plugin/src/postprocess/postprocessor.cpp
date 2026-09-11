@@ -49,9 +49,13 @@ bool key_pressed_once(int virtual_key, bool* was_down) {
     return pressed;
 }
 
-class PostProcessor {
+class PostProcessor : public overlay::MenuHost {
 public:
-    PostProcessor() : settings_(default_settings()) {}
+    PostProcessor() : settings_(default_settings()) {
+        overlay::menu().bind(&settings_, this);
+    }
+
+    void observer_changed() override { apply_scene_observer_settings(); }
 
     struct FrameTargets {
         ID3D11Texture2D* back_buffer;
@@ -168,6 +172,7 @@ public:
         device_->GetImmediateContext(&context_);
         load_settings(&settings_);
         apply_scene_observer_settings();
+        overlay::menu().bind(&settings_, this);
         if (!initialize_pipeline()) {
             return false;
         }

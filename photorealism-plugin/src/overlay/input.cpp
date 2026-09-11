@@ -6,6 +6,10 @@ namespace photorealism {
 namespace overlay {
 namespace {
 
+bool is_raw_input_message(UINT message) {
+    return message == WM_INPUT || message == WM_INPUT_DEVICE_CHANGE;
+}
+
 bool is_pointer_message(UINT message) {
     return message == WM_MOUSEMOVE || message == WM_LBUTTONDOWN ||
            message == WM_LBUTTONUP || message == WM_LBUTTONDBLCLK ||
@@ -83,11 +87,17 @@ void InputHook::reset_events() {
     pressed_.store(0, std::memory_order_release);
     released_.store(0, std::memory_order_release);
     wheel_.store(0, std::memory_order_release);
+    raw_input_.store(0, std::memory_order_release);
 }
 
 void InputHook::set_capturing(bool capturing) {
     if (capturing_.exchange(capturing, std::memory_order_acq_rel) == capturing) {
         return;
+    }
+    if (!capturing) {
+        log_message(
+            "Menu bloqueou %u mensagens de entrada bruta enquanto esteve aberto.",
+            raw_input_.load(std::memory_order_acquire));
     }
     reset_events();
 }
@@ -110,6 +120,10 @@ bool InputHook::handle(UINT message, WPARAM wparam, LPARAM lparam) {
     if (message == WM_MOUSEWHEEL) {
         wheel_.fetch_add(
             GET_WHEEL_DELTA_WPARAM(wparam), std::memory_order_acq_rel);
+        return true;
+    }
+    if (is_raw_input_message(message)) {
+        raw_input_.fetch_add(1, std::memory_order_acq_rel);
         return true;
     }
     return is_pointer_message(message) || is_keyboard_message(message);

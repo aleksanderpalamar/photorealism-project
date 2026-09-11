@@ -30,6 +30,7 @@ struct CalibrationStack {
     CalibrationLayer base;
     CalibrationLayer visual_0_2;
     CalibrationLayer rain_overcast_0_3;
+    CalibrationLayer user_0_20;
     Settings modules;
 };
 }

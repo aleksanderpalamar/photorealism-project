@@ -33,6 +33,7 @@ class InputHook {
     std::atomic<unsigned> pressed_{0};
     std::atomic<unsigned> released_{0};
     std::atomic<int> wheel_{0};
+    std::atomic<unsigned> raw_input_{0};
 };
 
 InputHook& input_hook();

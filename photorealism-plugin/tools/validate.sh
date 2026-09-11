@@ -828,7 +828,7 @@ effective_profile="$(awk -F= '
 # que importa. Uma guarda que explica uma regressao sutil so serve se for ela
 # a falar. Nesta ordem o hash continua pegando tudo que as guardas nao
 # cobrem, e so isso.
-expected_cfg_sha256="9879d1ad2371bd6de2f643c42f6331585df1ea6e26380c4e9b46b8006d5b046c"
+expected_cfg_sha256="64f968a89ca6ed633b4678b835024e12c473e067645ef1b599be84ee869ee799"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
@@ -868,12 +868,26 @@ if command -v glslangValidator >/dev/null 2>&1; then
     -o /tmp/photorealism-plugin-temporal.spv >/dev/null
 fi
 
+# A escrita do config.cfg do jogo precisa continuar atomica: temporario mais
+# MoveFileEx. Um write direto deixa o config.cfg do usuario truncado se o jogo
+# fechar no meio. A implementacao desceu para src/config/file_io.cpp na 0.20.0,
+# quando o menu passou a precisar do mesmo IO -- a guarda segue o efeito.
+if ! grep -Fq 'MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH' \
+  "${project_dir}/src/config/file_io.cpp"; then
+  echo "A escrita de configuracao deixou de ser atomica: sem temporario mais \
+MoveFileEx, um fechamento no meio trunca o config.cfg do usuario." >&2
+  exit 1
+fi
+if ! grep -rFq 'config_io::write_atomic' "${project_dir}/src/native_aa"; then
+  echo "O AA nativo parou de usar a escrita atomica de configuracao." >&2
+  exit 1
+fi
+
 native_aa_source="${project_dir}/src/native_aa"
 for native_aa_marker in \
   'eurotrucks2.exe' \
   'amtrucks.exe' \
   'config.photorealism-native-aa.backup.cfg' \
-  'MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH' \
   'kNativeAaSection = "native_aa.0.12.2"' \
   'read_native_aa_policy' \
   'policy.manage' \
@@ -1069,6 +1083,63 @@ if ! grep -Fq 'static_assert(sizeof(Vertex) == 64)' \
   "${project_dir}/src/overlay/draw_list.hpp"; then
   echo "O Vertex do overlay perdeu o static_assert de 64 bytes, que e o unico \
 lado C++ do acordo de layout com o StructuredBuffer do shader." >&2
+  exit 1
+fi
+
+# O menu so vale se cada controle que ele mostra puder de fato ser gravado. O
+# teste percorre a tabela de paginas e exige que todo binding resolva: os 17 de
+# cor para uma chave _delta da camada do usuario, o resto para a secao e chave
+# que o proprio leitor usa.
+# A conta inteira do menu de uma ponta a outra: o que o slider mostrava tem que
+# voltar identico depois de gravar e reler, e as tres camadas medidas e os
+# comentarios do arquivo tem que sair intactos.
+menu_roundtrip_test="/tmp/photorealism-menu-roundtrip-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  -I"${project_dir}/tests/support" -I"${project_dir}/src" \
+  "${project_dir}/tests/menu_roundtrip_test.cpp" \
+  "${project_dir}/src/config/loader.cpp" \
+  "${project_dir}/src/config/defaults.cpp" \
+  "${project_dir}/src/config/section_table.cpp" \
+  "${project_dir}/src/config/grade_fields.cpp" \
+  "${project_dir}/src/config/limits.cpp" \
+  "${project_dir}/src/config/logging.cpp" \
+  -o "${menu_roundtrip_test}"
+"${menu_roundtrip_test}"
+
+overlay_bindings_test="/tmp/photorealism-overlay-bindings-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  -I"${project_dir}/tests/support" -I"${project_dir}/src" \
+  "${project_dir}/tests/overlay_bindings_test.cpp" \
+  "${project_dir}/src/config/section_table.cpp" \
+  "${project_dir}/src/config/grade_fields.cpp" \
+  -o "${overlay_bindings_test}"
+"${overlay_bindings_test}"
+
+# O escritor de INI mexe num arquivo em que ~60% das linhas sao a justificativa
+# medida de cada numero. Ele so pode trocar o texto do valor.
+config_writer_test="/tmp/photorealism-config-writer-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/config_writer_test.cpp" \
+  -o "${config_writer_test}"
+"${config_writer_test}"
+
+# A camada do usuario tem que ser a ULTIMA soma: o menu grava a diferenca entre
+# o que o usuario escolheu e o que as medidas dizem, e essa conta so fecha se
+# nada vier depois dela.
+if ! grep -A 12 'Settings compose_layers' "${project_dir}/src/config/loader.cpp" |
+  grep -A 2 'stack.rain_overcast_0_3' | grep -Fq 'stack.user_0_20'; then
+  echo "A camada do usuario deixou de ser somada por ultimo em compose_layers: \
+o delta que o menu grava para de reproduzir o valor que estava na tela." >&2
+  exit 1
+fi
+
+# O menu precisa ter controles. Um menu vazio compila, passa no validate e nao
+# serve para nada -- foi o que a 0.20.0 entregou na primeira tentativa.
+menu_controls="$(grep -c 'BindingKind::' "${project_dir}"/src/overlay/bindings/*_bindings.cpp |
+  awk -F: '{ total += $2 } END { print total+0 }')"
+if [[ "${menu_controls}" -lt 50 ]]; then
+  echo "O menu tem so ${menu_controls} controles declarados. Ele existe para \
+ajustar o plugin no jogo; uma janela sem opcoes nao entrega isso." >&2
   exit 1
 fi
 

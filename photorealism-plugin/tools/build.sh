@@ -30,8 +30,9 @@ common_flags=(
   "${project_dir}/src/native_aa/policy.cpp" \
   "${project_dir}/src/native_aa/game_target.cpp" \
   "${project_dir}/src/native_aa/config_file.cpp" \
+  "${project_dir}/src/config/file_io.cpp" \
   "${project_dir}/src/native_aa/aa_log.cpp" \
-  "${project_dir}/src/native_aa/path_utils.cpp" \
+  "${project_dir}/src/config/path_utils.cpp" \
   "${project_dir}/src/dinput8.def" \
   -o "${build_dir}/dinput8.dll" \
   -lole32 \
@@ -75,6 +76,9 @@ common_flags=(
   "${project_dir}/src/steam/conversion_worker.cpp" \
   "${project_dir}/src/steam/steam_api.cpp" \
   "${project_dir}/src/config/loader.cpp" \
+  "${project_dir}/src/config/file_io.cpp" \
+  "${project_dir}/src/config/writer.cpp" \
+  "${project_dir}/src/config/path_utils.cpp" \
   "${project_dir}/src/config/defaults.cpp" \
   "${project_dir}/src/config/section_table.cpp" \
   "${project_dir}/src/config/grade_fields.cpp" \
@@ -92,6 +96,17 @@ common_flags=(
   "${project_dir}/src/scene/sampler_resources.cpp" \
   "${project_dir}/src/scene/observer.cpp" \
   "${project_dir}/src/overlay/draw_list.cpp" \
+  "${project_dir}/src/overlay/layout.cpp" \
+  "${project_dir}/src/overlay/panel.cpp" \
+  "${project_dir}/src/overlay/page_view.cpp" \
+  "${project_dir}/src/overlay/persistence.cpp" \
+  "${project_dir}/src/overlay/grade_keys.cpp" \
+  "${project_dir}/src/overlay/widgets/button.cpp" \
+  "${project_dir}/src/overlay/widgets/slider.cpp" \
+  "${project_dir}/src/overlay/bindings/grade_bindings.cpp" \
+  "${project_dir}/src/overlay/bindings/render_bindings.cpp" \
+  "${project_dir}/src/overlay/bindings/condition_bindings.cpp" \
+  "${project_dir}/src/overlay/bindings/pages.cpp" \
   "${project_dir}/src/overlay/font.cpp" \
   "${project_dir}/src/overlay/font_bitmap.cpp" \
   "${project_dir}/src/overlay/text.cpp" \
@@ -105,6 +120,7 @@ common_flags=(
   -o "${build_dir}/dxgi.dll" \
   -luser32 \
   -lgdi32 \
+  -lshell32 \
   -lole32
 
 echo "Gerado: ${build_dir}/dinput8.dll"

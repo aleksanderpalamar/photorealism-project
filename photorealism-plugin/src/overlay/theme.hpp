@@ -22,9 +22,9 @@ constexpr Color kDanger = {0.839f, 0.361f, 0.400f, 1.0f};
 constexpr Color kCursor = {0.961f, 0.961f, 0.980f, 1.0f};
 constexpr Color kCursorEdge = {0.059f, 0.055f, 0.078f, 1.0f};
 
-constexpr float kPanelWidth = 560.0f;
+constexpr float kPanelWidth = 760.0f;
 constexpr float kTitleBarHeight = 38.0f;
-constexpr float kRowHeight = 30.0f;
+constexpr float kRowHeight = 28.0f;
 constexpr float kRowGap = 8.0f;
 constexpr float kPadding = 16.0f;
 constexpr float kCornerRadius = 7.0f;
@@ -33,6 +33,7 @@ constexpr float kBorderWidth = 1.0f;
 constexpr float kSeparatorHeight = 1.0f;
 constexpr float kTextScale = 2.0f;
 constexpr float kCursorSize = 16.0f;
+constexpr float kTrackHeightRadius = 3.0f;
 
 }
 }

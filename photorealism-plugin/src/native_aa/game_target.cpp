@@ -1,6 +1,6 @@
 #include "game_target.hpp"
 
-#include "path_utils.hpp"
+#include "../config/path_utils.hpp"
 
 #include <shlobj.h>
 
@@ -60,8 +60,8 @@ bool resolve_documents_config(GameTarget* target) {
         documents);
     const bool located =
         SUCCEEDED(result) &&
-        append_path(documents, MAX_PATH, target->documents_directory) &&
-        append_path(documents, MAX_PATH, L"\\config.cfg");
+        paths::append_path(documents, MAX_PATH, target->documents_directory) &&
+        paths::append_path(documents, MAX_PATH, L"\\config.cfg");
     if (!located) {
         return false;
     }

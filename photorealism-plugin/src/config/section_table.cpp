@@ -87,6 +87,7 @@ const SectionSpec kSections[] = {
     {"module.visual.0.2.0", nullptr, &CalibrationStack::visual_0_2, nullptr, 0},
     {"module.rain_overcast.0.3.0", nullptr,
      &CalibrationStack::rain_overcast_0_3, nullptr, 0},
+    {"module.user.0.20.0", nullptr, &CalibrationStack::user_0_20, nullptr, 0},
     {"depth.0.6.4", nullptr, nullptr, kDepthFields, count_of(kDepthFields)},
     {"module.ssao.0.7.0", &Settings::ssao_enabled, nullptr,
      kSsaoFields, count_of(kSsaoFields)},
@@ -116,6 +117,33 @@ const SectionSpec* find_section(const char* name) {
         }
     }
     return nullptr;
+}
+
+bool locate_number(
+    float Settings::*member, const char** section, const char** key) {
+    for (std::size_t index = 0; index < kSectionCount; ++index) {
+        const SectionSpec& spec = kSections[index];
+        for (std::size_t field = 0; field < spec.field_count; ++field) {
+            if (spec.fields[field].member != member) {
+                continue;
+            }
+            *section = spec.name;
+            *key = spec.fields[field].key;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool locate_flag(bool Settings::*flag, const char** section) {
+    for (std::size_t index = 0; index < kSectionCount; ++index) {
+        if (kSections[index].flag != flag) {
+            continue;
+        }
+        *section = kSections[index].name;
+        return true;
+    }
+    return false;
 }
 
 void apply_setting(

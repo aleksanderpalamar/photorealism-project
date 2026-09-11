@@ -21,6 +21,9 @@ struct SectionSpec {
 };
 
 const SectionSpec* find_section(const char* name);
+bool locate_number(
+    float Settings::*member, const char** section, const char** key);
+bool locate_flag(bool Settings::*flag, const char** section);
 void apply_setting(
     CalibrationStack* stack,
     const SectionSpec* section,
