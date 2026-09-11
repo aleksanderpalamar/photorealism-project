@@ -153,5 +153,56 @@ int main() {
         }
     }
 
+    // --- 11. A suavizacao nao pode depender da taxa de quadros.
+    //
+    // Regressao da 0.19.0, encontrada no primeiro log de jogo da 0.19.1.
+    // `GetTickCount64` tem resolucao de ~15,6 ms, entao acima de 64 fps uma
+    // boa parte dos quadros chega com `elapsed_seconds == 0`. O codigo antigo
+    // inicializava alpha em 1.0 e so o reduzia quando havia tempo decorrido --
+    // ou seja, todo quadro sem tique dava um SALTO COMPLETO para a amostra do
+    // momento, e a suavizacao simplesmente nao existia.
+    //
+    // Medido antes da correcao: a 120 e a 200 fps a mediana suavizada ia de
+    // 52,5 para 0,00 em 30 s, quando com tau=180 s deveria parar em 44,4.
+    {
+        for (const int fps : {60, 120, 200, 500}) {
+            ConditionSmoother smoother;
+            SceneFeatures sample = make(52.5f, 0.562f, 120.0f);
+            smoother.update(sample, 0.0f, 180.0f, T);
+
+            sample = make(0.0f, 0.020f, 120.0f);
+            const double frame_ms = 1000.0 / fps;
+            double clock = 0.0;
+            long long last_tick = 0;
+            for (int frame = 0; frame < fps * 30; ++frame) {
+                clock += frame_ms;
+                const long long tick =
+                    static_cast<long long>(clock / 15.6) * 16;
+                const float step =
+                    tick > last_tick
+                        ? static_cast<float>(tick - last_tick) / 1000.0f
+                        : 0.0f;
+                last_tick = tick;
+                smoother.update(sample, step, 180.0f, T);
+            }
+            // exp(-30/180) * 52,5 = 44,4. Tolerancia larga porque a cadencia
+            // de tiques difere entre as taxas; o que o teste exige e que o
+            // resultado NAO dependa do fps.
+            assert(smoother.median() > 40.0f);
+            assert(smoother.median() < 48.0f);
+        }
+    }
+
+    // --- 12. Sem tempo decorrido, nada se move. E a raiz do defeito acima.
+    {
+        ConditionSmoother smoother;
+        smoother.update(make(50.0f, 0.300f, 120.0f), 0.0f, 180.0f, T);
+        for (int i = 0; i < 1000; ++i) {
+            smoother.update(make(0.0f, 0.010f, 120.0f), 0.0f, 180.0f, T);
+        }
+        assert(near(smoother.median(), 50.0f, 1e-4f));
+        assert(near(smoother.saturation(), 0.300f, 1e-6f));
+    }
+
     return 0;
 }

@@ -764,6 +764,22 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   -o "${config_load_test}"
 PHOTOREALISM_PROJECT_DIR="${project_dir}" "${config_load_test}"
 
+# 0.19.13. A suavizacao nao pode depender da taxa de quadros. GetTickCount64
+# tem resolucao de ~15,6 ms: acima de 64 fps muitos quadros chegam com
+# elapsed_seconds == 0, e um alpha que valha 1.0 nesse caso faz um salto
+# completo a cada um deles -- a suavizacao deixa de existir sem nada acusar.
+if ! grep -Fq 'if (elapsed_seconds <= 0.0f) {' \
+  "${project_dir}/src/scene/condition_smoother.hpp"; then
+  echo "O suavizador voltou a integrar sem tempo decorrido: acima de 64 fps \
+isso salta para a amostra do momento e a suavizacao some." >&2
+  exit 1
+fi
+if ! grep -Fq 'assert(smoother.median() > 40.0f);' \
+  "${project_dir}/tests/scene_conditions_test.cpp"; then
+  echo "O teste parou de exigir que a suavizacao independa do fps." >&2
+  exit 1
+fi
+
 scene_conditions_test="/tmp/photorealism-scene-conditions-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/tests/scene_conditions_test.cpp" \

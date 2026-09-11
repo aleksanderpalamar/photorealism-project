@@ -28,12 +28,20 @@ class ConditionSmoother {
             primed_ = true;
             return true;
         }
-        float alpha = 1.0f;
-        if (tau_seconds > 0.0f && elapsed_seconds > 0.0f) {
-            const float ratio = elapsed_seconds / tau_seconds;
-            alpha = ratio >= 1.0f ? 1.0f : ratio * (1.0f - 0.5f * ratio);
-            alpha = conditions_detail::clamp_unit(alpha);
+        if (tau_seconds <= 0.0f) {
+            median_ = features.median;
+            saturation_ = features.saturation;
+            return true;
         }
+        if (elapsed_seconds <= 0.0f) {
+            return true;
+        }
+
+        const float ratio = elapsed_seconds / tau_seconds;
+        const float alpha =
+            ratio >= 1.0f
+                ? 1.0f
+                : conditions_detail::clamp_unit(ratio * (1.0f - 0.5f * ratio));
         median_ += (features.median - median_) * alpha;
         saturation_ += (features.saturation - saturation_) * alpha;
         return true;

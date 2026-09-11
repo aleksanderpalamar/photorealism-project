@@ -1,5 +1,68 @@
 # Changelog
 
+## Pacote 0.19.13 - 2026-09-11
+
+**A suavizacao da adaptacao por condicao nunca funcionou acima de 64 fps.**
+Defeito da 0.19.0, encontrado no primeiro log de jogo dela.
+
+### O que o log mostrou
+
+Quatro amostras, noventa segundos, e o detector foi de `sol=1.000` para
+`noite=1.000` e de volta para `sol=0.846`. Com `tau=180s` isso e impossivel: a
+mediana suavizada foi de 52,5 para 2,5 em trinta segundos, quando deveria ter
+parado em 44,4.
+
+### A causa
+
+`GetTickCount64` tem resolucao de ~15,6 ms. Acima de 64 fps, boa parte dos
+quadros chega ao suavizador com `elapsed_seconds == 0`. O codigo era:
+
+```cpp
+float alpha = 1.0f;
+if (tau_seconds > 0.0f && elapsed_seconds > 0.0f) {
+    ...calcula o alpha pequeno...
+}
+```
+
+Sem tempo decorrido o `if` nao executava e **alpha ficava no inicializador,
+1.0** -- um salto completo para a amostra daquele quadro. Nao era suavizacao
+parcial: era nenhuma.
+
+Medido com a cadencia real de tiques do Windows, partindo de 52,5 e alimentando
+uma tela escura por 30 s:
+
+| fps | antes | depois | quadros com `elapsed=0` |
+| --- | --- | --- | --- |
+| 60 | 44,25 | 44,25 | 0 de 1800 |
+| 120 | **0,00** | **44,25** | 1677 de 3600 |
+| 200 | **0,00** | **44,25** | 4077 de 6000 |
+
+A 60 fps funcionava, e foi por isso que a reproducao das 386 amostras -- que usa
+passo de 30 s, nunca zero -- nao pegou nada.
+
+### A correcao
+
+Sem tempo decorrido, nada se move. `tau <= 0` continua significando "sem
+suavizacao" e salta, que era a intencao original do `tau_seconds > 0.0f`.
+
+`tests/scene_conditions_test.cpp` ganhou dois grupos: um varre 60, 120, 200 e
+500 fps com a cadencia de tiques real e exige o mesmo resultado nos quatro; o
+outro exige que mil chamadas com `elapsed = 0` nao movam nada. Verificado que
+ambos caem contra o codigo da 0.19.0.
+
+### Um erro de refatoracao no mesmo log
+
+A linha de conclusao da descoberta de depth saia como
+`scan.resource_evictions=0`. Foi a minha substituicao em massa da 0.19.10, que
+renomeou `resource_evictions` para `scan.resource_evictions` **dentro da string
+de formato** e nao so no codigo. Corrigido.
+
+### Esta versao muda a imagem
+
+Ao contrario das onze anteriores, esta nao e refatoracao. Com a suavizacao
+funcionando, a cor para de perseguir o quadro e passa a levar minutos para
+mudar -- que e o que a 0.19.0 pretendia desde o inicio.
+
 ## Pacote 0.19.12 - 2026-09-11
 
 `src/native_aa_config.cpp` virou `src/native_aa/`. Sem mudanca de
