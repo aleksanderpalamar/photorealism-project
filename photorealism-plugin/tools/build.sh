@@ -26,7 +26,12 @@ common_flags=(
   -Werror \
   -Wno-cast-function-type-mismatch \
   "${project_dir}/src/proxy.cpp" \
-  "${project_dir}/src/native_aa_config.cpp" \
+  "${project_dir}/src/native_aa/apply.cpp" \
+  "${project_dir}/src/native_aa/policy.cpp" \
+  "${project_dir}/src/native_aa/game_target.cpp" \
+  "${project_dir}/src/native_aa/config_file.cpp" \
+  "${project_dir}/src/native_aa/aa_log.cpp" \
+  "${project_dir}/src/native_aa/path_utils.cpp" \
   "${project_dir}/src/dinput8.def" \
   -o "${build_dir}/dinput8.dll" \
   -lole32 \

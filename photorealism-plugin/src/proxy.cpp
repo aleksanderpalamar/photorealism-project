@@ -5,7 +5,7 @@
 
 #include <cwchar>
 
-#include "native_aa_config.hpp"
+#include "native_aa/native_aa_config.hpp"
 
 namespace {
 HMODULE g_proxy_module = nullptr;

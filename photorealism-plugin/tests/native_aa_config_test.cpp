@@ -1,4 +1,4 @@
-#include "../src/native_aa_config_text.hpp"
+#include "../src/native_aa/config_text.hpp"
 
 #include <cassert>
 #include <string>

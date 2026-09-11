@@ -1,5 +1,79 @@
 # Changelog
 
+## Pacote 0.19.12 - 2026-09-11
+
+`src/native_aa_config.cpp` virou `src/native_aa/`. Sem mudanca de
+comportamento. Nenhum arquivo passa de 200 linhas.
+
+```
+src/native_aa/
+  apply.cpp          174  decidir e aplicar a politica
+  config_text.hpp    124  o parser do cfg (ja tinha teste proprio)
+  config_file.cpp    115  ler, escrever atomico e fazer backup
+  aa_log.cpp          85  o log separado do AA
+  game_target.cpp     73  qual jogo esta rodando e onde fica o config.cfg
+  policy.cpp          66  ler a politica do photorealism-plugin.cfg
+  aa_settings.hpp     37  a tabela dos quatro ajustes
+  path_utils.cpp      28  compor caminho com limite de tamanho
+```
+
+### Este arquivo era diferente dos outros
+
+Os anteriores tinham `if` encaixados. Este nao: era uma sequencia longa de
+retornos antecipados -- 26 `if`, **todos no nivel 1**. O problema era outro:
+**142 linhas numa funcao** e a mesma coisa escrita quatro vezes.
+
+Cada um dos quatro ajustes de AA -- `r_aa`, `r_taa_tuning`,
+`r_taa_luma_sharpen`, `r_taa_modulated_drr_strength` -- aparecia em quatro
+lugares: ler a politica, ler o detectado, comparar, aplicar. Doze ocorrencias
+literais das chaves no arquivo.
+
+Agora ha **uma tabela de quatro linhas** e quatro lacos:
+
+```cpp
+constexpr AaSetting kSettings[] = {
+    {"r_aa", "6"},
+    {"r_taa_tuning", "0"},
+    {"r_taa_luma_sharpen", "1.5"},
+    {"r_taa_modulated_drr_strength", "0.0"},
+};
+```
+
+As chaves passaram de doze ocorrencias para quatro -- uma por ajuste, na tabela.
+Um quinto ajuste passa a ser uma linha em vez de doze.
+
+### Um estado escondido que a separacao revelou
+
+A primeira versao de `game_target.cpp` guardava o diretorio de Documentos numa
+variavel global entre `identify_running_game` e `resolve_documents_config` --
+duas funcoes que so funcionavam se chamadas nessa ordem, sem nada dizendo isso.
+Foi corrigido antes de seguir: o diretorio vive no proprio `GameTarget`, que ja
+era passado entre as duas.
+
+### Duas guardas do `validate.sh` mudaram de forma
+
+`policy.aa.c_str()` e `policy.taa_sharpen.c_str()` fixavam **nomes de campo**
+que a tabela eliminou. Foram substituidas por uma unica:
+`policy.desired[index].c_str()`.
+
+A nova e mais estrita, e nao menos: as duas antigas cobriam dois dos quatro
+ajustes e podiam ser satisfeitas deixando os outros dois com valor fixo. A nova
+esta no unico ponto que escreve no `config.cfg` do jogo, e cobre os quatro.
+
+O conjunto de marcadores tambem passou a varrer **a pasta inteira** em vez de um
+arquivo so.
+
+### Verificacao
+
+Build e `validate.sh` verdes. Os onze testes passam. Cinco modulos verificados
+por quebra deliberada.
+
+As mensagens do arquivo antigo foram procuradas no DLL. Tres pareceram ausentes
+num primeiro passe e nao estavam: `\Euro Truck Simulator 2`,
+`\American Truck Simulator` e os nomes dos executaveis sao **wide strings**, e
+`strings` sem `-e l` nao le UTF-16. Conferidas com a codificacao certa, as cinco
+aparecem.
+
 ## Pacote 0.19.11 - 2026-09-10
 
 `src/steam_screenshots.cpp` virou `src/steam/`. Sem mudanca de comportamento.

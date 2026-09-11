@@ -852,7 +852,7 @@ if command -v glslangValidator >/dev/null 2>&1; then
     -o /tmp/photorealism-plugin-temporal.spv >/dev/null
 fi
 
-native_aa_source="${project_dir}/src/native_aa_config.cpp"
+native_aa_source="${project_dir}/src/native_aa"
 for native_aa_marker in \
   'eurotrucks2.exe' \
   'amtrucks.exe' \
@@ -861,12 +861,11 @@ for native_aa_marker in \
   'kNativeAaSection = "native_aa.0.12.2"' \
   'read_native_aa_policy' \
   'policy.manage' \
-  'policy.aa.c_str()' \
-  'policy.taa_sharpen.c_str()' \
+  'policy.desired[index].c_str()' \
   'plugin_config_value' \
   'nenhuma alteracao no ' \
   'politica=photorealism-plugin.cfg'; do
-  if ! grep -Fq "${native_aa_marker}" "${native_aa_source}"; then
+  if ! grep -rFq "${native_aa_marker}" "${native_aa_source}"; then
     echo "Gestao automatica AA nativo incompleta: ${native_aa_marker}" >&2
     exit 1
   fi
