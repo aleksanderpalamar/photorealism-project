@@ -2,7 +2,7 @@
 
 #include "../postprocess/postprocess.hpp"
 #include "../runtime.hpp"
-#include "../steam_screenshots.hpp"
+#include "../steam/steam_screenshots.hpp"
 #include "hook_audit.hpp"
 #include "hook_state.hpp"
 

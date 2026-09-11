@@ -1,4 +1,4 @@
-#include "../src/screenshot_request_gate.hpp"
+#include "../src/steam/request_gate.hpp"
 
 #include <cassert>
 

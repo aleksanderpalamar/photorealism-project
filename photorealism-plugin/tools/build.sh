@@ -63,7 +63,12 @@ common_flags=(
   "${project_dir}/src/postprocess/frame_constants.cpp" \
   "${project_dir}/src/postprocess/frame_log.cpp" \
   "${project_dir}/src/postprocess/frame_passes.cpp" \
-  "${project_dir}/src/steam_screenshots.cpp" \
+  "${project_dir}/src/steam/capture_pipeline.cpp" \
+  "${project_dir}/src/steam/integration.cpp" \
+  "${project_dir}/src/steam/capture_gate.cpp" \
+  "${project_dir}/src/steam/capture_slots.cpp" \
+  "${project_dir}/src/steam/conversion_worker.cpp" \
+  "${project_dir}/src/steam/steam_api.cpp" \
   "${project_dir}/src/config/loader.cpp" \
   "${project_dir}/src/config/defaults.cpp" \
   "${project_dir}/src/config/section_table.cpp" \

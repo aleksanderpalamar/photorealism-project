@@ -5,7 +5,7 @@
 #include "../runtime.hpp"
 
 #include "../scene/observer.hpp"
-#include "../steam_screenshots.hpp"
+#include "../steam/steam_screenshots.hpp"
 #include "com_utils.hpp"
 #include "condition_adapter.hpp"
 #include "device_state.hpp"

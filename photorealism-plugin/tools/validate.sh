@@ -111,12 +111,12 @@ done
 # A unica invariante necessaria aqui e que o modulo de captura nao passe a
 # disputar teclado com o Steam.
 if rg -n 'VK_|GetAsyncKeyState' \
-    "${project_dir}/src/steam_screenshots.cpp" >/dev/null; then
+    "${project_dir}/src/steam" >/dev/null; then
   echo "A captura Steam nao pode consultar teclado." >&2
   exit 1
 fi
 if rg -n 'void Run\(void\* parameter, bool, std::uint64_t\).*Run\(parameter\)' \
-    -U "${project_dir}/src/steam_screenshots.cpp" >/dev/null; then
+    -U "${project_dir}/src/steam/capture_gate.cpp" >/dev/null; then
   echo "Callback Steam call-result nao pode criar outra captura." >&2
   exit 1
 fi
@@ -127,7 +127,7 @@ for screenshot_gate_marker in \
   'g_requests.store(1u' \
   'g_capture_cycle_active.store(false'; do
   if ! grep -Fq "${screenshot_gate_marker}" \
-      "${project_dir}/src/steam_screenshots.cpp"; then
+      "${project_dir}/src/steam/capture_gate.cpp"; then
     echo "Token/deduplicacao de screenshot ausente: ${screenshot_gate_marker}" >&2
     exit 1
   fi

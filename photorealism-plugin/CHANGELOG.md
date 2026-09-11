@@ -1,5 +1,73 @@
 # Changelog
 
+## Pacote 0.19.11 - 2026-09-10
+
+`src/steam_screenshots.cpp` virou `src/steam/`. Sem mudanca de comportamento.
+Nenhum arquivo passa de 200 linhas.
+
+```
+src/steam/
+  capture_pipeline.cpp  195  o que acontece a cada frame apresentado
+  integration.cpp       182  ligar, desligar e devolver ao overlay nativo
+  capture_slots.cpp     125  os dois slots, staging e buffers
+  conversion_worker.cpp 113  a thread que converte BGRA em RGB
+  capture_gate.cpp       82  o callback da Steam e a deduplicacao
+  steam_api.cpp          78  resolver os exports do steam_api64.dll
+  capture_slots.hpp      75  CaptureLock e BlockingCaptureLock em RAII
+  steam_api.hpp          47  a ABI do CCallbackBase e os ponteiros
+```
+
+### O aninhamento sumiu
+
+| | antes | depois |
+| --- | --- | --- |
+| maior funcao | 114 linhas | **38** |
+| `if`/`for` no nivel 4 | 3 | **0** |
+| `if`/`for` no nivel 3 | 7 | **0** |
+| `Acquire`/`Release` soltos | 9 | **0** |
+
+`observe_postprocessed_frame` tinha 114 linhas e quatro niveis de encaixe: um
+`if` de contexto, dentro dele um laco, dentro dele um `if` de pedido, dentro
+dele o `GetBuffer`. Virou seis funcoes com nome -- `write_ready_slots`,
+`drain_finished_readbacks`, `submit_requested_capture`, `context_is_needed` --
+e o corpo lê a sequencia de cima para baixo.
+
+### Tres travas soltas a mao, e o mesmo risco do observador
+
+O `SRWLOCK` era solto em **quatro caminhos de retorno diferentes** dentro da
+mesma funcao, incluindo dois que chamavam `return_to_native_capture` logo
+depois. `CaptureLock` e `BlockingCaptureLock` fecham isso pelo destrutor.
+
+O `release()` explicito continua existindo, e continua sendo chamado nos mesmos
+dois pontos: **antes** de devolver o controle ao overlay nativo. Nao e
+descuido -- `return_to_native_capture` chama `shutdown_steam_screenshots`, que
+toma a mesma trava. Manter a trava ali daria deadlock.
+
+`GetDevice`/`GetImmediateContext` e `GetBuffer` tambem viraram RAII
+(`FrameDevice`, `BackBuffer`), o que eliminou os quatro `release()` manuais do
+caminho de erro.
+
+### A ABI da Steam saiu para um header
+
+`CCallbackBase` e os sete ponteiros de funcao viraram `steam_api.hpp`, e a
+resolucao dos exports virou `load_screenshots_api`, que devolve um enum de tres
+estados em vez de um `bool` mais seis comparacoes repetidas. O `static_assert`
+de 16 bytes foi junto, e foi **verificado que ele ainda morde**: mudar o
+`padding` do `CallbackBase` para 7 bytes quebra o build.
+
+### Verificacao
+
+Build e `validate.sh` verdes. Os onze testes passam. Cinco modulos verificados
+por quebra deliberada. Todas as mensagens de log com formato do arquivo antigo
+foram procuradas no DLL construido; a unica que nao aparece e a do
+`static_assert`, que e texto de compilacao e nunca esteve no binario.
+
+Tres guardas do `validate.sh` mudaram de alvo. A que proibe o modulo de
+consultar teclado -- `VK_` ou `GetAsyncKeyState` -- passou a varrer **a pasta
+inteira** em vez de um arquivo so, e com isso ficou mais estrita do que era: a
+captura e delegada ao Steam por API, e nenhum dos seis arquivos novos pode
+disputar o F12.
+
 ## Pacote 0.19.10 - 2026-09-10
 
 `src/resource_observer.cpp` -- 882 linhas, o maior arquivo do projeto -- virou
