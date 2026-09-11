@@ -5,3 +5,4 @@ EXPORTS
     CreateDXGIFactory2 @3
     photorealism_menu_capturing @4
     photorealism_log_line @5
+    photorealism_menu_mouse @6

@@ -1,14 +1,10 @@
-#define DIRECTINPUT_VERSION 0x0800
-
 #include "input_gate.hpp"
 
 #include "../hooks/vtable_patch.hpp"
 #include "menu_gate.hpp"
-
-#include <dinput.h>
+#include "mouse_report.hpp"
 
 #include <atomic>
-#include <cstring>
 
 namespace photorealism {
 namespace dinput {
@@ -30,28 +26,37 @@ std::atomic<CreateDeviceFunction> g_original_create_device{nullptr};
 std::atomic<GetDeviceStateFunction> g_original_get_device_state{nullptr};
 std::atomic<GetDeviceDataFunction> g_original_get_device_data{nullptr};
 std::atomic<void*> g_gated[kMaximumGatedDevices] = {};
+std::atomic<void*> g_mice[kMaximumGatedDevices] = {};
 
 void** vtable_entry(void* object, unsigned slot) {
     void** vtable = *reinterpret_cast<void***>(object);
     return &vtable[slot];
 }
 
-bool is_gated(void* device) {
-    for (std::atomic<void*>& slot : g_gated) {
-        if (slot.load(std::memory_order_acquire) == device) {
+bool holds(std::atomic<void*>* table, void* device) {
+    for (unsigned index = 0; index < kMaximumGatedDevices; ++index) {
+        if (table[index].load(std::memory_order_acquire) == device) {
             return true;
         }
     }
     return false;
 }
 
-void remember(void* device) {
-    for (std::atomic<void*>& slot : g_gated) {
+void remember(std::atomic<void*>* table, void* device) {
+    for (unsigned index = 0; index < kMaximumGatedDevices; ++index) {
         void* empty = nullptr;
-        if (slot.compare_exchange_strong(empty, device)) {
+        if (table[index].compare_exchange_strong(empty, device)) {
             return;
         }
     }
+}
+
+bool is_gated(void* device) {
+    return holds(g_gated, device);
+}
+
+bool is_mouse(void* device) {
+    return holds(g_mice, device);
 }
 
 bool wants_gating(IDirectInputDevice8W* device, DWORD* type_out) {
@@ -76,9 +81,13 @@ HRESULT STDMETHODCALLTYPE hooked_get_device_state(
     if (FAILED(result) || data == nullptr) {
         return result;
     }
-    if (is_gated(device) && menu_is_capturing()) {
-        std::memset(data, 0, size);
+    if (!is_gated(device) || !menu_is_capturing()) {
+        return result;
     }
+    if (is_mouse(device) && axes_are_relative(device)) {
+        report_state(data, size);
+    }
+    clear_state(data, size);
     return result;
 }
 
@@ -97,9 +106,13 @@ HRESULT STDMETHODCALLTYPE hooked_get_device_data(
     if (FAILED(result) || count == nullptr) {
         return result;
     }
-    if (is_gated(device) && menu_is_capturing()) {
-        *count = 0;
+    if (!is_gated(device) || !menu_is_capturing()) {
+        return result;
     }
+    if (is_mouse(device) && axes_are_relative(device)) {
+        report_data(data, *count);
+    }
+    *count = 0;
     return result;
 }
 
@@ -134,7 +147,10 @@ HRESULT STDMETHODCALLTYPE hooked_create_device(
         gate_log("DirectInput criou um dispositivo tipo %lu, sem porteira.", type);
         return result;
     }
-    remember(*device);
+    remember(g_gated, *device);
+    if (type == DI8DEVTYPE_MOUSE) {
+        remember(g_mice, *device);
+    }
     patch_device(*device);
     gate_log(
         "DirectInput criou %s do jogo; o menu passa a silencia-lo quando aberto.",

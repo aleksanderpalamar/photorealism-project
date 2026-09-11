@@ -27,6 +27,7 @@ common_flags=(
   -Wno-cast-function-type-mismatch \
   "${project_dir}/src/proxy.cpp" \
   "${project_dir}/src/dinput/input_gate.cpp" \
+  "${project_dir}/src/dinput/mouse_report.cpp" \
   "${project_dir}/src/dinput/menu_gate.cpp" \
   "${project_dir}/src/hooks/vtable_patch.cpp" \
   "${project_dir}/src/native_aa/apply.cpp" \
@@ -119,6 +120,7 @@ common_flags=(
   "${project_dir}/src/overlay/renderer_buffers.cpp" \
   "${project_dir}/src/overlay/overlay.cpp" \
   "${project_dir}/src/overlay/raw_input.cpp" \
+  "${project_dir}/src/overlay/pointer_feed.cpp" \
   "${project_dir}/src/overlay/menu_export.cpp" \
   "${project_dir}/src/runtime.cpp" \
   "${project_dir}/src/dxgi.def" \

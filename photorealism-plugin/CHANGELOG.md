@@ -1,5 +1,52 @@
 # Changelog
 
+## Pacote 0.20.3 - 2026-09-11
+
+**A camera parou de girar, mas a seta do menu travava no centro da tela. A
+causa e a mesma coisa que consertou a camera.**
+
+O DirectInput em modo relativo funciona porque alguem reposiciona o cursor do
+sistema no centro da janela a cada quadro -- e assim que o driver mede
+deslocamento sem o cursor bater na borda da tela. O menu lia a posicao com
+`GetCursorPos`, entao lia o centro, quadro apos quadro.
+
+### Posicao nao serve; delta serve
+
+O menu deixou de perguntar **onde** o cursor esta e passou a somar **quanto ele
+andou**. O ponteiro e nosso, comeca no centro da tela quando o menu abre, anda
+pelos deltas e nao sai da tela.
+
+E os deltas ja passavam pelas nossas maos: sao o mesmo buffer que a porteira da
+0.20.2 zera para o jogo. Agora ele e lido **antes** de ser zerado, nos dois
+ganchos -- `GetDeviceState`, para quem le estado, e `GetDeviceData`, para quem
+le buffer. Os dois somam no mesmo ponteiro, mas a primeira fonte que aparecer
+trava as outras: contar as duas dobraria a velocidade da seta.
+
+Essa ordem nao aparece em teste nenhum e um dia alguem inverte as duas linhas,
+entao ha guarda comparando as posicoes **dentro de cada gancho**. Escrita
+comparando o arquivo inteiro primeiro, ela acusou codigo saudavel: os dois
+ganchos moram no mesmo arquivo e a comparacao cruzava funcoes diferentes.
+
+### Um chute a menos
+
+Acumular delta so vale se o eixo estiver em modo relativo. Em modo absoluto
+`lX` e `lY` sao posicao, e somar daria uma seta fugindo pela tela.
+
+Em vez de supor, a porteira **pergunta**: `GetProperty(DIPROP_AXISMODE)` na
+primeira leitura, que e quando o jogo ja configurou o dispositivo. Se vier
+absoluto, o menu volta sozinho para a posicao do cursor do sistema, que e o
+caminho certo nesse caso. O log diz qual dos dois.
+
+O mesmo vale se nao houver DirectInput nenhum: sem delta nunca chegando, o menu
+usa `GetCursorPos` como antes.
+
+### Testes
+
+`overlay_pointer_feed_test`, sete casos: a seta comeca no centro, os deltas
+somam em vez de substituir, ela nunca sai da tela, o botao devolve borda e nao
+so nivel, a roda volta em entalhes, a primeira fonte trava as outras, e um
+alimentador sem dado nenhum se declara inativo.
+
 ## Pacote 0.20.2 - 2026-09-11
 
 **O mouse continuava girando a camera com o menu aberto. Faltava fechar os dois

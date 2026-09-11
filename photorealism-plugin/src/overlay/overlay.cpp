@@ -6,6 +6,7 @@
 #include "font_bitmap.hpp"
 #include "input.hpp"
 #include "persistence.hpp"
+#include "pointer_feed.hpp"
 #include "theme.hpp"
 
 namespace photorealism {
@@ -158,7 +159,9 @@ void Menu::render(
     UiContext ui;
     ui.list = &list_;
     ui.font = &view_;
-    ui.pointer = input_hook().poll();
+    ui.pointer = pointer_feed().active()
+                     ? pointer_feed().consume(width, height)
+                     : input_hook().poll();
     ui.active = active_;
 
     const MenuFrame frame = frame_for(width, height);

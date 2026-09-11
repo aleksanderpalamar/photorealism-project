@@ -1,6 +1,7 @@
 #include "input.hpp"
 
 #include "../runtime.hpp"
+#include "pointer_feed.hpp"
 #include "raw_input.hpp"
 
 namespace photorealism {
@@ -96,6 +97,7 @@ void InputHook::set_capturing(bool capturing) {
         return;
     }
     if (capturing) {
+        pointer_feed().reset();
         raw_input_block().suspend();
     } else {
         raw_input_block().restore();

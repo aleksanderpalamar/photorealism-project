@@ -11,6 +11,7 @@ namespace {
 
 using CapturingFunction = int (*)();
 using LogFunction = void (*)(const char*);
+using MouseFunction = void (*)(int, LONG, LONG, LONG, int);
 
 template <typename Function>
 Function resolve(std::atomic<Function>* cache, const char* name) {
@@ -32,6 +33,7 @@ Function resolve(std::atomic<Function>* cache, const char* name) {
 
 std::atomic<CapturingFunction> g_capturing{nullptr};
 std::atomic<LogFunction> g_log{nullptr};
+std::atomic<MouseFunction> g_mouse{nullptr};
 
 }
 
@@ -52,6 +54,14 @@ void gate_log(const char* format, ...) {
     std::vsnprintf(line, sizeof(line), format, arguments);
     va_end(arguments);
     sink(line);
+}
+
+void forward_mouse(int source, LONG dx, LONG dy, LONG wheel, int buttons) {
+    MouseFunction sink = resolve(&g_mouse, "photorealism_menu_mouse");
+    if (sink == nullptr) {
+        return;
+    }
+    sink(source, dx, dy, wheel, buttons);
 }
 
 }

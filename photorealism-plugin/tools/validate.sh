@@ -1159,6 +1159,54 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   -o "${menu_roundtrip_test}"
 "${menu_roundtrip_test}"
 
+# O ponteiro do menu anda por DELTA, nao por posicao. O jogo recentraliza o
+# cursor do sistema a cada quadro para o DirectInput funcionar em modo
+# relativo, entao ler GetCursorPos devolve o centro da tela sempre.
+overlay_pointer_feed_test="/tmp/photorealism-overlay-pointer-feed-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  -I"${project_dir}/tests/support" \
+  "${project_dir}/tests/overlay_pointer_feed_test.cpp" \
+  -o "${overlay_pointer_feed_test}"
+"${overlay_pointer_feed_test}"
+
+# A ordem importa e nao aparece em teste nenhum: o delta tem que ser lido ANTES
+# de o buffer do DirectInput ser apagado para o jogo. Invertido, o menu zera o
+# proprio movimento e o ponteiro fica parado. A comparacao e DENTRO de cada
+# gancho -- os dois ficam no mesmo arquivo e comparar o arquivo inteiro compara
+# funcoes diferentes.
+gate_state_body="$(awk '/^HRESULT STDMETHODCALLTYPE hooked_get_device_state/,/^}/' \
+  "${project_dir}/src/dinput/input_gate.cpp")"
+gate_data_body="$(awk '/^HRESULT STDMETHODCALLTYPE hooked_get_device_data/,/^}/' \
+  "${project_dir}/src/dinput/input_gate.cpp")"
+
+state_read="$(grep -n 'report_state(' <<<"${gate_state_body}" | head -1 | cut -d: -f1)"
+state_clear="$(grep -n 'clear_state(' <<<"${gate_state_body}" | head -1 | cut -d: -f1)"
+data_read="$(grep -n 'report_data(' <<<"${gate_data_body}" | head -1 | cut -d: -f1)"
+data_clear="$(grep -n '\*count = 0' <<<"${gate_data_body}" | head -1 | cut -d: -f1)"
+
+if [[ -z "${state_read}" || -z "${data_read}" ]]; then
+  echo "A porteira parou de ler o mouse antes de silencia-lo: o ponteiro do \
+menu fica parado no meio da tela." >&2
+  exit 1
+fi
+if [[ -z "${state_clear}" || -z "${data_clear}" ]]; then
+  echo "A porteira parou de silenciar o mouse para o jogo: a camera volta a \
+girar com o menu aberto." >&2
+  exit 1
+fi
+if [[ "${state_read}" -gt "${state_clear}" || "${data_read}" -gt "${data_clear}" ]]; then
+  echo "A porteira apaga o buffer do DirectInput antes de ler o delta: o menu \
+zera o proprio movimento e o ponteiro nao anda." >&2
+  exit 1
+fi
+
+# E o menu tem que preferir esse delta a posicao do cursor do sistema.
+if ! grep -Fq 'pointer_feed().active()' "${project_dir}/src/overlay/overlay.cpp"; then
+  echo "O menu voltou a usar so a posicao do cursor do sistema: com o jogo \
+recentralizando o cursor, a seta trava no meio da tela." >&2
+  exit 1
+fi
+
 overlay_bindings_test="/tmp/photorealism-overlay-bindings-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
   -I"${project_dir}/tests/support" -I"${project_dir}/src" \

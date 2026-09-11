@@ -479,13 +479,15 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   medir depois: a chuva foi confirmada pelo usuario mas neblina, neve e
   tunel nao aparecem em nenhum bloco sustentado, entao a adaptacao os trata
   como interpolacao entre as tres que existem em vez de ancoras proprias;
-- **0.20.2 (entregue)** menu in-game no Ctrl+P: 64 controles em quatro
+- **0.20.3 (entregue)** menu in-game no Ctrl+P: 64 controles em quatro
   paginas, ao vivo, com gravacao no `.cfg`. Os 17 campos de cor vao para uma
   quarta camada, `[module.user.0.20.0]`, somada por ultimo, com o menu gravando
   so a diferenca -- as tres camadas medidas ficam intocaveis. O mouse e tirado
   do jogo por dois caminhos: porteira de vtable no DirectInput, pelo proprio
   `dinput8.dll`, e remocao do registro de entrada bruta enquanto o menu estiver
-  aberto;
+  aberto. A seta do menu anda por delta lido dessa mesma porteira, porque o
+  cursor do sistema fica recentralizado enquanto o DirectInput estiver em modo
+  relativo;
 - **0.21.0** raios de sol. E o efeito que as referencias realmente
   mostram, e que a medicao do bloom revelou: estriados radiais saindo do sol
   atras da linha de arvores, projetados no teto escuro da cabine. Sao
