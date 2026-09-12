@@ -27,10 +27,10 @@ std::atomic<GetBufferFunction> g_original_get_buffer{nullptr};
 std::atomic<GetDescFunction> g_original_get_desc{nullptr};
 std::atomic<GetDesc1Function> g_original_get_desc1{nullptr};
 
-ID3D11Texture2D* proxy_for(IDXGISwapChain* swap_chain) {
+ID3D11Texture2D* proxy_for_game(IDXGISwapChain* swap_chain) {
     const GetBufferFunction original =
         g_original_get_buffer.load(std::memory_order_acquire);
-    if (original == nullptr || !fsr::upscaler().wants_proxy()) {
+    if (original == nullptr) {
         return nullptr;
     }
 
@@ -51,7 +51,8 @@ ID3D11Texture2D* proxy_for(IDXGISwapChain* swap_chain) {
         return nullptr;
     }
 
-    ID3D11Texture2D* proxy = fsr::upscaler().ensure_proxy(device, description);
+    ID3D11Texture2D* proxy =
+        fsr::upscaler().acquire_for_game(device, description);
     device->Release();
     return proxy;
 }
@@ -70,7 +71,9 @@ HRESULT STDMETHODCALLTYPE hooked_get_buffer(
         fsr::telemetry().record_game_acquire();
     }
 
-    ID3D11Texture2D* proxy = proxy_for(swap_chain);
+    ID3D11Texture2D* proxy = is_processing_frame()
+                                 ? fsr::upscaler().proxy_for_plugin()
+                                 : proxy_for_game(swap_chain);
     if (proxy == nullptr) {
         return original(swap_chain, index, interface_id, surface);
     }
@@ -94,7 +97,7 @@ HRESULT STDMETHODCALLTYPE hooked_get_desc(
         return result;
     }
     const fsr::RenderExtent& extent = fsr::upscaler().extent();
-    if (!fsr::upscaler().wants_proxy() || extent.width == 0) {
+    if (!fsr::upscaler().game_holds_proxy() || extent.width == 0) {
         return result;
     }
     description->BufferDesc.Width = extent.width;
@@ -114,7 +117,7 @@ HRESULT STDMETHODCALLTYPE hooked_get_desc1(
         return result;
     }
     const fsr::RenderExtent& extent = fsr::upscaler().extent();
-    if (!fsr::upscaler().wants_proxy() || extent.width == 0) {
+    if (!fsr::upscaler().game_holds_proxy() || extent.width == 0) {
         return result;
     }
     description->Width = extent.width;

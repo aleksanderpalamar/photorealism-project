@@ -181,7 +181,6 @@ public:
         load_settings(&settings_);
         apply_scene_observer_settings();
         fsr::upscaler().configure(settings_);
-        fsr::upscaler().apply_requested();
         overlay::menu().bind(&settings_, this);
         if (!initialize_pipeline()) {
             return false;
@@ -563,7 +562,7 @@ public:
         if (swap_chain == nullptr || resize_in_progress_) {
             return;
         }
-        if (!fsr::upscaler().wants_proxy()) {
+        if (!fsr::upscaler().game_holds_proxy()) {
             return;
         }
         if (!ensure_device_for(swap_chain)) {
@@ -653,7 +652,6 @@ public:
             resize_in_progress_ = false;
         }
         fsr::upscaler().release();
-        fsr::upscaler().apply_requested();
         log_message(
             "ResizeBuffers concluido: swap_chain=%p result=0x%08X.",
             static_cast<void*>(swap_chain),

@@ -11,18 +11,16 @@ namespace fsr {
 class Upscaler {
   public:
     void configure(const Settings& settings);
-    void apply_requested();
     void release();
 
-    bool wants_proxy() const { return enabled_; }
-    bool pending() const {
-        return enabled_ != requested_enabled_ || scale_ != requested_scale_;
-    }
+    bool wants_proxy() const { return enabled_ || game_holds_proxy_; }
+    bool game_holds_proxy() const { return game_holds_proxy_; }
     const RenderExtent& extent() const { return extent_; }
     ID3D11ShaderResourceView* source() const { return proxy_.view(); }
 
-    ID3D11Texture2D* ensure_proxy(
+    ID3D11Texture2D* acquire_for_game(
         ID3D11Device* device, const D3D11_TEXTURE2D_DESC& back_buffer);
+    ID3D11Texture2D* proxy_for_plugin() const;
 
     bool present(
         ID3D11Device* device,
@@ -36,10 +34,9 @@ class Upscaler {
     UpscalePipeline pipeline_;
     RenderExtent extent_;
     bool enabled_ = false;
+    bool game_holds_proxy_ = false;
     float scale_ = 1.0f;
     float sharpness_ = 0.0f;
-    bool requested_enabled_ = false;
-    float requested_scale_ = 1.0f;
 };
 
 Upscaler& upscaler();

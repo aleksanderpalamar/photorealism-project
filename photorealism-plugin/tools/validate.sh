@@ -1219,6 +1219,35 @@ g++ -std=c++20 -Wall -Wextra -Werror \
 # A escala interna e a unica parte do FSR que roda fora da GPU, e a que decide
 # se o upscale vale a pena. 1920x1080 a 0.6667 tem que dar 1280x720 exatos --
 # a milestone do plano -- e todo lado tem que cair num multiplo do grupo 8x8.
+# O invariante que impede lixo na tela: o upscale e a entrega da textura ao
+# PLUGIN seguem quem de fato SEGURA a textura (game_holds_proxy), nunca o que
+# foi PEDIDO (enabled). Ligar o FSR no meio da sessao nao pode fazer o plugin
+# graduar e reconstruir uma textura interna vazia enquanto o jogo ainda desenha
+# no backbuffer real -- o jogo so troca de alvo quando pede o backbuffer de
+# novo, e ate la nada muda.
+upscaler_present_body="$(awk '/^bool Upscaler::present/,/^}/' \
+  "${project_dir}/src/fsr/upscaler.cpp")"
+if ! grep -Fq 'game_holds_proxy_' <<<"${upscaler_present_body}"; then
+  echo "Upscaler::present deixou de seguir game_holds_proxy: ligar o FSR no \
+meio da sessao passaria a reconstruir uma textura interna vazia por cima do \
+quadro do jogo." >&2
+  exit 1
+fi
+upscaler_plugin_body="$(awk '/^ID3D11Texture2D\* Upscaler::proxy_for_plugin/,/^}/' \
+  "${project_dir}/src/fsr/upscaler.cpp")"
+if ! grep -Fq 'game_holds_proxy_' <<<"${upscaler_plugin_body}"; then
+  echo "proxy_for_plugin deixou de seguir game_holds_proxy: o grade passaria a \
+rodar na textura interna enquanto o jogo desenha no backbuffer real, e a tela \
+sairia sem coloracao." >&2
+  exit 1
+fi
+upscale_frame_body="$(awk '/^    void upscale_frame/,/^    }/' \
+  "${project_dir}/src/postprocess/postprocessor.cpp")"
+if ! grep -Fq 'game_holds_proxy()' <<<"${upscale_frame_body}"; then
+  echo "upscale_frame deixou de seguir game_holds_proxy." >&2
+  exit 1
+fi
+
 # Mexer num ajuste no menu tem que chegar a quem usa esse ajuste. Na 0.21.0 o
 # menu avisava o host so para os campos do observador de cena, entao ligar o
 # FSR pelo menu gravava no cfg e nao chegava ao modulo -- o log ficava sem uma

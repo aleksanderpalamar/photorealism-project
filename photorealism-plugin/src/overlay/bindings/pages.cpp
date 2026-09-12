@@ -9,7 +9,7 @@ const SettingPage kPages[] = {
     {"Render", "Renderizacao e iluminacao", kRenderBindings,
      kRenderBindingCount},
     {"Clima", "Clima e condicao", kConditionBindings, kConditionBindingCount},
-    {"FSR", "Upscale FSR -- ligar so vale ao trocar a resolucao ou reiniciar",
+    {"FSR", "Upscale FSR -- vale quando o jogo pegar o backbuffer de novo",
      kUpscaleBindings, kUpscaleBindingCount},
     {"Cena", "Observador e profundidade", kObserverBindings,
      kObserverBindingCount},

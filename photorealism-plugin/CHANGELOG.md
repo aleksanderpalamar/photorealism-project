@@ -1,5 +1,50 @@
 # Changelog
 
+## Pacote 0.21.2 - 2026-09-12
+
+**O menu liga e desliga o FSR ao vivo.** A trava da 0.21.1, que so deixava valer
+num `ResizeBuffers`, saiu -- ela protegia contra um perigo real pelo jeito
+errado.
+
+### O perigo, e o jeito certo de evitar
+
+Ligar no meio da sessao nao pode reconstruir uma textura interna vazia por cima
+do quadro, porque o jogo continua desenhando na textura que **ja pegou**. Eu
+tratei isso adivinhando o momento -- so no `ResizeBuffers` -- em vez de
+**esperar o fato**.
+
+Agora o modulo nao adivinha: ele registra quando o jogo pega a textura interna.
+
+- o jogo pede o backbuffer e o FSR esta ligado -> recebe a textura interna, e o
+  modulo marca que o jogo passou a segura-la;
+- o jogo pede e o FSR esta desligado -> recebe o backbuffer real, e a marca cai;
+- **o upscale e o grade em 720p so acontecem enquanto essa marca estiver de
+  pe.**
+
+Enquanto o jogo nao pedir de novo, ligar no menu nao muda nada na tela -- nem
+para melhor nem para pior. Quando ele pedir, engata sozinho. E desligar continua
+seguro: o modulo segue reconstruindo o que o jogo ainda desenha na textura
+interna, ate ele voltar a pegar o backbuffer real.
+
+Vale para a escala tambem: mudar a escala so recria a textura no momento em que
+o jogo pede, nunca por baixo dele.
+
+Tres guardas novas prendem o invariante, uma por caminho: `Upscaler::present`,
+`proxy_for_plugin` e `upscale_frame` tem que seguir quem **segura** a textura,
+nunca o que foi **pedido**. Trocar qualquer uma por `enabled` derruba o
+validate.
+
+### O que isso muda na pratica
+
+Instalar o pacote devolve o cfg ao padrao `enabled=false`, entao ligar pelo menu
+e o caminho natural -- e agora ele funciona. Continua sendo verdade que o efeito
+aparece quando o ETS2 pedir o backbuffer de novo; a diferenca e que o modulo
+nao exige mais que isso seja um `ResizeBuffers`, e nao faz nada de errado
+enquanto espera.
+
+O contador `aquisicoes_do_jogo` continua no log e agora responde a pergunta que
+importa: se ele crescer depois de voce ligar no menu, o FSR engatou.
+
 ## Pacote 0.21.1 - 2026-09-12
 
 **Ligar o FSR pelo menu gravava no cfg e nao chegava ao modulo.** O primeiro log
