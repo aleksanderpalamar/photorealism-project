@@ -1,6 +1,8 @@
 #include "postprocess.hpp"
 
 #include "../config/config.hpp"
+#include "../fsr/upscaler.hpp"
+#include "../hooks/back_buffer_proxy.hpp"
 #include "../overlay/overlay.hpp"
 #include "../resource_observer/resource_observer.hpp"
 #include "../runtime.hpp"
@@ -117,6 +119,7 @@ public:
     void reload_configuration() {
         load_settings(&settings_);
         apply_scene_observer_settings();
+        fsr::upscaler().configure(settings_);
         if (device_ != nullptr) {
             recompile_shaders();
         }
@@ -172,6 +175,8 @@ public:
         device_->GetImmediateContext(&context_);
         load_settings(&settings_);
         apply_scene_observer_settings();
+        fsr::upscaler().configure(settings_);
+        fsr::upscaler().apply_requested();
         overlay::menu().bind(&settings_, this);
         if (!initialize_pipeline()) {
             return false;
@@ -542,15 +547,40 @@ public:
 
     bool acquire_overlay_target(
         IDXGISwapChain* swap_chain, FrameTargets* targets) {
-        const HRESULT result = swap_chain->GetBuffer(
-            0,
-            IID_ID3D11Texture2D,
-            reinterpret_cast<void**>(&targets->back_buffer));
-        if (FAILED(result) || targets->back_buffer == nullptr) {
+        if (!present_back_buffer(swap_chain, &targets->back_buffer)) {
             return false;
         }
         targets->back_buffer->GetDesc(&targets->description);
         return create_output_view(targets);
+    }
+
+    void upscale_frame(IDXGISwapChain* swap_chain) {
+        if (swap_chain == nullptr || resize_in_progress_) {
+            return;
+        }
+        if (!fsr::upscaler().wants_proxy()) {
+            return;
+        }
+        if (!ensure_device_for(swap_chain)) {
+            return;
+        }
+
+        FrameTargets targets = {};
+        if (!acquire_overlay_target(swap_chain, &targets)) {
+            release_frame_targets(&targets);
+            return;
+        }
+
+        SavedState state = {};
+        capture_state(context_, &state);
+        fsr::upscaler().present(
+            device_,
+            context_,
+            targets.output,
+            targets.description.Width,
+            targets.description.Height);
+        restore_state(context_, &state);
+        release_frame_targets(&targets);
     }
 
     void draw_overlay(IDXGISwapChain* swap_chain) {
@@ -617,6 +647,8 @@ public:
         if (active_swap_chain_ == swap_chain) {
             resize_in_progress_ = false;
         }
+        fsr::upscaler().release();
+        fsr::upscaler().apply_requested();
         log_message(
             "ResizeBuffers concluido: swap_chain=%p result=0x%08X.",
             static_cast<void*>(swap_chain),
@@ -835,6 +867,14 @@ void process_frame(IDXGISwapChain* swap_chain) {
         return;
     }
     g_post_processor.render(swap_chain);
+}
+
+void upscale_present_frame(IDXGISwapChain* swap_chain) {
+    ProcessorScope scope;
+    if (!scope.entered()) {
+        return;
+    }
+    g_post_processor.upscale_frame(swap_chain);
 }
 
 void draw_overlay_frame(IDXGISwapChain* swap_chain) {

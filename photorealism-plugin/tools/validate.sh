@@ -151,9 +151,34 @@ for steam_screenshot_message in \
   fi
 done
 
-if ! rg -n 'process_frame\(swap_chain\);[[:space:]]*observe_postprocessed_frame\(swap_chain\);' \
-    -U "${project_dir}/src/hooks/swap_chain_hooks.cpp" >/dev/null; then
-  echo "Fronteira pos-processada ausente depois de todos os passes visuais." >&2
+# A captura do Steam vem DEPOIS de todos os passes visuais e ANTES do menu: o
+# screenshot tem que sair com a imagem final do plugin e sem a janela do menu
+# em cima. Na 0.21.0 o upscale entrou entre o grade e a captura -- e mais um
+# passe visual, entao a captura continua sendo a ultima coisa antes do menu.
+present_order="$(rg -N -U -o \
+  'process_frame\(swap_chain\);[\s\S]*?draw_overlay_frame\(swap_chain\);' \
+  "${project_dir}/src/hooks/swap_chain_hooks.cpp" | head -20)"
+for present_step in \
+  'process_frame(swap_chain);' \
+  'upscale_present_frame(swap_chain);' \
+  'observe_postprocessed_frame(swap_chain);' \
+  'draw_overlay_frame(swap_chain);'; do
+  if ! grep -Fq "${present_step}" <<<"${present_order}"; then
+    echo "Passe ausente da sequencia do Present: ${present_step}." >&2
+    exit 1
+  fi
+done
+upscale_line="$(grep -n 'upscale_present_frame' <<<"${present_order}" | head -1 | cut -d: -f1)"
+capture_line="$(grep -n 'observe_postprocessed_frame' <<<"${present_order}" | head -1 | cut -d: -f1)"
+overlay_line="$(grep -n 'draw_overlay_frame' <<<"${present_order}" | head -1 | cut -d: -f1)"
+if [[ "${upscale_line}" -gt "${capture_line}" ]]; then
+  echo "O upscale passou para depois da captura do Steam: o screenshot sairia \
+na resolucao interna, sem a reconstrucao." >&2
+  exit 1
+fi
+if [[ "${capture_line}" -gt "${overlay_line}" ]]; then
+  echo "A captura do Steam passou para depois do menu: o screenshot sairia com \
+a janela do menu em cima." >&2
   exit 1
 fi
 
@@ -803,7 +828,9 @@ effective_profile="$(awk -F= '
     if (key == "enabled") next
     if (section == "[base.0.1.2]") {
       total[key]=value + 0
-    } else if (section ~ /^\[module\./) {
+    } else if (section == "[module.visual.0.2.0]" ||
+               section == "[module.rain_overcast.0.3.0]" ||
+               section == "[module.user.0.20.0]") {
       sub(/_delta$/, "", key)
       total[key]+=value + 0
     }
@@ -828,12 +855,17 @@ effective_profile="$(awk -F= '
 # que importa. Uma guarda que explica uma regressao sutil so serve se for ela
 # a falar. Nesta ordem o hash continua pegando tudo que as guardas nao
 # cobrem, e so isso.
-expected_cfg_sha256="64f968a89ca6ed633b4678b835024e12c473e067645ef1b599be84ee869ee799"
+expected_cfg_sha256="0fb4554fae47b772d0d9ca5b844c5b1220e311451f5b7355e28a44109b805b99"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
   exit 1
 fi
+# As camadas somadas sao nomeadas uma a uma de proposito. Ate a 0.21.0 este awk
+# somava qualquer chave de qualquer secao [module.*], e passava porque nenhuma
+# chave de modulo tinha nome de campo de cor. O `sharpness` do FSR foi o
+# primeiro a colidir: 0.35 do RCAS entrava na nitidez do grade e o perfil
+# acusava 0.550 onde o medido e 0.200.
 # 0.14.0: blacks cumulativo saiu de -0.060 para 0.000 -- somado, empurrava os
 # pretos para baixo contra o alvo, e o piso passou a ser black_lift. Os tres
 # ultimos campos sao a curva de tom, e entraram no perfil justamente para que
@@ -951,23 +983,31 @@ Down existiam so para o RTGI." >&2
   fi
 done
 
-# O FSR saiu inteiro na 0.15.0: 5.833 linhas, um DLL e oito hooks de vtable que
-# existiam so para alimenta-lo, custando uma indirecao em toda chamada de
-# desenho do jogo. Uma remocao sem guarda volta sozinha na primeira vez que
-# alguem colar um trecho antigo, e o modulo nunca substituiu um draw sequer.
-# 'easu' e 'rcas' ficam FORA do padrao de propósito: casam com "measure" e
-# derrubariam grade_report.py. E este proprio arquivo se exclui, porque uma
-# guarda precisa nomear o que proibe.
-fsr_leftovers="$(grep -rli 'fsr\|fidelityfx' \
-  "${project_dir}/src" "${project_dir}/shaders" "${project_dir}/tests" \
-  "${project_dir}/tools" 2>/dev/null | grep -v '/tools/validate\.sh$' || true)"
-if [[ -n "${fsr_leftovers}" ]]; then
-  echo "FSR reapareceu no codigo: ele foi removido na 0.15.0 por nunca ter \
-substituido um draw, e cada hook que ele exigia custa uma indirecao em toda \
-chamada de desenho do jogo." >&2
-  echo "${fsr_leftovers}" >&2
-  exit 1
-fi
+# O FSR voltou na 0.21.0, a pedido do usuario e com plano escrito por ele. A
+# guarda de nao-retorno da 0.15.0 saiu, mas a LICAO dela fica: o modulo antigo
+# eram 5.833 linhas cuja propria telemetria dizia `replacement=0 dispatch=0` --
+# nunca substituiu um draw nem despachou um passe, e mesmo assim build e
+# validate ficavam verdes. Trocar o veto a palavra por uma guarda ao efeito.
+#
+# O que se exige agora: o modulo tem que CONTAR o que fez e por o numero no
+# log. Sem esses contadores, um FSR que nao roda volta a passar despercebido.
+for fsr_effect_marker in \
+  'fsr.replacement=' \
+  'fsr.dispatch=' \
+  'record_replacement' \
+  'record_dispatch'; do
+  if ! grep -rFq "${fsr_effect_marker}" "${project_dir}/src/fsr"; then
+    echo "O FSR perdeu ${fsr_effect_marker}. A versao removida na 0.15.0 \
+passou por build e validate dizendo replacement=0 dispatch=0 -- sem contador no \
+log, um modulo que nao faz nada e indistinguivel de um que funciona." >&2
+    exit 1
+  fi
+done
+
+# Os oito hooks per-draw continuam proibidos. A 0.15.0 os removeu porque o ETS2
+# emite milhares de draws por frame e cada um pagava indirecao, load atomico e
+# branch para alimentar o FSR. Os hooks do swap chain que o upscale usa sao
+# outra coisa: rodam por resize e por frame, nao por draw.
 # Os oito hooks tambem nao podem voltar: o de PSSetShaderResources e os de
 # Draw*/RSSet* nao servem a mais nada agora que o depth vem de
 # OMSetRenderTargets.
@@ -1176,6 +1216,72 @@ g++ -std=c++20 -Wall -Wextra -Werror \
 # referencia. Comparando com a referencia, apertar o "R" de um slider e salvar
 # nao escrevia nada: o delta antigo continuava no cfg e voltava no proximo
 # carregamento, com o menu tendo dito que reiniciou.
+# A escala interna e a unica parte do FSR que roda fora da GPU, e a que decide
+# se o upscale vale a pena. 1920x1080 a 0.6667 tem que dar 1280x720 exatos --
+# a milestone do plano -- e todo lado tem que cair num multiplo do grupo 8x8.
+# O upscale so existe se o GetBuffer do swap chain for trocado: e ele que
+# entrega ao jogo a textura menor no lugar do backbuffer. Sem essa instalacao o
+# jogo desenha em 1080p e o modulo inteiro vira enfeite.
+if ! grep -Fq 'patch_back_buffer_proxy' \
+  "${project_dir}/src/hooks/hook_install.cpp"; then
+  echo "O hook de GetBuffer parou de ser instalado: o jogo volta a desenhar na \
+resolucao cheia e o FSR nao substitui nada." >&2
+  exit 1
+fi
+
+# Quem precisa do backbuffer DE VERDADE -- a captura do Steam e o menu -- tem
+# que desviar do hook. Chamando o GetBuffer da vtable eles receberiam a textura
+# interna e gravariam/desenhariam na resolucao menor.
+for real_target_user in \
+  "${project_dir}/src/steam/capture_pipeline.cpp" \
+  "${project_dir}/src/postprocess/postprocessor.cpp"; do
+  if ! grep -Fq 'present_back_buffer' "${real_target_user}"; then
+    echo "$(basename "${real_target_user}") parou de pedir o backbuffer real: \
+com o FSR ligado ele passa a ver a textura interna." >&2
+    exit 1
+  fi
+done
+
+# O EASU e compute, que e o ponto do plano: usar as Compute Units. Um EASU que
+# virasse pixel shader continuaria funcionando e perderia a razao de existir.
+if ! grep -Fq 'numthreads(8, 8, 1)' "${project_dir}/shaders/fsr_easu.hlsl"; then
+  echo "O EASU deixou de ser compute com grupo 8x8." >&2
+  exit 1
+fi
+if ! grep -Fq 'CreateComputeShader' "${project_dir}/src/fsr/fsr_shaders.cpp"; then
+  echo "O EASU deixou de ser criado como compute shader." >&2
+  exit 1
+fi
+easu_body="$(awk '/^void UpscalePipeline::dispatch_easu/,/^}/' \
+  "${project_dir}/src/fsr/upscale_pipeline.cpp")"
+if ! grep -E '^[[:space:]]*context->Dispatch\(' <<<"${easu_body}" >/dev/null; then
+  echo "dispatch_easu parou de despachar compute: fsr.dispatch ficaria em zero, \
+que foi como o modulo removido na 0.15.0 viveu ate ser apagado." >&2
+  exit 1
+fi
+if ! grep -Fq 'record_dispatch' <<<"${easu_body}"; then
+  echo "dispatch_easu despacha e nao conta: sem o contador, um upscale que nao \
+roda fica indistinguivel de um que roda." >&2
+  exit 1
+fi
+
+# O compute do menu e do FSR escrevem em slots que o SavedState precisa cobrir,
+# senao o proximo desenho do jogo herda a UAV do upscale.
+for compute_slot_call in 'CSGetUnorderedAccessViews' 'CSSetUnorderedAccessViews'; do
+  if ! grep -Fq "${compute_slot_call}" \
+    "${project_dir}/src/postprocess/device_state.cpp"; then
+    echo "SavedState parou de cobrir a UAV de compute (${compute_slot_call}): \
+o jogo herda a saida do upscale no proximo dispatch dele." >&2
+    exit 1
+  fi
+done
+
+fsr_render_scale_test="/tmp/photorealism-fsr-render-scale-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/fsr_render_scale_test.cpp" \
+  -o "${fsr_render_scale_test}"
+"${fsr_render_scale_test}"
+
 menu_save_test="/tmp/photorealism-menu-save-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
   -I"${project_dir}/tests/support" -I"${project_dir}/src" \

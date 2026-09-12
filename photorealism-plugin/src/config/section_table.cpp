@@ -54,6 +54,11 @@ constexpr ModuleField kBloomFields[] = {
     {"radius", &Settings::bloom_radius},
 };
 
+constexpr ModuleField kFsrFields[] = {
+    {"render_scale", &Settings::fsr_render_scale},
+    {"sharpness", &Settings::fsr_sharpness},
+};
+
 constexpr ModuleField kSceneObserverFields[] = {
     {"interval_frames", &Settings::scene_observer_interval_frames},
     {"log_seconds", &Settings::scene_observer_log_seconds},
@@ -99,6 +104,8 @@ const SectionSpec kSections[] = {
      kTemporalFields, count_of(kTemporalFields)},
     {"module.bloom.0.17.0", &Settings::bloom_enabled, nullptr,
      kBloomFields, count_of(kBloomFields)},
+    {"module.fsr.0.21.0", &Settings::fsr_enabled, nullptr,
+     kFsrFields, count_of(kFsrFields)},
     {"module.scene_observer.0.18.0", &Settings::scene_observer_enabled,
      nullptr, kSceneObserverFields, count_of(kSceneObserverFields)},
     {"module.condition_adaptation.0.19.0",

@@ -489,7 +489,15 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   cursor do sistema fica recentralizado enquanto o DirectInput estiver em modo
   relativo. O menu tambem anda por teclado -- setas, enter e tab -- que e o
   caminho que nao depende de nada disso;
-- **0.21.0** raios de sol. E o efeito que as referencias realmente
+- **0.21.0 (entregue)** FSR de volta, Fase 1 do plano do usuario: o jogo
+  desenha numa textura interna menor e o plugin reconstroi ate a resolucao real
+  com EASU em compute e RCAS em pixel shader. O modulo removido na 0.15.0 nao
+  volta: aquele observava recursos e nunca substituia nada, este troca a
+  textura que o jogo recebe no lugar do backbuffer. **Comeca desligado** e
+  ainda nao rodou no jogo -- o que falta e o numero que a Fase 1 existe para
+  produzir, tempo de GPU nativo contra tempo com upscale. Fases 2 e 3 do plano
+  (otimizacao para RDNA2 e reconstrucao temporal) seguem abertas;
+- **0.22.0** raios de sol. E o efeito que as referencias realmente
   mostram, e que a medicao do bloom revelou: estriados radiais saindo do sol
   atras da linha de arvores, projetados no teto escuro da cabine. Sao
   **direcionais**, e nenhuma piramide gaussiana produz aquilo. Reaproveita o
@@ -498,7 +506,7 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   descobrir a posicao do sol na tela sem dados do motor no `Present`.
   **Desceu de prioridade na 0.18.0**: cor errada em toda condicao pesa mais
   que um efeito ausente;
-- **0.22.0 (condicional)** upgrade de bind flag via hook de `CreateTexture2D`,
+- **0.23.0 (condicional)** upgrade de bind flag via hook de `CreateTexture2D`,
   na tecnica do ReShade: promover o depth a typeless com
   `BIND_SHADER_RESOURCE`, sintetizando o descritor no `CreateDepthStencilView`.
   So entra se o `CopyResource` de um depth `DEPTH_STENCIL`-only falhar sob

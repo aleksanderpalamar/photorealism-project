@@ -27,6 +27,10 @@ void capture_state(ID3D11DeviceContext* context, SavedState* state) {
     context->PSGetShaderResources(0, 4, state->pixel_resources);
     context->PSGetSamplers(0, 2, state->pixel_samplers);
     context->PSGetConstantBuffers(0, 1, &state->pixel_constant_buffer);
+    context->CSGetShader(&state->compute_shader, nullptr, nullptr);
+    context->CSGetShaderResources(0, 1, &state->compute_resource);
+    context->CSGetUnorderedAccessViews(0, 1, &state->compute_access);
+    context->CSGetConstantBuffers(0, 1, &state->compute_constant_buffer);
 }
 
 void restore_state(ID3D11DeviceContext* context, SavedState* state) {
@@ -52,6 +56,11 @@ void restore_state(ID3D11DeviceContext* context, SavedState* state) {
     context->PSSetShaderResources(0, 4, state->pixel_resources);
     context->PSSetSamplers(0, 2, state->pixel_samplers);
     context->PSSetConstantBuffers(0, 1, &state->pixel_constant_buffer);
+    context->CSSetShader(state->compute_shader, nullptr, 0);
+    context->CSSetShaderResources(0, 1, &state->compute_resource);
+    context->CSSetUnorderedAccessViews(
+        0, 1, &state->compute_access, nullptr);
+    context->CSSetConstantBuffers(0, 1, &state->compute_constant_buffer);
 
     for (ID3D11RenderTargetView*& target : state->render_targets) {
         safe_release(target);
@@ -74,6 +83,10 @@ void restore_state(ID3D11DeviceContext* context, SavedState* state) {
         safe_release(sampler);
     }
     safe_release(state->pixel_constant_buffer);
+    safe_release(state->compute_shader);
+    safe_release(state->compute_resource);
+    safe_release(state->compute_access);
+    safe_release(state->compute_constant_buffer);
 }
 
 }  // namespace photorealism

@@ -51,6 +51,9 @@ constexpr Limit kLimits[] = {
     {&Settings::bloom_intensity, 0.0f, 1.0f},
     {&Settings::bloom_radius, 0.005f, 0.2f},
 
+    {&Settings::fsr_render_scale, 0.50f, 1.0f},
+    {&Settings::fsr_sharpness, 0.0f, 1.0f},
+
     {&Settings::scene_observer_interval_frames, 1.0f, 600.0f},
     {&Settings::scene_observer_log_seconds, 0.0f, 3600.0f},
     {&Settings::condition_time_constant_seconds, 1.0f, 1800.0f},

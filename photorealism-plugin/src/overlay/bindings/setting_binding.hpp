@@ -37,6 +37,8 @@ extern const SettingBinding kRenderBindings[];
 extern const std::size_t kRenderBindingCount;
 extern const SettingBinding kConditionBindings[];
 extern const std::size_t kConditionBindingCount;
+extern const SettingBinding kUpscaleBindings[];
+extern const std::size_t kUpscaleBindingCount;
 extern const SettingBinding kObserverBindings[];
 extern const std::size_t kObserverBindingCount;
 

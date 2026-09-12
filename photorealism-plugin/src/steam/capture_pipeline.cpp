@@ -1,3 +1,4 @@
+#include "../hooks/back_buffer_proxy.hpp"
 #include "../runtime.hpp"
 #include "capture_gate.hpp"
 #include "capture_slots.hpp"
@@ -114,9 +115,7 @@ class BackBuffer {
     }
 
     bool acquire(IDXGISwapChain* swap_chain) {
-        const HRESULT result = swap_chain->GetBuffer(
-            0, IID_ID3D11Texture2D, reinterpret_cast<void**>(&texture_));
-        return SUCCEEDED(result) && texture_ != nullptr;
+        return present_back_buffer(swap_chain, &texture_);
     }
 
     ID3D11Texture2D* texture() const { return texture_; }

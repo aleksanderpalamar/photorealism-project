@@ -57,6 +57,7 @@ common_flags=(
   "${project_dir}/src/hooks/device_probe.cpp" \
   "${project_dir}/src/hooks/vtable_patch.cpp" \
   "${project_dir}/src/hooks/module_names.cpp" \
+  "${project_dir}/src/hooks/back_buffer_proxy.cpp" \
   "${project_dir}/src/postprocess/postprocessor.cpp" \
   "${project_dir}/src/postprocess/device_state.cpp" \
   "${project_dir}/src/postprocess/gpu_timer.cpp" \
@@ -110,6 +111,7 @@ common_flags=(
   "${project_dir}/src/overlay/bindings/grade_bindings.cpp" \
   "${project_dir}/src/overlay/bindings/render_bindings.cpp" \
   "${project_dir}/src/overlay/bindings/condition_bindings.cpp" \
+  "${project_dir}/src/overlay/bindings/upscale_bindings.cpp" \
   "${project_dir}/src/overlay/bindings/pages.cpp" \
   "${project_dir}/src/overlay/font.cpp" \
   "${project_dir}/src/overlay/font_bitmap.cpp" \
@@ -121,6 +123,13 @@ common_flags=(
   "${project_dir}/src/overlay/overlay.cpp" \
   "${project_dir}/src/overlay/pointer_feed.cpp" \
   "${project_dir}/src/overlay/menu_export.cpp" \
+  "${project_dir}/src/fsr/render_scale.cpp" \
+  "${project_dir}/src/fsr/fsr_telemetry.cpp" \
+  "${project_dir}/src/fsr/proxy_target.cpp" \
+  "${project_dir}/src/fsr/upscale_resources.cpp" \
+  "${project_dir}/src/fsr/fsr_shaders.cpp" \
+  "${project_dir}/src/fsr/upscale_pipeline.cpp" \
+  "${project_dir}/src/fsr/upscaler.cpp" \
   "${project_dir}/src/runtime.cpp" \
   "${project_dir}/src/dxgi.def" \
   -o "${build_dir}/dxgi.dll" \

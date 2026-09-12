@@ -13,5 +13,7 @@ const wchar_t* ssao_shader_path();
 const wchar_t* temporal_shader_path();
 const wchar_t* bloom_shader_path();
 const wchar_t* overlay_shader_path();
+const wchar_t* fsr_easu_shader_path();
+const wchar_t* fsr_rcas_shader_path();
 void log_message(const char* format, ...);
 }

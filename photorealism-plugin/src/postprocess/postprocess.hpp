@@ -4,6 +4,7 @@
 
 namespace photorealism {
 void process_frame(IDXGISwapChain* swap_chain);
+void upscale_present_frame(IDXGISwapChain* swap_chain);
 void draw_overlay_frame(IDXGISwapChain* swap_chain);
 bool is_processing_frame();
 void prepare_for_resize(

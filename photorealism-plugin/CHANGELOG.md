@@ -1,5 +1,92 @@
 # Changelog
 
+## Pacote 0.21.0 - 2026-09-12
+
+**FSR de volta, Fase 1 do plano escrito pelo usuario: o jogo desenha em 1280x720
+e o plugin reconstroi 1920x1080 com EASU em compute shader.**
+
+### O que o modulo removido na 0.15.0 nao fazia, e este faz
+
+Aquele modulo eram 5.833 linhas cuja propria telemetria dizia
+`replacement=0 dispatch=0` -- observava recursos do jogo e nunca substituia
+nada. A diferenca desta versao nao e de tamanho, e de mecanismo: em vez de
+observar, ela **troca a textura que o jogo recebe**.
+
+O `IDXGISwapChain::GetBuffer` passa a devolver uma textura nossa no tamanho
+interno no lugar do backbuffer, e o `GetDesc`/`GetDesc1` passam a relatar esse
+tamanho. O Prism3D desenha o quadro inteiro em 1280x720 sem saber -- e essa e a
+unica parte que reduz trabalho de verdade. A 0.6667, sao 921.600 pixels
+sombreados em vez de 2.073.600.
+
+O grade do plugin tambem passa a rodar em 720p, de graca: 44% dos pixels.
+
+### Os dois passes
+
+**EASU em compute**, grupo 8x8, doze taps com analise de direcao e comprimento
+de borda e kernel anisotropico alinhado a ela, clampeado ao 2x2 central. E
+reimplementacao em HLSL proprio do algoritmo publicado da AMD -- o repo continua
+sem uma linha de terceiros, e o clone do FSR2 serviu de referencia, nao de
+fonte.
+
+**RCAS em pixel shader.** Nao por preguica: um compute precisa de UAV, e o
+backbuffer do jogo nao e criado com `DXGI_USAGE_UNORDERED_ACCESS`, entao nao ha
+UAV para escrever nele. O RCAS le a saida do EASU e escreve direto no RTV do
+backbuffer real, o que de quebra economiza uma textura de 1080p e um passe de
+copia.
+
+### O que muda na ordem do Present
+
+```
+process_frame          grade em 720p, na textura interna
+upscale_present_frame  EASU + RCAS -> backbuffer real
+observe_postprocessed  captura do Steam, ja reconstruida
+draw_overlay_frame     menu, por cima de tudo
+```
+
+A captura do Steam e o menu precisam do backbuffer **de verdade**, nao da
+textura interna, entao os dois passaram a pedi-lo por um caminho que desvia do
+proprio hook. Ha guarda para os dois.
+
+O `SavedState` ganhou o estagio de compute -- shader, SRV, UAV e constant buffer
+--, senao o proximo dispatch do jogo herdaria a UAV do upscale.
+
+### Duas guardas que mudaram
+
+A guarda de nao-retorno do FSR saiu, porque o usuario pediu o modulo de volta.
+A **licao** dela ficou, virando guarda ao efeito: o modulo e obrigado a contar
+`fsr.replacement` e `fsr.dispatch` e por os dois no log. Sem contador, um FSR
+que nao roda e indistinguivel de um que funciona -- foi exatamente assim que o
+anterior viveu ate ser apagado. Os oito hooks per-draw continuam proibidos; os
+do swap chain rodam por resize, nao por draw.
+
+A outra nao era sobre FSR. O awk que confere o perfil de cor somava **qualquer**
+chave de **qualquer** secao `[module.*]` no total do grade, e passava so porque
+nenhuma chave de modulo tinha nome de campo de cor. O `sharpness` do RCAS foi o
+primeiro a colidir: 0.35 entrava na nitidez e o perfil acusava 0.550 onde o
+medido e 0.200. Agora as quatro camadas somadas sao nomeadas uma a uma.
+
+### O que nao esta provado
+
+**Nada disso rodou no jogo.** O que esta provado: compila, linka, os tres
+shaders passam pelo `d3dcompiler_47.dll` do Wine, o disassembly do EASU mostra
+`dcl_uav_typed_texture2d u0` e `dcl_thread_group 8, 8, 1`, os literais
+sobrevivem no DLL, e renomear `dispatch_easu` ou `hooked_get_buffer` derruba o
+build.
+
+**Comeca desligado**, e a razao e honesta: entregar ao jogo uma textura no lugar
+do backbuffer e invasivo, e se o ETS2 tirar o tamanho do viewport de algum lugar
+que nao seja nem a textura nem o swap chain, o quadro sai cortado. Ligar esta em
+`[module.fsr.0.21.0]` ou no menu, aba FSR.
+
+A troca de ligado/desligado e de escala **so vale na proxima mudanca de
+resolucao**. Desligar no meio da sessao destruiria a textura em que o jogo ainda
+esta desenhando.
+
+O numero que a Fase 1 existe para produzir -- tempo de GPU nativo contra tempo
+com upscale -- depende de rodar. As linhas `fsr.replacement` e `fsr.dispatch`
+saem no log a cada dez segundos; se as duas vierem zero, o modulo nao rodou e o
+log diz o motivo do descarte.
+
 ## Pacote 0.20.5 - 2026-09-11
 
 **Tres defeitos apontados na revisao do PR #4, e um quarto que eu encontrei

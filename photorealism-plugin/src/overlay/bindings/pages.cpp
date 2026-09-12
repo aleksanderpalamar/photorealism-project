@@ -9,6 +9,8 @@ const SettingPage kPages[] = {
     {"Render", "Renderizacao e iluminacao", kRenderBindings,
      kRenderBindingCount},
     {"Clima", "Clima e condicao", kConditionBindings, kConditionBindingCount},
+    {"FSR", "Upscale FSR -- vale na proxima troca de resolucao",
+     kUpscaleBindings, kUpscaleBindingCount},
     {"Cena", "Observador e profundidade", kObserverBindings,
      kObserverBindingCount},
 };

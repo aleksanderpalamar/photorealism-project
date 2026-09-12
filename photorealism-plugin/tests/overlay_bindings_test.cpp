@@ -2,6 +2,7 @@
 #include "../src/overlay/bindings/grade_bindings.cpp"
 #include "../src/overlay/bindings/pages.cpp"
 #include "../src/overlay/bindings/render_bindings.cpp"
+#include "../src/overlay/bindings/upscale_bindings.cpp"
 #include "../src/overlay/grade_keys.cpp"
 
 #include "config/section_table.hpp"
@@ -82,10 +83,12 @@ void grade_bindings_and_grade_keys_agree() {
 
 void module_bindings_are_never_marked_as_colour() {
     const SettingBinding* tables[] = {
-        kRenderBindings, kConditionBindings, kObserverBindings};
+        kRenderBindings, kConditionBindings, kObserverBindings,
+        kUpscaleBindings};
     const std::size_t counts[] = {
-        kRenderBindingCount, kConditionBindingCount, kObserverBindingCount};
-    for (std::size_t table = 0; table < 3; ++table) {
+        kRenderBindingCount, kConditionBindingCount, kObserverBindingCount,
+        kUpscaleBindingCount};
+    for (std::size_t table = 0; table < 4; ++table) {
         for (std::size_t index = 0; index < counts[table]; ++index) {
             assert(!tables[table][index].grade);
         }
