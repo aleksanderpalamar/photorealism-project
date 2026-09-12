@@ -76,7 +76,12 @@ bool Upscaler::present(
     ID3D11RenderTargetView* output,
     unsigned width,
     unsigned height) {
+    if (!enabled_ && !game_holds_proxy_) {
+        return false;
+    }
     if (!game_holds_proxy_ || !proxy_.ready()) {
+        telemetry().record_skip("o jogo ainda nao pegou a textura interna");
+        telemetry().report(extent_, width, height);
         return false;
     }
     if (!pipeline_.ensure(device, width, height)) {

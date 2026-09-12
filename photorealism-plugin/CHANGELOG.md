@@ -1,5 +1,64 @@
 # Changelog
 
+## Pacote 0.21.3 - 2026-09-12
+
+**O log da 0.21.2 provou que o upscale nunca rodou, e mostrou tres coisas de
+uma vez.** A tela nao mudou; o que mudou foi o rotulo no menu.
+
+### O que o log disse
+
+Duas linhas de FSR em vinte minutos de jogo: `desligado` na abertura e `ligado`
+as 14:09:35, quando o usuario ligou no menu. **Nenhuma** linha periodica com
+`fsr.replacement` e `fsr.dispatch`. O custo de GPU do passe ficou em 1,0-1,4 ms
+antes e depois, sem o degrau que um dispatch de EASU e um grade em 44% dos
+pixels teriam deixado.
+
+### 1. O ETS2 pede o backbuffer uma vez, e so na abertura
+
+Os seis `ResizeBuffers` estao todos entre 14:08:15 e 14:08:16. Depois disso, em
+vinte minutos, o jogo nao pediu o backbuffer nenhuma vez. A trava da 0.21.2 --
+esperar o jogo pegar a textura interna -- estava certa e nunca teve chance de
+disparar.
+
+### 2. A config chegava meio segundo tarde
+
+E o defeito de verdade. O jogo pega o backbuffer as **14:08:16.607**, logo apos
+o ultimo `ResizeBuffers`. O plugin so lia a configuracao as **14:08:17.164**,
+na adocao do device, que acontece no primeiro `Present` -- **depois**.
+
+Entao nem reiniciar o jogo com `enabled=true` no cfg teria funcionado: no unico
+instante em que o ETS2 pede o backbuffer, o modulo ainda achava que estava
+desligado.
+
+Agora a configuracao e lida na **instalacao dos hooks**, que no mesmo log
+acontece as 14:08:15.151 -- um segundo e meio antes do jogo pedir. Ha guarda
+exigindo que continue assim.
+
+### 3. O diagnostico estava atras do caminho de sucesso
+
+O contador `aquisicoes_do_jogo` existe exatamente para responder "o jogo pegou a
+textura?". Mas ele so era impresso **dentro** do upscale -- que so roda quando o
+jogo pegou. Ou seja: a unica pergunta que o log precisava responder era a unica
+que ele nao respondia.
+
+O relatorio agora sai sempre que o FSR esta ligado, com o motivo do descarte
+quando nao ha o que reconstruir. Ha guarda proibindo que ele volte para dentro
+do caminho de sucesso.
+
+### O que esperar agora
+
+Ligue no menu, **Salvar no cfg**, e reinicie o jogo. Na proxima abertura as
+linhas devem aparecer a cada dez segundos:
+
+```
+FSR interno=1280x720 saida=1920x1080 fsr.replacement=N fsr.dispatch=N
+aquisicoes_do_jogo=N descartes=N motivo=...
+```
+
+Ligar no meio da sessao continua sem efeito neste jogo, e agora isso esta
+medido, nao suposto: o log vai dizer `aquisicoes_do_jogo` parado e
+`motivo=o jogo ainda nao pegou a textura interna`.
+
 ## Pacote 0.21.2 - 2026-09-12
 
 **O menu liga e desliga o FSR ao vivo.** A trava da 0.21.1, que so deixava valer

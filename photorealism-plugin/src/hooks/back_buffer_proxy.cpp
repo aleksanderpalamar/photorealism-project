@@ -1,7 +1,9 @@
 #include "back_buffer_proxy.hpp"
 
 #include "../fsr/fsr_telemetry.hpp"
+#include "../config/config.hpp"
 #include "../fsr/upscaler.hpp"
+#include "../runtime.hpp"
 #include "../postprocess/com_utils.hpp"
 #include "../postprocess/postprocess.hpp"
 #include "vtable_patch.hpp"
@@ -131,6 +133,13 @@ void patch_back_buffer_proxy(IDXGISwapChain* swap_chain) {
     if (swap_chain == nullptr) {
         return;
     }
+    Settings startup = {};
+    load_settings(&startup);
+    fsr::upscaler().configure(startup);
+    log_message(
+        "FSR lido na instalacao dos hooks, antes de o jogo pegar o "
+        "backbuffer: %s.",
+        startup.fsr_enabled ? "ligado" : "desligado");
     void** vtable = *reinterpret_cast<void***>(swap_chain);
     replace_vtable_entry(
         &vtable[kGetBufferSlot],

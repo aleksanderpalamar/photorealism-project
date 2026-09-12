@@ -1241,10 +1241,21 @@ rodar na textura interna enquanto o jogo desenha no backbuffer real, e a tela \
 sairia sem coloracao." >&2
   exit 1
 fi
-upscale_frame_body="$(awk '/^    void upscale_frame/,/^    }/' \
-  "${project_dir}/src/postprocess/postprocessor.cpp")"
-if ! grep -Fq 'game_holds_proxy()' <<<"${upscale_frame_body}"; then
-  echo "upscale_frame deixou de seguir game_holds_proxy." >&2
+# O relatorio do FSR nao pode ficar atras do caminho de sucesso. Na 0.21.2 ele
+# so era impresso dentro do upscale, entao quando o upscale NAO rodava o log
+# ficava mudo -- justamente no caso em que ele precisava falar. O contador
+# aquisicoes_do_jogo, que existe para dizer se o jogo pegou a textura, nunca
+# apareceu porque dependia de o jogo ter pegado.
+upscaler_present_head="$(awk '/^bool Upscaler::present/,/game_holds_proxy_ \|\| !proxy_/' \
+  "${project_dir}/src/fsr/upscaler.cpp")"
+if ! grep -Fq 'telemetry().report' \
+  "${project_dir}/src/fsr/upscaler.cpp"; then
+  echo "O FSR parou de relatar estado." >&2
+  exit 1
+fi
+if [[ "$(grep -c 'telemetry().report' "${project_dir}/src/fsr/upscaler.cpp")" -lt 2 ]]; then
+  echo "O relatorio do FSR voltou a existir so no caminho de sucesso: quando o \
+upscale nao roda, o log fica mudo no unico momento em que ele precisa falar." >&2
   exit 1
 fi
 
@@ -1267,6 +1278,18 @@ fi
 if ! grep -Fq 'fsr::upscaler().configure' \
   "${project_dir}/src/postprocess/postprocessor.cpp"; then
   echo "O host parou de repassar a config ao FSR." >&2
+  exit 1
+fi
+
+# O FSR precisa saber se esta ligado ANTES de o jogo pedir o backbuffer. O log
+# da 0.21.2 mostra o jogo pedindo as 14:08:16.6 e a config sendo lida as
+# 14:08:17.1 -- meio segundo tarde demais, e o jogo nunca mais pediu. Por isso a
+# leitura acontece na instalacao dos hooks, nao na adocao do device.
+proxy_install_body="$(awk '/^void patch_back_buffer_proxy/,/^}/' \
+  "${project_dir}/src/hooks/back_buffer_proxy.cpp")"
+if ! grep -Fq 'load_settings' <<<"${proxy_install_body}"; then
+  echo "O FSR voltou a so descobrir que esta ligado depois de o jogo ja ter \
+pegado o backbuffer: como o ETS2 nao pede de novo, ele nunca engata." >&2
   exit 1
 fi
 

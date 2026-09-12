@@ -562,7 +562,7 @@ public:
         if (swap_chain == nullptr || resize_in_progress_) {
             return;
         }
-        if (!fsr::upscaler().game_holds_proxy()) {
+        if (!fsr::upscaler().wants_proxy()) {
             return;
         }
         if (!ensure_device_for(swap_chain)) {
