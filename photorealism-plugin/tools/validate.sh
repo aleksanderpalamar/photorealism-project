@@ -989,6 +989,23 @@ done
 # ter esta guarda: os modulos extraidos foram compilados fora do binario, o
 # original continuou vivo no namespace anonimo, e build e validate ficaram
 # verdes sobre codigo morto.
+# Todo teste em tests/ precisa estar neste arquivo. A 0.20.4 mostrou o custo de
+# nao ter esta guarda: uma edicao removeu um bloco e levou junto o registro do
+# menu_roundtrip_test, que ficou no repo sem nunca mais rodar.
+missing_from_validate=""
+while IFS= read -r test_file; do
+  test_name="$(basename "${test_file}")"
+  if ! grep -Fq "${test_name}" "${project_dir}/tools/validate.sh"; then
+    missing_from_validate="${missing_from_validate}${test_name}"$'\n'
+  fi
+done < <(find "${project_dir}/tests" -maxdepth 1 -name '*_test.cpp' | sort)
+if [[ -n "${missing_from_validate}" ]]; then
+  echo "Teste em tests/ que este arquivo nao roda: ele fica no repo dando \
+impressao de cobertura e nunca executa." >&2
+  echo "${missing_from_validate}" >&2
+  exit 1
+fi
+
 missing_from_build=""
 while IFS= read -r source_file; do
   relative="${source_file#${project_dir}/}"
@@ -1139,6 +1156,53 @@ if grep -rFq 'RIDEV_REMOVE' "${project_dir}/src"; then
   echo "Alguem voltou a remover o registro de entrada bruta do processo. No Wine isso mata a fonte que alimenta o DirectInput, e a seta do menu para de andar." >&2
   exit 1
 fi
+# A conta inteira do menu de uma ponta a outra: o que o slider mostrava tem que
+# voltar identico depois de gravar e reler, e as tres camadas medidas e os
+# comentarios do arquivo tem que sair intactos.
+menu_roundtrip_test="/tmp/photorealism-menu-roundtrip-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  -I"${project_dir}/tests/support" -I"${project_dir}/src" \
+  "${project_dir}/tests/menu_roundtrip_test.cpp" \
+  "${project_dir}/src/config/loader.cpp" \
+  "${project_dir}/src/config/defaults.cpp" \
+  "${project_dir}/src/config/section_table.cpp" \
+  "${project_dir}/src/config/grade_fields.cpp" \
+  "${project_dir}/src/config/limits.cpp" \
+  "${project_dir}/src/config/logging.cpp" \
+  -o "${menu_roundtrip_test}"
+"${menu_roundtrip_test}"
+
+# Gravar so o que mudou EM RELACAO AO DISCO, e nao em relacao ao valor de
+# referencia. Comparando com a referencia, apertar o "R" de um slider e salvar
+# nao escrevia nada: o delta antigo continuava no cfg e voltava no proximo
+# carregamento, com o menu tendo dito que reiniciou.
+menu_save_test="/tmp/photorealism-menu-save-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  -I"${project_dir}/tests/support" -I"${project_dir}/src" \
+  "${project_dir}/tests/menu_save_test.cpp" \
+  "${project_dir}/src/config/section_table.cpp" \
+  "${project_dir}/src/config/grade_fields.cpp" \
+  -o "${menu_save_test}"
+"${menu_save_test}"
+
+# A eleicao da fonte do ponteiro vale por sessao de menu, nao por sessao de
+# jogo: se ela sobreviver ao fechamento e o jogo passar a reportar pelo outro
+# gancho, todo delta novo e descartado e a seta congela.
+if ! awk '/^void PointerFeed::reset/,/^}/' \
+  "${project_dir}/src/overlay/pointer_feed.cpp" | grep -Fq 'PointerSource::None'; then
+  echo "PointerFeed::reset parou de soltar a fonte eleita: se o jogo trocar de \
+gancho entre uma abertura e outra do menu, a seta congela." >&2
+  exit 1
+fi
+
+# Um clique sem mexer o mouse antes tem que eleger a fonte igual a um
+# movimento, senao o primeiro clique depois de abrir o menu se perde.
+if ! grep -Fq 'buttons != 0' "${project_dir}/src/overlay/pointer_feed.cpp"; then
+  echo "Um clique parado deixou de eleger a fonte do ponteiro: o primeiro \
+clique depois de abrir o menu se perde." >&2
+  exit 1
+fi
+
 overlay_pointer_feed_test="/tmp/photorealism-overlay-pointer-feed-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
   -I"${project_dir}/tests/support" \

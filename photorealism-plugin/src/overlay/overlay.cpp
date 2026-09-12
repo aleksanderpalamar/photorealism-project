@@ -100,6 +100,7 @@ void Menu::ensure_baseline() {
     CalibrationStack stack = {};
     load_stack(&stack);
     baseline_ = measured_baseline(stack);
+    on_disk_ = compose(stack);
     defaults_ = default_settings();
     baseline_loaded_ = true;
 }

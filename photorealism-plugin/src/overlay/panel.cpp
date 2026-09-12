@@ -149,7 +149,11 @@ void Menu::draw_footer(UiContext& ui, const MenuFrame& frame) {
         first.x + half + theme::kRowGap, first.y, half, first.height};
     if (button(ui, save, "Salvar no cfg", true)) {
         ensure_baseline();
-        save_settings(*settings_, baseline_, defaults_);
+        const SaveReport report =
+            save_settings(*settings_, baseline_, on_disk_);
+        if (report.written) {
+            on_disk_ = *settings_;
+        }
     }
     if (button(ui, discard, "Descartar mudancas", false)) {
         discard_changes();

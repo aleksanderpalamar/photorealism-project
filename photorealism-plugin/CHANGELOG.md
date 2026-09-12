@@ -1,5 +1,72 @@
 # Changelog
 
+## Pacote 0.20.5 - 2026-09-11
+
+**Tres defeitos apontados na revisao do PR #4, e um quarto que eu encontrei
+procurando por eles.** Os tres procedem.
+
+### O "R" de um slider nunca chegava ao arquivo
+
+O mais serio dos tres. Ao salvar, o menu comparava cada ajuste com o **valor de
+referencia** para decidir se havia mudanca. Depois de apertar o "R", o ajuste
+passa a ser exatamente igual a referencia -- entao nada era escrito, o delta
+antigo continuava no `.cfg`, e o valor voltava no proximo carregamento. O menu
+dizia que tinha reiniciado o campo e o arquivo discordava.
+
+A comparacao certa nao e com a referencia, e com **o que esta gravado**. O menu
+passou a guardar o estado do disco ao carregar e a escrever tudo que difere
+dele, atualizando essa copia depois de cada gravacao bem-sucedida. Um "R" agora
+grava zero no delta do usuario, e reiniciar um ajuste de modulo devolve o valor
+padrao ao arquivo.
+
+### A fonte do ponteiro sobrevivia ao fechamento do menu
+
+O menu aceita delta de dois ganchos do DirectInput e trava no primeiro que
+reportar movimento, para nao contar o mesmo deslocamento duas vezes. So que essa
+eleicao nunca era desfeita: `reset()` limpava os acumuladores e deixava a fonte.
+Se o jogo reabrisse o dispositivo e passasse a reportar pelo outro gancho entre
+uma abertura e outra do menu, todo delta novo era descartado e a seta congelava
+-- o mesmo sintoma da 0.20.3, por outro caminho.
+
+A eleicao agora vale por sessao de menu.
+
+### O primeiro clique se perdia se o mouse nao tivesse mexido
+
+So movimento elegia a fonte. Um clique dado sem mexer o mouse antes -- o caso de
+quem abre o menu e clica direto no que esta sob o centro da tela -- guardava o
+nivel do botao mas nao elegia ninguem, entao o menu continuava lendo o ponteiro
+pelo caminho da janela e a borda de clique do DirectInput nunca chegava a
+interface.
+
+Agora clique elege a fonte igual a movimento. O nivel do botao tambem so e
+aceito da fonte eleita, o que antes deixava um gancho rejeitado sobrescrever o
+estado do botao do gancho valido.
+
+### O quarto, que apareceu ao escrever a guarda
+
+Procurando onde registrar o teste novo, descobri que o `menu_roundtrip_test`
+tinha parado de rodar: uma edicao da 0.20.4 removeu um bloco do `validate.sh` e
+levou o registro dele junto. O arquivo continuava no repo dando impressao de
+cobertura.
+
+Agora ha guarda exigindo que **todo `*_test.cpp` em `tests/` apareca no
+`validate.sh`** -- a mesma ideia da guarda que exige todo `.cpp` de `src/` em
+`build.sh`, que nasceu do mesmo tipo de acidente na 0.19.4.
+
+### Testes
+
+`menu_save_test` e novo, seis casos sobre o caminho de gravacao com o IO
+substituido por memoria: o "R" de um slider de cor chega ao arquivo, o de um
+ajuste de modulo tambem, salvar sem mudanca nenhuma nao escreve nada, um modulo
+desligado e gravado, os comentarios de calibracao sobrevivem, e os dois
+controles inertes de bloom nunca sao escritos.
+
+`overlay_pointer_feed_test` ganhou tres casos para os outros dois defeitos.
+
+Os cinco casos foram verificados ao contrario: com o codigo antigo restaurado,
+cada um falha. Os primeiros que escrevi passavam por erro de compilacao e nao
+por assercao, o que nao prova nada.
+
 ## Pacote 0.20.4 - 2026-09-11
 
 **A seta parou de andar porque eu mesmo cortei a fonte de dados dela. Dois

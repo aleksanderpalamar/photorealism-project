@@ -479,7 +479,7 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   medir depois: a chuva foi confirmada pelo usuario mas neblina, neve e
   tunel nao aparecem em nenhum bloco sustentado, entao a adaptacao os trata
   como interpolacao entre as tres que existem em vez de ancoras proprias;
-- **0.20.4 (entregue)** menu in-game no Ctrl+P: 64 controles em quatro
+- **0.20.5 (entregue)** menu in-game no Ctrl+P: 64 controles em quatro
   paginas, ao vivo, com gravacao no `.cfg`. Os 17 campos de cor vao para uma
   quarta camada, `[module.user.0.20.0]`, somada por ultimo, com o menu gravando
   so a diferenca -- as tres camadas medidas ficam intocaveis. O mouse e tirado

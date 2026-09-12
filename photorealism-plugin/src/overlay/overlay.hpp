@@ -15,7 +15,7 @@
 namespace photorealism {
 namespace overlay {
 
-constexpr const char* kMenuTitle = "photorealism-plugin 0.20.4";
+constexpr const char* kMenuTitle = "photorealism-plugin 0.20.5";
 constexpr const char* kProjectUrl =
     "https://github.com/aleksanderpalamar/photorealism-project";
 
@@ -70,6 +70,7 @@ class Menu {
     MenuHost* host_ = nullptr;
     Settings baseline_ = {};
     Settings defaults_ = {};
+    Settings on_disk_ = {};
     ID3D11Device* device_ = nullptr;
     const void* active_ = nullptr;
     std::size_t page_ = 0;

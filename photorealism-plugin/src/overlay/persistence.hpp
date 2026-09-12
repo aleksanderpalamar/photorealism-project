@@ -16,7 +16,7 @@ Settings measured_baseline(const CalibrationStack& stack);
 SaveReport save_settings(
     const Settings& settings,
     const Settings& baseline,
-    const Settings& defaults);
+    const Settings& on_disk);
 
 }
 }

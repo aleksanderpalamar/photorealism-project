@@ -63,11 +63,11 @@ bool write_module_flag(
 bool differs(
     const SettingBinding& binding,
     const Settings& settings,
-    const Settings& reference) {
+    const Settings& on_disk) {
     if (binding.kind == BindingKind::Toggle) {
-        return settings.*(binding.flag) != reference.*(binding.flag);
+        return settings.*(binding.flag) != on_disk.*(binding.flag);
     }
-    return settings.*(binding.number) != reference.*(binding.number);
+    return settings.*(binding.number) != on_disk.*(binding.number);
 }
 
 int write_page(
@@ -75,15 +75,14 @@ int write_page(
     const SettingPage& page,
     const Settings& settings,
     const Settings& baseline,
-    const Settings& defaults) {
+    const Settings& on_disk) {
     int changed = 0;
     for (std::size_t index = 0; index < page.count; ++index) {
         const SettingBinding& binding = page.items[index];
         if (binding.inert) {
             continue;
         }
-        const Settings& reference = binding.grade ? baseline : defaults;
-        if (!differs(binding, settings, reference)) {
+        if (!differs(binding, settings, on_disk)) {
             continue;
         }
         const bool wrote =
@@ -108,7 +107,7 @@ Settings measured_baseline(const CalibrationStack& stack) {
 SaveReport save_settings(
     const Settings& settings,
     const Settings& baseline,
-    const Settings& defaults) {
+    const Settings& on_disk) {
     SaveReport report;
     std::string text;
     if (!config_io::read_file(config_path(), &text)) {
@@ -119,7 +118,7 @@ SaveReport save_settings(
     const SettingPage* pages = setting_pages();
     for (std::size_t index = 0; index < setting_page_count(); ++index) {
         report.changed +=
-            write_page(&text, pages[index], settings, baseline, defaults);
+            write_page(&text, pages[index], settings, baseline, on_disk);
     }
     if (report.changed == 0) {
         report.written = true;
