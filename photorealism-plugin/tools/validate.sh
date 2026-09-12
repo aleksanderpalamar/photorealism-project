@@ -1219,43 +1219,39 @@ g++ -std=c++20 -Wall -Wextra -Werror \
 # A escala interna e a unica parte do FSR que roda fora da GPU, e a que decide
 # se o upscale vale a pena. 1920x1080 a 0.6667 tem que dar 1280x720 exatos --
 # a milestone do plano -- e todo lado tem que cair num multiplo do grupo 8x8.
-# O invariante que impede lixo na tela: o upscale e a entrega da textura ao
-# PLUGIN seguem quem de fato SEGURA a textura (game_holds_proxy), nunca o que
-# foi PEDIDO (enabled). Ligar o FSR no meio da sessao nao pode fazer o plugin
-# graduar e reconstruir uma textura interna vazia enquanto o jogo ainda desenha
-# no backbuffer real -- o jogo so troca de alvo quando pede o backbuffer de
-# novo, e ate la nada muda.
+# A reconstrucao so pode rodar quando existir um quadro interno para ler. O
+# invariante substitui o da 0.21.2, que guardava a substituicao de backbuffer
+# -- mecanismo aposentado na 0.21.5 em favor do r_scale do proprio ETS2.
 upscaler_present_body="$(awk '/^bool Upscaler::present/,/^}/' \
   "${project_dir}/src/fsr/upscaler.cpp")"
-if ! grep -Fq 'game_holds_proxy_' <<<"${upscaler_present_body}"; then
-  echo "Upscaler::present deixou de seguir game_holds_proxy: ligar o FSR no \
-meio da sessao passaria a reconstruir uma textura interna vazia por cima do \
-quadro do jogo." >&2
+if ! grep -Fq 'internal_frame_ == nullptr' <<<"${upscaler_present_body}"; then
+  echo "Upscaler::present parou de exigir um quadro interno: reconstruiria uma \
+textura vazia por cima do quadro do jogo." >&2
   exit 1
 fi
-upscaler_plugin_body="$(awk '/^ID3D11Texture2D\* Upscaler::proxy_for_plugin/,/^}/' \
-  "${project_dir}/src/fsr/upscaler.cpp")"
-if ! grep -Fq 'game_holds_proxy_' <<<"${upscaler_plugin_body}"; then
-  echo "proxy_for_plugin deixou de seguir game_holds_proxy: o grade passaria a \
-rodar na textura interna enquanto o jogo desenha no backbuffer real, e a tela \
-sairia sem coloracao." >&2
+
+# A escala interna e do ETS2, escrita no config dele no bootstrap. E a caixa
+# "Frame em menor resolucao" do plano: quem reduz e o Prism3D, nao o plugin
+# enganando o jogo sobre o tamanho do backbuffer.
+for game_scale_key in 'r_scale_x' 'r_scale_y'; do
+  if ! grep -Fq "${game_scale_key}" "${project_dir}/src/fsr/game_scale.cpp"; then
+    echo "A escala interna do jogo perdeu ${game_scale_key}: sem escrever \
+r_scale no config do ETS2, o jogo desenha em resolucao cheia e nao ha ganho." >&2
+    exit 1
+  fi
+done
+if ! grep -Fq 'apply_render_scale_to_game(g_proxy_module)' \
+  "${project_dir}/src/proxy.cpp"; then
+  echo "O bootstrap parou de aplicar a escala interna: o modulo existe e nunca \
+e chamado, que e como o FSR removido na 0.15.0 viveu." >&2
   exit 1
 fi
-# O relatorio do FSR nao pode ficar atras do caminho de sucesso. Na 0.21.2 ele
-# so era impresso dentro do upscale, entao quando o upscale NAO rodava o log
-# ficava mudo -- justamente no caso em que ele precisava falar. O contador
-# aquisicoes_do_jogo, que existe para dizer se o jogo pegou a textura, nunca
-# apareceu porque dependia de o jogo ter pegado.
-upscaler_present_head="$(awk '/^bool Upscaler::present/,/game_holds_proxy_ \|\| !proxy_/' \
-  "${project_dir}/src/fsr/upscaler.cpp")"
-if ! grep -Fq 'telemetry().report' \
-  "${project_dir}/src/fsr/upscaler.cpp"; then
-  echo "O FSR parou de relatar estado." >&2
-  exit 1
-fi
-if [[ "$(grep -c 'telemetry().report' "${project_dir}/src/fsr/upscaler.cpp")" -lt 2 ]]; then
-  echo "O relatorio do FSR voltou a existir so no caminho de sucesso: quando o \
-upscale nao roda, o log fica mudo no unico momento em que ele precisa falar." >&2
+
+# E o backbuffer nao pode voltar a ser substituido: com o r_scale ligado, as
+# duas reducoes se empilham e o jogo desenha a 480p achando que e 720p.
+if grep -rFq 'kGetBufferSlot' "${project_dir}/src"; then
+  echo "A substituicao do backbuffer voltou: junto com o r_scale do ETS2 ela \
+empilha duas reducoes no mesmo quadro." >&2
   exit 1
 fi
 
@@ -1281,37 +1277,14 @@ if ! grep -Fq 'fsr::upscaler().configure' \
   exit 1
 fi
 
-# O FSR precisa saber se esta ligado ANTES de o jogo pedir o backbuffer. O log
-# da 0.21.2 mostra o jogo pedindo as 14:08:16.6 e a config sendo lida as
-# 14:08:17.1 -- meio segundo tarde demais, e o jogo nunca mais pediu. Por isso a
-# leitura acontece na instalacao dos hooks, nao na adocao do device.
-proxy_install_body="$(awk '/^void patch_back_buffer_proxy/,/^}/' \
-  "${project_dir}/src/hooks/back_buffer_proxy.cpp")"
-if ! grep -Fq 'load_settings' <<<"${proxy_install_body}"; then
-  echo "O FSR voltou a so descobrir que esta ligado depois de o jogo ja ter \
-pegado o backbuffer: como o ETS2 nao pede de novo, ele nunca engata." >&2
-  exit 1
-fi
-
-# O upscale so existe se o GetBuffer do swap chain for trocado: e ele que
-# entrega ao jogo a textura menor no lugar do backbuffer. Sem essa instalacao o
-# jogo desenha em 1080p e o modulo inteiro vira enfeite.
-if ! grep -Fq 'patch_back_buffer_proxy' \
-  "${project_dir}/src/hooks/hook_install.cpp"; then
-  echo "O hook de GetBuffer parou de ser instalado: o jogo volta a desenhar na \
-resolucao cheia e o FSR nao substitui nada." >&2
-  exit 1
-fi
-
-# Quem precisa do backbuffer DE VERDADE -- a captura do Steam e o menu -- tem
-# que desviar do hook. Chamando o GetBuffer da vtable eles receberiam a textura
-# interna e gravariam/desenhariam na resolucao menor.
+# Quem precisa do backbuffer para gravar ou desenhar em cima -- a captura do
+# Steam e o menu -- pede por um caminho unico, para nao ficar espalhado.
 for real_target_user in \
   "${project_dir}/src/steam/capture_pipeline.cpp" \
   "${project_dir}/src/postprocess/postprocessor.cpp"; do
   if ! grep -Fq 'present_back_buffer' "${real_target_user}"; then
-    echo "$(basename "${real_target_user}") parou de pedir o backbuffer real: \
-com o FSR ligado ele passa a ver a textura interna." >&2
+    echo "$(basename "${real_target_user}") parou de pedir o backbuffer pelo \
+caminho comum." >&2
     exit 1
   fi
 done

@@ -15,7 +15,7 @@
 namespace photorealism {
 namespace overlay {
 
-constexpr const char* kMenuTitle = "photorealism-plugin 0.21.4";
+constexpr const char* kMenuTitle = "photorealism-plugin 0.21.5";
 constexpr const char* kProjectUrl =
     "https://github.com/aleksanderpalamar/photorealism-project";
 

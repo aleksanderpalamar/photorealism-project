@@ -1,4 +1,3 @@
-#include "back_buffer_proxy.hpp"
 #include "hook.hpp"
 
 #include "../runtime.hpp"
@@ -53,7 +52,6 @@ void patch_present(IDXGISwapChain* swap_chain, InstallReport* report) {
         &vtable[13],
         reinterpret_cast<void*>(&hooked_resize_buffers),
         &hook_state::g_original_resize_buffers);
-    patch_back_buffer_proxy(swap_chain);
 }
 
 void patch_present1(IDXGISwapChain* swap_chain, InstallReport* report) {

@@ -1,5 +1,59 @@
 # Changelog
 
+## Pacote 0.21.5 - 2026-09-12
+
+**O mecanismo estava errado. A caixa "Frame em menor resolucao" do plano e uma
+config do proprio ETS2, nao um truque no backbuffer.**
+
+O usuario apontou o diagrama e tem razao. A entrada da reconstrucao, no plano
+dele, e **Color buffer / Depth buffer / Motion vectors** -- os buffers internos
+do jogo. Eu fui interceptar o **backbuffer**, que e a etapa final. E o "frame em
+menor resolucao" e o Prism3D desenhando menor, nao o plugin enganando o jogo
+sobre o tamanho da tela.
+
+### O que faltava estava no config do jogo
+
+`r_scale_x` e `r_scale_y` sao a escala interna do ETS2 -- o "Scaling" das opcoes
+graficas. O config antigo do usuario tinha `0.833333`. Eu tinha esse arquivo
+aberto na tela duas mensagens antes e nao fiz a ligacao.
+
+O plugin ja sabe escrever no config do jogo: o `native_aa` faz isso no
+bootstrap, com backup e escrita atomica, antes de o ETS2 abrir. A escala entrou
+pelo mesmo caminho.
+
+Com `[module.fsr.0.21.0] enabled=true` e `render_scale=0.6667`, o bootstrap
+grava `r_scale_x/y = 0.666700` e o **Prism3D sombreia 921.600 pixels em vez de
+2.073.600**. O ganho de quadro vem dai, e nao depende de nada que o plugin faca
+por frame.
+
+### O que saiu
+
+A substituicao do backbuffer foi removida inteira -- hooks de `GetBuffer`,
+`GetDesc` e `GetDesc1`, a textura interna e o estado que os acompanhava. Alem de
+ser o mecanismo errado, ela **empilharia** com o `r_scale`: o jogo desenharia a
+480p achando que estava em 720p. Ha guarda proibindo que volte.
+
+O que ficou de `src/hooks/back_buffer_proxy` foi so o acesso ao backbuffer que a
+captura do Steam e o menu usam, agora em `present_target`.
+
+### O que ainda nao esta pronto
+
+O EASU nao tem de onde ler. Com o `r_scale`, o ETS2 desenha a cena reduzida e
+**ele mesmo** sobe para 1080p antes de o plugin ver o backbuffer -- o detalhe ja
+se perdeu ali. Reconstruir com qualidade exige achar o color buffer interno
+antes desse upscale, que e a proxima etapa e usa a mesma maquinaria que ja acha
+o depth.
+
+Ate la a aba FSR diz exatamente isso:
+
+```
+LIGADO  o ETS2 desenha reduzido; reconstrucao propria pendente
+```
+
+Ou seja: **o ganho de FPS existe agora**; a reconstrucao melhor que a do jogo
+vem depois. Preferi entregar a metade que funciona a continuar prometendo a
+inteira.
+
 ## Pacote 0.21.4 - 2026-09-12
 
 **A aba FSR passa a mostrar o estado real na tela.** Quatro pacotes e o usuario

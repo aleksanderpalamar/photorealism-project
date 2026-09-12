@@ -2,7 +2,7 @@
 
 #include "../config/config.hpp"
 #include "../fsr/upscaler.hpp"
-#include "../hooks/back_buffer_proxy.hpp"
+#include "../hooks/present_target.hpp"
 #include "../overlay/overlay.hpp"
 #include "../resource_observer/resource_observer.hpp"
 #include "../runtime.hpp"
