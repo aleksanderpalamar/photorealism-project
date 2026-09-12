@@ -855,7 +855,7 @@ effective_profile="$(awk -F= '
 # que importa. Uma guarda que explica uma regressao sutil so serve se for ela
 # a falar. Nesta ordem o hash continua pegando tudo que as guardas nao
 # cobrem, e so isso.
-expected_cfg_sha256="0fb4554fae47b772d0d9ca5b844c5b1220e311451f5b7355e28a44109b805b99"
+expected_cfg_sha256="9c9921eae6ac3554b1e2e533041cfd56405638fec867cb8417db4895125cab2c"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
@@ -1281,6 +1281,20 @@ done
 if ! grep -Fq 'if (!enabled && saved.empty())' <<<"${game_scale_body}"; then
   echo "O plugin voltou a mexer no r_scale com o FSR desligado e nada \
 emprestado: isso apaga o Scaling que o usuario escolheu." >&2
+  exit 1
+fi
+
+# O cfg que vai no pacote e o default interno do codigo tem que concordar sobre
+# o FSR. Divergindo, quem apaga o cfg ganha um comportamento diferente de quem
+# nao apaga, e ninguem percebe ate ir atras.
+cfg_fsr_enabled="$(awk '/^\[module\.fsr\./,/^$/' \
+  "${project_dir}/config/photorealism-plugin.cfg" | grep -E '^enabled=' |
+  cut -d= -f2)"
+code_fsr_enabled="$(grep -oE 'stack\.modules\.fsr_enabled = (true|false)' \
+  "${project_dir}/src/config/defaults.cpp" | awk '{print $3}' | tr -d ';')"
+if [[ "${cfg_fsr_enabled}" != "${code_fsr_enabled}" ]]; then
+  echo "O cfg empacotado diz FSR=${cfg_fsr_enabled} e o default interno diz \
+${code_fsr_enabled}. Quem apagar o cfg ganha outro comportamento." >&2
   exit 1
 fi
 

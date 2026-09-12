@@ -497,7 +497,7 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   ainda nao rodou no jogo -- o que falta e o numero que a Fase 1 existe para
   produzir, tempo de GPU nativo contra tempo com upscale. Fases 2 e 3 do plano
   (otimizacao para RDNA2 e reconstrucao temporal) seguem abertas;
-- **0.22.0 (entregue)** descoberta do quadro interno do jogo, a peca que
+- **0.22.1 (entregue)** descoberta do quadro interno do jogo, a peca que
   faltava para fechar a Fase 1 do plano de FSR. O `OMSetRenderTargets` que ja
   achava o depth passa a catalogar render target de cor tambem, e o candidato
   mais ligado dentro da janela de busca -- menor que a saida e pelo menos

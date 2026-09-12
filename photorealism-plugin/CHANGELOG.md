@@ -1,5 +1,43 @@
 # Changelog
 
+## Pacote 0.22.1 - 2026-09-12
+
+**O pacote passa a sair com o FSR ligado, e o comentario do cfg passa a
+descrever o mecanismo que existe.**
+
+### A documentacao estava descrevendo um mecanismo removido
+
+O bloco do `[module.fsr.0.21.0]` dizia:
+
+> COMECA DESLIGADO. O caminho troca a textura que o jogo recebe no lugar do
+> backbuffer, e isso e invasivo demais para ligar sozinho na primeira versao.
+
+Essa substituicao de backbuffer **saiu na 0.21.5**. A justificativa para comecar
+desligado morreu junto e o texto ficou. Quem lesse o cfg estaria lendo sobre
+codigo que nao existe mais.
+
+O bloco agora descreve o caminho real: o proprio ETS2 reduz, via `r_scale` no
+config dele; o plugin toma essa chave emprestada e devolve ao desligar; e a
+reconstrucao procura o alvo de cor interno entre os render targets do jogo.
+
+### Ligado por padrao
+
+Com o mecanismo invasivo fora, nao ha mais razao para o pacote sair desligado.
+`enabled=true`.
+
+O que isso significa na pratica: **instalar e abrir o jogo passa a mexer no
+`r_scale` do seu config**, guardando o valor anterior em
+`config.photorealism-fsr-scale.saved` e devolvendo quando o modulo for
+desligado. Quem nao quiser, `enabled=false` antes da primeira abertura -- e ai o
+plugin nao toca em nada.
+
+### Uma divergencia que estava para acontecer
+
+O default interno do codigo dizia `false` enquanto o cfg passava a dizer `true`.
+Quem apagasse o cfg ganharia comportamento diferente de quem nao apagasse, sem
+nenhum aviso. Os dois agora concordam, e ha guarda comparando o valor no cfg
+empacotado com o do `defaults.cpp`.
+
 ## Pacote 0.22.0 - 2026-09-12
 
 **A peca que faltava para a Fase 1 do plano: achar o quadro interno do jogo.**
