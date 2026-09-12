@@ -1,5 +1,502 @@
 # Changelog
 
+## Pacote 0.20.5 - 2026-09-11
+
+**Tres defeitos apontados na revisao do PR #4, e um quarto que eu encontrei
+procurando por eles.** Os tres procedem.
+
+### O "R" de um slider nunca chegava ao arquivo
+
+O mais serio dos tres. Ao salvar, o menu comparava cada ajuste com o **valor de
+referencia** para decidir se havia mudanca. Depois de apertar o "R", o ajuste
+passa a ser exatamente igual a referencia -- entao nada era escrito, o delta
+antigo continuava no `.cfg`, e o valor voltava no proximo carregamento. O menu
+dizia que tinha reiniciado o campo e o arquivo discordava.
+
+A comparacao certa nao e com a referencia, e com **o que esta gravado**. O menu
+passou a guardar o estado do disco ao carregar e a escrever tudo que difere
+dele, atualizando essa copia depois de cada gravacao bem-sucedida. Um "R" agora
+grava zero no delta do usuario, e reiniciar um ajuste de modulo devolve o valor
+padrao ao arquivo.
+
+### A fonte do ponteiro sobrevivia ao fechamento do menu
+
+O menu aceita delta de dois ganchos do DirectInput e trava no primeiro que
+reportar movimento, para nao contar o mesmo deslocamento duas vezes. So que essa
+eleicao nunca era desfeita: `reset()` limpava os acumuladores e deixava a fonte.
+Se o jogo reabrisse o dispositivo e passasse a reportar pelo outro gancho entre
+uma abertura e outra do menu, todo delta novo era descartado e a seta congelava
+-- o mesmo sintoma da 0.20.3, por outro caminho.
+
+A eleicao agora vale por sessao de menu.
+
+### O primeiro clique se perdia se o mouse nao tivesse mexido
+
+So movimento elegia a fonte. Um clique dado sem mexer o mouse antes -- o caso de
+quem abre o menu e clica direto no que esta sob o centro da tela -- guardava o
+nivel do botao mas nao elegia ninguem, entao o menu continuava lendo o ponteiro
+pelo caminho da janela e a borda de clique do DirectInput nunca chegava a
+interface.
+
+Agora clique elege a fonte igual a movimento. O nivel do botao tambem so e
+aceito da fonte eleita, o que antes deixava um gancho rejeitado sobrescrever o
+estado do botao do gancho valido.
+
+### O quarto, que apareceu ao escrever a guarda
+
+Procurando onde registrar o teste novo, descobri que o `menu_roundtrip_test`
+tinha parado de rodar: uma edicao da 0.20.4 removeu um bloco do `validate.sh` e
+levou o registro dele junto. O arquivo continuava no repo dando impressao de
+cobertura.
+
+Agora ha guarda exigindo que **todo `*_test.cpp` em `tests/` apareca no
+`validate.sh`** -- a mesma ideia da guarda que exige todo `.cpp` de `src/` em
+`build.sh`, que nasceu do mesmo tipo de acidente na 0.19.4.
+
+### Testes
+
+`menu_save_test` e novo, seis casos sobre o caminho de gravacao com o IO
+substituido por memoria: o "R" de um slider de cor chega ao arquivo, o de um
+ajuste de modulo tambem, salvar sem mudanca nenhuma nao escreve nada, um modulo
+desligado e gravado, os comentarios de calibracao sobrevivem, e os dois
+controles inertes de bloom nunca sao escritos.
+
+`overlay_pointer_feed_test` ganhou tres casos para os outros dois defeitos.
+
+Os cinco casos foram verificados ao contrario: com o codigo antigo restaurado,
+cada um falha. Os primeiros que escrevi passavam por erro de compilacao e nao
+por assercao, o que nao prova nada.
+
+## Pacote 0.20.4 - 2026-09-11
+
+**A seta parou de andar porque eu mesmo cortei a fonte de dados dela. Dois
+defeitos meus, e um caminho novo que nao depende de nenhum dos dois.**
+
+### O primeiro defeito: matei o que alimenta o DirectInput
+
+A 0.20.2 removia o registro de entrada bruta do processo enquanto o menu
+estivesse aberto. No Wine e **de la que o proprio DirectInput se alimenta** --
+removendo o registro, o buffer do mouse passou a chegar zerado. A camera parou
+de girar por isso, nao pela porteira, e a seta do menu parou junto.
+
+A remocao saiu inteira, e o modulo dela tambem: sem chamador, ele seria codigo
+morto. Ha guarda proibindo `RIDEV_REMOVE` em todo o `src/`, com a razao escrita
+ao lado.
+
+A porteira de vtable continua, e e ela que silencia o mouse para o jogo -- os
+dados chegam, o jogo recebe zero, o menu le o delta.
+
+### O segundo defeito: travei a fonte do ponteiro no relatorio vazio
+
+O menu aceita delta de dois ganchos e trava no primeiro que aparecer, para nao
+contar o mesmo movimento duas vezes. So que ele travava tambem num relatorio
+**sem dado nenhum**: se o jogo chama `GetDeviceData` sem eventos antes de
+`GetDeviceState`, a trava caia na fonte errada e todo movimento real era
+descartado depois.
+
+Agora so trava um relatorio que carregue movimento de verdade. Os botoes
+continuam passando antes disso, para um clique sem mexer o mouse nao se perder.
+
+### O caminho que nao depende de mouse
+
+Tres versoes seguidas o caminho do mouse quebrou por uma razao diferente, e em
+todas o menu ficou inutilizavel. Entao o menu passou a andar por teclado
+tambem, o que nao depende de DirectInput, de entrada bruta nem de posicao de
+cursor:
+
+- **setas para cima e para baixo** trocam a linha selecionada, rolando a pagina
+  sozinha para mante-la visivel;
+- **setas para os lados** ajustam o valor em passos de 1% da faixa;
+- **enter** ou **espaco** liga e desliga um interruptor, ou devolve um slider ao
+  valor de referencia;
+- **tab** troca de aba.
+
+A linha selecionada fica destacada e clicar numa linha com o mouse tambem a
+seleciona, entao os dois caminhos funcionam juntos. O cabecalho da pagina
+mostra os atalhos.
+
+Ha guarda exigindo que esse caminho exista. Escrita primeiro com `grep -F`, ela
+nao pegou a propria quebra de teste: renomear `kKeyLeft` para `kKeyLeftRemovido`
+mantem a substring. Agora casa palavra inteira.
+
+## Pacote 0.20.3 - 2026-09-11
+
+**A camera parou de girar, mas a seta do menu travava no centro da tela. A
+causa e a mesma coisa que consertou a camera.**
+
+O DirectInput em modo relativo funciona porque alguem reposiciona o cursor do
+sistema no centro da janela a cada quadro -- e assim que o driver mede
+deslocamento sem o cursor bater na borda da tela. O menu lia a posicao com
+`GetCursorPos`, entao lia o centro, quadro apos quadro.
+
+### Posicao nao serve; delta serve
+
+O menu deixou de perguntar **onde** o cursor esta e passou a somar **quanto ele
+andou**. O ponteiro e nosso, comeca no centro da tela quando o menu abre, anda
+pelos deltas e nao sai da tela.
+
+E os deltas ja passavam pelas nossas maos: sao o mesmo buffer que a porteira da
+0.20.2 zera para o jogo. Agora ele e lido **antes** de ser zerado, nos dois
+ganchos -- `GetDeviceState`, para quem le estado, e `GetDeviceData`, para quem
+le buffer. Os dois somam no mesmo ponteiro, mas a primeira fonte que aparecer
+trava as outras: contar as duas dobraria a velocidade da seta.
+
+Essa ordem nao aparece em teste nenhum e um dia alguem inverte as duas linhas,
+entao ha guarda comparando as posicoes **dentro de cada gancho**. Escrita
+comparando o arquivo inteiro primeiro, ela acusou codigo saudavel: os dois
+ganchos moram no mesmo arquivo e a comparacao cruzava funcoes diferentes.
+
+### Um chute a menos
+
+Acumular delta so vale se o eixo estiver em modo relativo. Em modo absoluto
+`lX` e `lY` sao posicao, e somar daria uma seta fugindo pela tela.
+
+Em vez de supor, a porteira **pergunta**: `GetProperty(DIPROP_AXISMODE)` na
+primeira leitura, que e quando o jogo ja configurou o dispositivo. Se vier
+absoluto, o menu volta sozinho para a posicao do cursor do sistema, que e o
+caminho certo nesse caso. O log diz qual dos dois.
+
+O mesmo vale se nao houver DirectInput nenhum: sem delta nunca chegando, o menu
+usa `GetCursorPos` como antes.
+
+### Testes
+
+`overlay_pointer_feed_test`, sete casos: a seta comeca no centro, os deltas
+somam em vez de substituir, ela nunca sai da tela, o botao devolve borda e nao
+so nivel, a roda volta em entalhes, a primeira fonte trava as outras, e um
+alimentador sem dado nenhum se declara inativo.
+
+## Pacote 0.20.2 - 2026-09-11
+
+**O mouse continuava girando a camera com o menu aberto. Faltava fechar os dois
+caminhos por onde o ETS2 le o mouse, e nenhum deles era mensagem de janela.**
+
+A 0.20.1 engoliu `WM_INPUT` e mesmo assim a camera girava. Isso ja era resposta:
+se engolir a mensagem nao muda nada, o jogo **nao le o mouse por mensagem de
+janela**. Sobravam dois caminhos, e esta versao fecha os dois de uma vez em vez
+de tentar um e esperar o proximo teste.
+
+### DirectInput, que e provavelmente o caminho de verdade
+
+O plugin entra no jogo como `dinput8.dll` -- ele so funciona porque o ETS2
+importa essa DLL. E o ETS2 deixa mapear eixo de mouse para a direcao, que e
+coisa de DirectInput, nao de `WM_MOUSEMOVE`.
+
+Entao a propria DLL de bootstrap passou a ser porteira. Em vez de embrulhar as
+41 funcoes das duas interfaces COM, usa a mesma tecnica de vtable que os hooks
+de DXGI ja usavam: tres slots, nao 41.
+
+- `IDirectInput8::CreateDevice`, slot 3 -- ve todo dispositivo que o jogo cria;
+- `GetDeviceState`, slot 9 -- zera o buffer com o menu aberto;
+- `GetDeviceData`, slot 10 -- devolve zero eventos com o menu aberto.
+
+O tipo vem do proprio `GetCapabilities`, nao do GUID pedido, entao o volante e
+os pedais continuam passando mesmo que o jogo use GUID de instancia. A vtable e
+compartilhada, entao os ponteiros de mouse e teclado ficam num conjunto e so
+eles sao silenciados.
+
+O `dinput8.dll` pergunta ao `dxgi.dll` se o menu esta aberto, por
+`GetProcAddress` em dois exports novos. Um erro de digitacao nesse nome nao
+quebraria build nem link -- voltaria nulo e a porteira ficaria muda -- entao ha
+guarda cruzando os nomes que o `dinput8` procura com os que o `dxgi.def`
+publica.
+
+### Entrada bruta, pelo registro e nao pela mensagem
+
+Engolir `WM_INPUT` so funciona se a nossa subclasse estiver na janela certa.
+Mais robusto e tirar o registro: `GetRegisteredRawInputDevices` para ler o que o
+jogo registrou, `RIDEV_REMOVE` nas entradas de mouse e teclado enquanto o menu
+estiver aberto, e o registro original de volta ao fechar. Nao depende de
+adivinhar qual HWND recebe a entrada.
+
+A metade que machuca e a devolucao: sem ela o mouse do jogo morreria depois do
+primeiro Ctrl+P. A guarda exige a chamada de registro **dentro** do corpo de
+`restore`, porque guardar o nome da funcao nao serve de nada -- um corpo vazio
+mantem o nome. Ela foi escrita errada primeiro, do jeito que so olha o nome, e
+nao pegou o corpo esvaziado.
+
+### Se ainda assim girar, o log diz por que
+
+Nao ha como eu testar isso aqui, entao cada caminho se declara no log:
+
+- quantos registros de entrada bruta foram suspensos, ou que o jogo nao
+  registrou nenhum;
+- que tipo de dispositivo o DirectInput criou, um por um, e quais entraram na
+  porteira;
+- quantas mensagens de entrada bruta a janela engoliu enquanto o menu esteve
+  aberto.
+
+Se a camera continuar girando, essas tres linhas dizem qual dos caminhos o ETS2
+usa, em vez de eu chutar de novo.
+
+## Pacote 0.20.1 - 2026-09-11
+
+**Menu in-game funcional no Ctrl+P: 64 controles em quatro paginas, ao vivo, com
+gravacao no `.cfg`.**
+
+A 0.20.0 abaixo entregou so o esqueleto -- uma janela sem nenhuma opcao. Isso
+nao era o pedido e o estagiamento foi decisao errada: reduzir o escopo de uma
+entrega e decisao do usuario, nao de quem implementa.
+
+### O menu
+
+Quatro paginas em abas, corpo com rolagem por roda do mouse:
+
+- **Cor e curva de tom**, 17 controles: exposicao, contraste, saturacao,
+  vibracao, sombras, altas luzes, pretos, brancos, contraste local, nitidez,
+  vinheta, joelho de altas luzes, os tres pisos de preto, e a temperatura e o
+  matiz de reserva;
+- **Renderizacao e iluminacao**, 27 controles: oclusao de ambiente e seus seis
+  parametros, refino em altas luzes, oclusao de interior, resolve temporal e
+  bloom, com os quatro interruptores de modulo;
+- **Clima e condicao**, 20 controles: o interruptor da adaptacao, a constante
+  de tempo, as seis ancoras de sol/chuva/noite e os cinco limiares;
+- **Observador e profundidade**, 6 controles.
+
+Cada slider tem rotulo, trilho, valor numerico e um botao **R** que devolve o
+campo ao valor de referencia. Os interruptores dizem o proprio estado. Mover
+qualquer coisa vale **no quadro seguinte**: os quatro constant buffers ja eram
+reenviados a cada `Present`, entao escrever em `settings_` basta. Nenhum shader
+e recompilado -- `reload_configuration`, que recompila sete entry points dentro
+do `Present`, esta proibida dentro de `src/overlay` por guarda.
+
+Todo valor passa pelo mesmo `apply_limits` do carregador, entao o menu nao
+produz estado que o `.cfg` rejeitaria.
+
+### Gravar sem destruir a calibracao
+
+Os 17 campos de cor **nao podem** ser gravados onde estao: o valor efetivo e a
+soma de `base.0.1.2` mais dois deltas, resultado de 541 amostras medidas no
+ETS2. Um slider gravando ali apagaria a medicao.
+
+Entao eles ganharam uma quarta camada, `[module.user.0.20.0]`, somada por
+ultimo. O menu grava **so** nela, e grava a diferenca entre o que esta na tela e
+o que as medidas dizem. O "R" zera essa diferenca. As tres camadas medidas
+ficam intocaveis -- ha guarda proibindo `src/overlay` de sequer citar o nome
+delas.
+
+Os ajustes de modulo, que nao tem camadas, sao gravados no lugar, na propria
+secao. O escritor novo e escopado por secao, o que importa porque `radius`,
+`intensity`, `bias` e `log_seconds` se repetem em secoes diferentes, e troca
+**so o texto do valor** -- o `.cfg` tem ~60% de linhas de justificativa medida
+que precisam sair intactas.
+
+Nao havia escritor de INI no repo: o que existia era o do dialeto `uset` do
+jogo, que nem insere chave ausente. O IO de arquivo atomico que o AA nativo ja
+tinha desceu para `src/config/file_io.cpp`, e o `path_utils` saiu de
+`src/native_aa/` -- nao havia nada de AA nativo em juntar dois caminhos.
+
+### A entrada bruta
+
+O menu engolia `WM_MOUSEMOVE` e mesmo assim mover o mouse girava a camera. A
+razao: o ETS2 le o mouse por **entrada bruta**, que chega como `WM_INPUT`, e
+essa mensagem nao estava na lista. Agora esta, junto com
+`WM_INPUT_DEVICE_CHANGE`.
+
+Para nao ficar no achismo, o menu **conta** quantas mensagens de entrada bruta
+engoliu e registra o total ao fechar. Se a camera ainda girar com esse numero em
+zero, o jogo le o mouse por DirectInput e o proximo passo e outro -- o log
+responde qual, em vez de se adivinhar.
+
+### O que continua sem prova
+
+O `[native_aa.0.12.2]` ficou de fora do menu de proposito: ele e aplicado pelo
+`dinput8.dll` no inicio do jogo e mexer nele no meio da sessao nao teria efeito
+visivel ate reiniciar.
+
+`bloom_threshold` e `bloom_knee` aparecem **esmaecidos** e nao sao graváveis:
+`BloomPyramid::render()` nao tem nenhum call site e `bloom_frame()` nunca os
+atribui, entao hoje eles nao chegam a lugar nenhum. Mostrar um slider que nao
+faz nada seria pior que mostrar um desligado.
+
+**O menu nao pausa o jogo.** Nao ha como pausar o ETS2 de fora.
+
+### Testes
+
+- `menu_roundtrip_test` -- a conta inteira: o valor que o slider mostrava volta
+  identico depois de gravar e reler; as tres camadas medidas e os comentarios do
+  arquivo saem intactos; uma camada do usuario zerada nao muda nada;
+- `overlay_bindings_test` -- **todo** controle das quatro paginas resolve para
+  onde sera gravado: os 17 de cor para uma chave `_delta`, o resto para a secao
+  e a chave que o proprio leitor usa;
+- `config_writer_test` -- nove casos, incluindo chave homonima em outra secao,
+  chave comentada, colisao de prefixo (`r_aa` contra `r_aa_quality`) e `\r\n`.
+
+Guardas novas, todas quebradas de proposito para provar que disparam: a camada
+do usuario tem que ser a ultima soma; o menu precisa ter pelo menos cinquenta
+controles declarados -- uma janela vazia compila e passa em tudo, que foi
+exatamente o que aconteceu na 0.20.1.
+
+## Pacote 0.20.0 - 2026-09-11
+
+**Base do menu in-game: abre no Ctrl+P, desenha e responde ao mouse.**
+Primeiro de quatro estagios. Este entrega o caminho de desenho, a entrada e a
+fonte -- os widgets, as paginas e a gravacao no `.cfg` vem a seguir.
+
+### O que nao existia
+
+Nada disso estava no repo: mouse, WndProc, HWND do jogo, fonte, vertex buffer,
+input layout, blend com alpha, textura criada a partir de dados da CPU. O unico
+`GetAsyncKeyState` era o de Home/End/Insert e o unico `HWND` era a janela-sonda
+escondida que existe so para ler vtables.
+
+### Onde o menu desenha, e por que ali
+
+Terceira chamada no `Present`, **depois** de `observe_postprocessed_frame`:
+
+```
+process_frame(swap_chain);
+observe_postprocessed_frame(swap_chain);
+draw_overlay_frame(swap_chain);
+```
+
+Depois da captura, porque a captura do Steam le o backbuffer ja graduado -- se
+o menu subisse para antes, ele passaria a ser gravado dentro dos screenshots do
+jogo. Fora do `render_frame`, porque o menu nao e parte da imagem graduada e
+porque assim ele continua funcionando com o efeito desligado no Home.
+
+### Quatro achados que mudaram o desenho
+
+**`is_processing_frame()` nao cobre quem desenha fora do `process_frame`.** Ela
+le um `thread_local` que so o `process_frame` levanta, e os hooks de contexto a
+consultam para separar um `OMSetRenderTargets` do jogo de um nosso. Um menu
+desenhando sem essa flag entrega o proprio render target ao observador de depth
+como candidato. O `draw_overlay_frame` usa o mesmo `ProcessorScope`, extraido
+agora em RAII para os dois caminhos.
+
+**O `SavedState` tinha exatamente um buraco no caminho do menu.** Ele ja salvava
+RTVs, blend, depth-stencil, rasterizer, viewports, scissors, input layout,
+topologia, os cinco shaders, PS SRV 0..3, PS sampler 0..1 e PS constant buffer
+0. Nao salvava SRV de vertex shader, constant buffer de vertex shader, vertex
+buffer nem index buffer. Escolhendo uma geometria sem IA e sem constant buffer
+de vertex, sobrou um unico slot a acrescentar: a SRV do vertex shader.
+
+**Geometria sem tocar o Input Assembler.** Um `StructuredBuffer` dinamico lido
+pelo vertex shader por `SV_VertexID`, com as posicoes ja em NDC vindas da CPU --
+o mesmo idioma sem-IA do triangulo de tela cheia que o plugin ja usava. Seis
+vertices por quad, cantos arredondados por SDF no pixel shader, recorte feito na
+CPU. Resultado: um unico `Draw` por frame, nenhum input layout, nenhum scissor
+state, e o rasterizer padrao serve como esta.
+
+**O RTV do backbuffer ja resolve sRGB, e o menu herda isso.** O
+`create_output_view` tenta um RTV `_SRGB` e cai para codificacao manual quando
+ele falha. As cores do tema sao autorais em sRGB, entao o pixel shader decide
+pelo mesmo flag, que viaja no PS constant buffer slot 0 -- que ja era salvo.
+
+### Fonte: a embutida primeiro, de proposito
+
+O menu assa um atlas 96x48 a partir de uma tabela 5x7 `constexpr` de 95 glifos.
+Nao depende de nada. O atlas por GDI entra no estagio 2, com queda para esta.
+
+A ordem e deliberada: "meu renderer de quads funciona" e "o stack de fontes do
+Wine funciona" sao dois riscos independentes, e testar os dois de uma vez nao
+diz qual falhou.
+
+### O acordo de layout que nada verificava
+
+O vertex atravessa a fronteira CPU/GPU sem input layout: o shader le o
+`StructuredBuffer` por indice. Nenhum compilador liga os dois lados -- um campo
+a mais de um lado apareceria so como menu embaralhado na tela. O disassembly
+confirma `dcl_resource_structured t0, 64`, batendo com o `sizeof(Vertex)` em
+C++, e agora um `static_assert` prende o lado C++ enquanto uma contagem de
+floats prende o lado HLSL.
+
+### Guardas novas
+
+- **todo `.cpp` sob `src/` precisa estar em `tools/build.sh`**. E a classe de
+  erro da 0.19.4, em que modulos extraidos foram compilados fora do binario e
+  build e validate ficaram verdes sobre codigo morto;
+- `draw_overlay_frame` nao pode subir para antes de `observe_postprocessed_frame`;
+- `draw_overlay_frame` nao pode largar o `ProcessorScope`;
+- `SavedState` nao pode perder a SRV do vertex shader;
+- `src/overlay` nao pode citar `base.0.1.2`, `module.visual.0.2.0` nem
+  `module.rain_overcast.0.3.0`: o menu nunca grava sobre calibracao medida;
+- `src/overlay` nao pode chamar `reload_configuration`, que recompilaria sete
+  entry points de shader dentro do `Present` a cada slider;
+- `dxgi.dll` precisa de `-lgdi32`;
+- `overlay.hlsl` entra no `package.sh` e no `shader_check.sh`.
+
+As sete foram quebradas de proposito, uma por vez, e todas dispararam.
+
+### O que esta provado e o que nao esta
+
+Provado: compila, linka, os literais sobrevivem no DLL, o `VSOverlay` e o
+`PSOverlay` compilam no `d3dcompiler_47.dll` do Wine, o stride do buffer bate
+nos dois lados, e dez testes cobrem geometria, recorte, atlas e largura de
+texto.
+
+**Nao provado ainda:** nada disso rodou no jogo. Faltam duas hipoteses a
+verificar no ETS2 -- que o cursor do sistema esta livre (o menu desenha o
+proprio ponteiro a partir do `GetCursorPos`, o que evita brigar com
+`ShowCursor`/`ClipCursor`), e que engolir as mensagens de janela basta para o
+caminhao parar de responder. Se o jogo ler teclado por DirectInput, nao basta.
+
+**O menu nao pausa o jogo.** Nao ha como pausar o ETS2 de fora. Abrir dirigindo
+a 90 km/h continua dirigindo a 90 km/h.
+
+## Pacote 0.19.13 - 2026-09-11
+
+**A suavizacao da adaptacao por condicao nunca funcionou acima de 64 fps.**
+Defeito da 0.19.0, encontrado no primeiro log de jogo dela.
+
+### O que o log mostrou
+
+Quatro amostras, noventa segundos, e o detector foi de `sol=1.000` para
+`noite=1.000` e de volta para `sol=0.846`. Com `tau=180s` isso e impossivel: a
+mediana suavizada foi de 52,5 para 2,5 em trinta segundos, quando deveria ter
+parado em 44,4.
+
+### A causa
+
+`GetTickCount64` tem resolucao de ~15,6 ms. Acima de 64 fps, boa parte dos
+quadros chega ao suavizador com `elapsed_seconds == 0`. O codigo era:
+
+```cpp
+float alpha = 1.0f;
+if (tau_seconds > 0.0f && elapsed_seconds > 0.0f) {
+    ...calcula o alpha pequeno...
+}
+```
+
+Sem tempo decorrido o `if` nao executava e **alpha ficava no inicializador,
+1.0** -- um salto completo para a amostra daquele quadro. Nao era suavizacao
+parcial: era nenhuma.
+
+Medido com a cadencia real de tiques do Windows, partindo de 52,5 e alimentando
+uma tela escura por 30 s:
+
+| fps | antes | depois | quadros com `elapsed=0` |
+| --- | --- | --- | --- |
+| 60 | 44,25 | 44,25 | 0 de 1800 |
+| 120 | **0,00** | **44,25** | 1677 de 3600 |
+| 200 | **0,00** | **44,25** | 4077 de 6000 |
+
+A 60 fps funcionava, e foi por isso que a reproducao das 386 amostras -- que usa
+passo de 30 s, nunca zero -- nao pegou nada.
+
+### A correcao
+
+Sem tempo decorrido, nada se move. `tau <= 0` continua significando "sem
+suavizacao" e salta, que era a intencao original do `tau_seconds > 0.0f`.
+
+`tests/scene_conditions_test.cpp` ganhou dois grupos: um varre 60, 120, 200 e
+500 fps com a cadencia de tiques real e exige o mesmo resultado nos quatro; o
+outro exige que mil chamadas com `elapsed = 0` nao movam nada. Verificado que
+ambos caem contra o codigo da 0.19.0.
+
+### Um erro de refatoracao no mesmo log
+
+A linha de conclusao da descoberta de depth saia como
+`scan.resource_evictions=0`. Foi a minha substituicao em massa da 0.19.10, que
+renomeou `resource_evictions` para `scan.resource_evictions` **dentro da string
+de formato** e nao so no codigo. Corrigido.
+
+### Esta versao muda a imagem
+
+Ao contrario das onze anteriores, esta nao e refatoracao. Com a suavizacao
+funcionando, a cor para de perseguir o quadro e passa a levar minutos para
+mudar -- que e o que a 0.19.0 pretendia desde o inicio.
+
 ## Pacote 0.19.12 - 2026-09-11
 
 `src/native_aa_config.cpp` virou `src/native_aa/`. Sem mudanca de

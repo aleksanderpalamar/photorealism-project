@@ -764,6 +764,22 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   -o "${config_load_test}"
 PHOTOREALISM_PROJECT_DIR="${project_dir}" "${config_load_test}"
 
+# 0.19.13. A suavizacao nao pode depender da taxa de quadros. GetTickCount64
+# tem resolucao de ~15,6 ms: acima de 64 fps muitos quadros chegam com
+# elapsed_seconds == 0, e um alpha que valha 1.0 nesse caso faz um salto
+# completo a cada um deles -- a suavizacao deixa de existir sem nada acusar.
+if ! grep -Fq 'if (elapsed_seconds <= 0.0f) {' \
+  "${project_dir}/src/scene/condition_smoother.hpp"; then
+  echo "O suavizador voltou a integrar sem tempo decorrido: acima de 64 fps \
+isso salta para a amostra do momento e a suavizacao some." >&2
+  exit 1
+fi
+if ! grep -Fq 'assert(smoother.median() > 40.0f);' \
+  "${project_dir}/tests/scene_conditions_test.cpp"; then
+  echo "O teste parou de exigir que a suavizacao independa do fps." >&2
+  exit 1
+fi
+
 scene_conditions_test="/tmp/photorealism-scene-conditions-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/tests/scene_conditions_test.cpp" \
@@ -812,7 +828,7 @@ effective_profile="$(awk -F= '
 # que importa. Uma guarda que explica uma regressao sutil so serve se for ela
 # a falar. Nesta ordem o hash continua pegando tudo que as guardas nao
 # cobrem, e so isso.
-expected_cfg_sha256="9879d1ad2371bd6de2f643c42f6331585df1ea6e26380c4e9b46b8006d5b046c"
+expected_cfg_sha256="64f968a89ca6ed633b4678b835024e12c473e067645ef1b599be84ee869ee799"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
@@ -852,12 +868,26 @@ if command -v glslangValidator >/dev/null 2>&1; then
     -o /tmp/photorealism-plugin-temporal.spv >/dev/null
 fi
 
+# A escrita do config.cfg do jogo precisa continuar atomica: temporario mais
+# MoveFileEx. Um write direto deixa o config.cfg do usuario truncado se o jogo
+# fechar no meio. A implementacao desceu para src/config/file_io.cpp na 0.20.0,
+# quando o menu passou a precisar do mesmo IO -- a guarda segue o efeito.
+if ! grep -Fq 'MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH' \
+  "${project_dir}/src/config/file_io.cpp"; then
+  echo "A escrita de configuracao deixou de ser atomica: sem temporario mais \
+MoveFileEx, um fechamento no meio trunca o config.cfg do usuario." >&2
+  exit 1
+fi
+if ! grep -rFq 'config_io::write_atomic' "${project_dir}/src/native_aa"; then
+  echo "O AA nativo parou de usar a escrita atomica de configuracao." >&2
+  exit 1
+fi
+
 native_aa_source="${project_dir}/src/native_aa"
 for native_aa_marker in \
   'eurotrucks2.exe' \
   'amtrucks.exe' \
   'config.photorealism-native-aa.backup.cfg' \
-  'MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH' \
   'kNativeAaSection = "native_aa.0.12.2"' \
   'read_native_aa_policy' \
   'policy.manage' \
@@ -954,5 +984,329 @@ roda em toda chamada de desenho do jogo." >&2
     exit 1
   fi
 done
+
+# Todo .cpp sob src/ precisa estar em build.sh. A 0.19.4 mostrou o custo de nao
+# ter esta guarda: os modulos extraidos foram compilados fora do binario, o
+# original continuou vivo no namespace anonimo, e build e validate ficaram
+# verdes sobre codigo morto.
+# Todo teste em tests/ precisa estar neste arquivo. A 0.20.4 mostrou o custo de
+# nao ter esta guarda: uma edicao removeu um bloco e levou junto o registro do
+# menu_roundtrip_test, que ficou no repo sem nunca mais rodar.
+missing_from_validate=""
+while IFS= read -r test_file; do
+  test_name="$(basename "${test_file}")"
+  if ! grep -Fq "${test_name}" "${project_dir}/tools/validate.sh"; then
+    missing_from_validate="${missing_from_validate}${test_name}"$'\n'
+  fi
+done < <(find "${project_dir}/tests" -maxdepth 1 -name '*_test.cpp' | sort)
+if [[ -n "${missing_from_validate}" ]]; then
+  echo "Teste em tests/ que este arquivo nao roda: ele fica no repo dando \
+impressao de cobertura e nunca executa." >&2
+  echo "${missing_from_validate}" >&2
+  exit 1
+fi
+
+missing_from_build=""
+while IFS= read -r source_file; do
+  relative="${source_file#${project_dir}/}"
+  if ! grep -Fq "${relative}" "${project_dir}/tools/build.sh"; then
+    missing_from_build="${missing_from_build}${relative}"$'\n'
+  fi
+done < <(find "${project_dir}/src" -name '*.cpp' | sort)
+if [[ -n "${missing_from_build}" ]]; then
+  echo "Arquivo .cpp fora de tools/build.sh: ele compila nos testes mas nao \
+entra no DLL, e o binario roda sem ele sem nenhum aviso." >&2
+  echo "${missing_from_build}" >&2
+  exit 1
+fi
+
+# O menu desenha DEPOIS da captura do Steam. Se subir para antes, ele passa a
+# aparecer dentro dos screenshots do jogo.
+for present_hook in 'hooked_present' 'hooked_present1'; do
+  capture_line="$(grep -n "observe_postprocessed_frame" \
+    "${project_dir}/src/hooks/swap_chain_hooks.cpp" | head -1 | cut -d: -f1)"
+  overlay_line="$(grep -n "draw_overlay_frame" \
+    "${project_dir}/src/hooks/swap_chain_hooks.cpp" | head -1 | cut -d: -f1)"
+  if [[ -z "${overlay_line}" || -z "${capture_line}" ]]; then
+    echo "O menu ou a captura do Steam sumiu de ${present_hook}." >&2
+    exit 1
+  fi
+  if [[ "${overlay_line}" -lt "${capture_line}" ]]; then
+    echo "draw_overlay_frame subiu para antes de observe_postprocessed_frame: \
+o menu passa a ser gravado dentro dos screenshots do Steam." >&2
+    exit 1
+  fi
+done
+
+# O menu roda fora do process_frame, entao precisa levantar a mesma flag. Sem
+# ela is_processing_frame() fica falso e o proprio OMSetRenderTargets do menu
+# entra no observador de depth como candidato.
+if ! grep -A 4 'void draw_overlay_frame' \
+  "${project_dir}/src/postprocess/postprocessor.cpp" | grep -Fq 'ProcessorScope'; then
+  echo "draw_overlay_frame parou de usar ProcessorScope: o menu passa a \
+desenhar com is_processing_frame() falso e envenena a descoberta de depth." >&2
+  exit 1
+fi
+
+# O menu liga uma SRV no vertex shader. Sem salvar esse slot, o proximo desenho
+# do jogo herda o buffer de vertices do overlay.
+for vertex_slot_call in 'VSGetShaderResources' 'VSSetShaderResources'; do
+  if ! grep -Fq "${vertex_slot_call}" \
+    "${project_dir}/src/postprocess/device_state.cpp"; then
+    echo "SavedState parou de cobrir a SRV do vertex shader \
+(${vertex_slot_call}): o menu vaza o proprio buffer de vertices para o jogo." >&2
+    exit 1
+  fi
+done
+
+# O menu nunca grava sobre a calibracao medida. As tres camadas abaixo sao
+# resultado de 541 amostras de jogo e so mudam por medicao nova.
+for measured_layer in 'base.0.1.2' 'module.visual.0.2.0' 'module.rain_overcast.0.3.0'; do
+  if grep -rFq "${measured_layer}" "${project_dir}/src/overlay"; then
+    echo "O menu citou a camada medida ${measured_layer}. Ele so pode escrever \
+na camada do usuario -- as medidas nao se ajustam por slider." >&2
+    exit 1
+  fi
+done
+
+# Aplicar um ajuste do menu nao pode passar por reload_configuration: ela
+# recompila sete entry points de shader dentro do Present e reinicia a
+# descoberta de depth.
+if grep -rFq 'reload_configuration' "${project_dir}/src/overlay"; then
+  echo "O menu chamou reload_configuration: mover um slider passaria a \
+recompilar sete shaders dentro do Present." >&2
+  exit 1
+fi
+
+# A fonte embutida e assada por GDI, que so entra no DLL com -lgdi32.
+if ! grep -Fq -- '-lgdi32' "${project_dir}/tools/build.sh"; then
+  echo "dxgi.dll perdeu -lgdi32: o atlas de fonte do menu nao linka." >&2
+  exit 1
+fi
+
+# O vertex do menu atravessa a fronteira CPU/GPU sem input layout: o VS le o
+# StructuredBuffer por SV_VertexID. Nada no compilador liga os dois lados, e um
+# campo a mais de um lado so aparece como menu embaralhado na tela. O
+# static_assert prende o lado C++; esta contagem prende o lado HLSL.
+overlay_vertex_floats="$(awk '/^struct OverlayVertex/,/^};/' \
+  "${project_dir}/shaders/overlay.hlsl" | grep -oE '^ +float[234]?' |
+  sed 's/[^0-9]//g' | awk '{ s += ($1 == "" ? 1 : $1) } END { print s+0 }')"
+if [[ "${overlay_vertex_floats}" -ne 16 ]]; then
+  echo "OverlayVertex no shader tem ${overlay_vertex_floats} floats e o Vertex \
+em C++ tem 16: o menu passa a ler os campos deslocados." >&2
+  exit 1
+fi
+if ! grep -Fq 'static_assert(sizeof(Vertex) == 64)' \
+  "${project_dir}/src/overlay/draw_list.hpp"; then
+  echo "O Vertex do overlay perdeu o static_assert de 64 bytes, que e o unico \
+lado C++ do acordo de layout com o StructuredBuffer do shader." >&2
+  exit 1
+fi
+
+# O menu so vale se cada controle que ele mostra puder de fato ser gravado. O
+# teste percorre a tabela de paginas e exige que todo binding resolva: os 17 de
+# cor para uma chave _delta da camada do usuario, o resto para a secao e chave
+# que o proprio leitor usa.
+# A conta inteira do menu de uma ponta a outra: o que o slider mostrava tem que
+# voltar identico depois de gravar e reler, e as tres camadas medidas e os
+# comentarios do arquivo tem que sair intactos.
+# O dinput8.dll pergunta ao dxgi.dll se o menu esta aberto, por nome, em tempo
+# de execucao. Um erro de digitacao de um lado nao quebra build nem link: o
+# GetProcAddress volta nulo, a porteira fica muda e o mouse continua girando a
+# camera sem nenhum aviso. Os nomes tem que bater com src/dxgi.def.
+while IFS= read -r exported_name; do
+  if ! grep -Fq "${exported_name}" "${project_dir}/src/dxgi.def"; then
+    echo "O dinput8.dll procura o export ${exported_name}, que nao existe em \
+src/dxgi.def. GetProcAddress voltaria nulo em silencio e a porteira de \
+DirectInput nunca silenciaria o mouse." >&2
+    exit 1
+  fi
+done < <(grep -oE '"photorealism_[a-z_]+"' "${project_dir}/src/dinput/menu_gate.cpp" |
+  tr -d '"' | sort -u)
+
+# A porteira so existe se o DirectInput8Create a instalar.
+if ! grep -Fq 'install_input_gate' "${project_dir}/src/proxy.cpp"; then
+  echo "DirectInput8Create parou de instalar a porteira de entrada: o menu \
+volta a dividir o mouse com o jogo." >&2
+  exit 1
+fi
+
+# Os tres slots de vtable sao a unica coisa que liga a porteira ao DirectInput,
+# e errar um deles chama a funcao errada com os argumentos de outra.
+for gate_slot in \
+  'kCreateDeviceSlot = 3' \
+  'kGetDeviceStateSlot = 9' \
+  'kGetDeviceDataSlot = 10'; do
+  if ! grep -Fq "${gate_slot}" "${project_dir}/src/dinput/input_gate.cpp"; then
+    echo "Slot de vtable do DirectInput mudou: ${gate_slot}. Um slot errado \
+chama outro metodo com os argumentos deste." >&2
+    exit 1
+  fi
+done
+
+# O ponteiro do menu anda por DELTA, nao por posicao. O jogo recentraliza o
+# cursor do sistema a cada quadro para o DirectInput funcionar em modo
+# relativo, entao ler GetCursorPos devolve o centro da tela sempre.
+#
+# E o menu NAO pode mexer no registro de entrada bruta do processo: no Wine e
+# de la que o proprio DirectInput se alimenta, e remover o registro fez o
+# buffer do mouse chegar zerado, deixando a seta parada no centro. Foi o
+# defeito da 0.20.3.
+if grep -rFq 'RIDEV_REMOVE' "${project_dir}/src"; then
+  echo "Alguem voltou a remover o registro de entrada bruta do processo. No Wine isso mata a fonte que alimenta o DirectInput, e a seta do menu para de andar." >&2
+  exit 1
+fi
+# A conta inteira do menu de uma ponta a outra: o que o slider mostrava tem que
+# voltar identico depois de gravar e reler, e as tres camadas medidas e os
+# comentarios do arquivo tem que sair intactos.
+menu_roundtrip_test="/tmp/photorealism-menu-roundtrip-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  -I"${project_dir}/tests/support" -I"${project_dir}/src" \
+  "${project_dir}/tests/menu_roundtrip_test.cpp" \
+  "${project_dir}/src/config/loader.cpp" \
+  "${project_dir}/src/config/defaults.cpp" \
+  "${project_dir}/src/config/section_table.cpp" \
+  "${project_dir}/src/config/grade_fields.cpp" \
+  "${project_dir}/src/config/limits.cpp" \
+  "${project_dir}/src/config/logging.cpp" \
+  -o "${menu_roundtrip_test}"
+"${menu_roundtrip_test}"
+
+# Gravar so o que mudou EM RELACAO AO DISCO, e nao em relacao ao valor de
+# referencia. Comparando com a referencia, apertar o "R" de um slider e salvar
+# nao escrevia nada: o delta antigo continuava no cfg e voltava no proximo
+# carregamento, com o menu tendo dito que reiniciou.
+menu_save_test="/tmp/photorealism-menu-save-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  -I"${project_dir}/tests/support" -I"${project_dir}/src" \
+  "${project_dir}/tests/menu_save_test.cpp" \
+  "${project_dir}/src/config/section_table.cpp" \
+  "${project_dir}/src/config/grade_fields.cpp" \
+  -o "${menu_save_test}"
+"${menu_save_test}"
+
+# A eleicao da fonte do ponteiro vale por sessao de menu, nao por sessao de
+# jogo: se ela sobreviver ao fechamento e o jogo passar a reportar pelo outro
+# gancho, todo delta novo e descartado e a seta congela.
+if ! awk '/^void PointerFeed::reset/,/^}/' \
+  "${project_dir}/src/overlay/pointer_feed.cpp" | grep -Fq 'PointerSource::None'; then
+  echo "PointerFeed::reset parou de soltar a fonte eleita: se o jogo trocar de \
+gancho entre uma abertura e outra do menu, a seta congela." >&2
+  exit 1
+fi
+
+# Um clique sem mexer o mouse antes tem que eleger a fonte igual a um
+# movimento, senao o primeiro clique depois de abrir o menu se perde.
+if ! grep -Fq 'buttons != 0' "${project_dir}/src/overlay/pointer_feed.cpp"; then
+  echo "Um clique parado deixou de eleger a fonte do ponteiro: o primeiro \
+clique depois de abrir o menu se perde." >&2
+  exit 1
+fi
+
+overlay_pointer_feed_test="/tmp/photorealism-overlay-pointer-feed-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  -I"${project_dir}/tests/support" \
+  "${project_dir}/tests/overlay_pointer_feed_test.cpp" \
+  -o "${overlay_pointer_feed_test}"
+"${overlay_pointer_feed_test}"
+
+# A ordem importa e nao aparece em teste nenhum: o delta tem que ser lido ANTES
+# de o buffer do DirectInput ser apagado para o jogo. Invertido, o menu zera o
+# proprio movimento e o ponteiro fica parado. A comparacao e DENTRO de cada
+# gancho -- os dois ficam no mesmo arquivo e comparar o arquivo inteiro compara
+# funcoes diferentes.
+gate_state_body="$(awk '/^HRESULT STDMETHODCALLTYPE hooked_get_device_state/,/^}/' \
+  "${project_dir}/src/dinput/input_gate.cpp")"
+gate_data_body="$(awk '/^HRESULT STDMETHODCALLTYPE hooked_get_device_data/,/^}/' \
+  "${project_dir}/src/dinput/input_gate.cpp")"
+
+state_read="$(grep -n 'report_state(' <<<"${gate_state_body}" | head -1 | cut -d: -f1)"
+state_clear="$(grep -n 'clear_state(' <<<"${gate_state_body}" | head -1 | cut -d: -f1)"
+data_read="$(grep -n 'report_data(' <<<"${gate_data_body}" | head -1 | cut -d: -f1)"
+data_clear="$(grep -n '\*count = 0' <<<"${gate_data_body}" | head -1 | cut -d: -f1)"
+
+if [[ -z "${state_read}" || -z "${data_read}" ]]; then
+  echo "A porteira parou de ler o mouse antes de silencia-lo: o ponteiro do \
+menu fica parado no meio da tela." >&2
+  exit 1
+fi
+if [[ -z "${state_clear}" || -z "${data_clear}" ]]; then
+  echo "A porteira parou de silenciar o mouse para o jogo: a camera volta a \
+girar com o menu aberto." >&2
+  exit 1
+fi
+if [[ "${state_read}" -gt "${state_clear}" || "${data_read}" -gt "${data_clear}" ]]; then
+  echo "A porteira apaga o buffer do DirectInput antes de ler o delta: o menu \
+zera o proprio movimento e o ponteiro nao anda." >&2
+  exit 1
+fi
+
+# O menu tem que continuar utilizavel sem mouse nenhum. Tres vezes seguidas o
+# caminho do mouse quebrou por uma razao diferente, e em todas o menu ficou
+# inutilizavel. A navegacao por teclado nao depende de DirectInput, de entrada
+# bruta nem de posicao de cursor.
+for keyboard_path in 'kKeyUp' 'kKeyDown' 'kKeyLeft' 'kKeyRight' 'kKeyEnter' 'kKeyTab'; do
+  if ! grep -rFqw "${keyboard_path}" "${project_dir}/src/overlay/page_view.cpp" \
+    "${project_dir}/src/overlay/overlay.cpp"; then
+    echo "A navegacao por teclado do menu perdeu ${keyboard_path}: sem ela, \
+qualquer defeito no caminho do mouse deixa o menu inutilizavel." >&2
+    exit 1
+  fi
+done
+if ! grep -Fqw 'poll_keys' "${project_dir}/src/overlay/input.cpp"; then
+  echo "O menu parou de ler o teclado da janela: some o unico caminho que nao \
+depende do mouse." >&2
+  exit 1
+fi
+
+# E o menu tem que preferir esse delta a posicao do cursor do sistema.
+if ! grep -Fq 'pointer_feed().active()' "${project_dir}/src/overlay/overlay.cpp"; then
+  echo "O menu voltou a usar so a posicao do cursor do sistema: com o jogo \
+recentralizando o cursor, a seta trava no meio da tela." >&2
+  exit 1
+fi
+
+overlay_bindings_test="/tmp/photorealism-overlay-bindings-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  -I"${project_dir}/tests/support" -I"${project_dir}/src" \
+  "${project_dir}/tests/overlay_bindings_test.cpp" \
+  "${project_dir}/src/config/section_table.cpp" \
+  "${project_dir}/src/config/grade_fields.cpp" \
+  -o "${overlay_bindings_test}"
+"${overlay_bindings_test}"
+
+# O escritor de INI mexe num arquivo em que ~60% das linhas sao a justificativa
+# medida de cada numero. Ele so pode trocar o texto do valor.
+config_writer_test="/tmp/photorealism-config-writer-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/config_writer_test.cpp" \
+  -o "${config_writer_test}"
+"${config_writer_test}"
+
+# A camada do usuario tem que ser a ULTIMA soma: o menu grava a diferenca entre
+# o que o usuario escolheu e o que as medidas dizem, e essa conta so fecha se
+# nada vier depois dela.
+if ! grep -A 12 'Settings compose_layers' "${project_dir}/src/config/loader.cpp" |
+  grep -A 2 'stack.rain_overcast_0_3' | grep -Fq 'stack.user_0_20'; then
+  echo "A camada do usuario deixou de ser somada por ultimo em compose_layers: \
+o delta que o menu grava para de reproduzir o valor que estava na tela." >&2
+  exit 1
+fi
+
+# O menu precisa ter controles. Um menu vazio compila, passa no validate e nao
+# serve para nada -- foi o que a 0.20.0 entregou na primeira tentativa.
+menu_controls="$(grep -c 'BindingKind::' "${project_dir}"/src/overlay/bindings/*_bindings.cpp |
+  awk -F: '{ total += $2 } END { print total+0 }')"
+if [[ "${menu_controls}" -lt 50 ]]; then
+  echo "O menu tem so ${menu_controls} controles declarados. Ele existe para \
+ajustar o plugin no jogo; uma janela sem opcoes nao entrega isso." >&2
+  exit 1
+fi
+
+overlay_draw_list_test="/tmp/photorealism-overlay-draw-list-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/overlay_draw_list_test.cpp" \
+  -o "${overlay_draw_list_test}"
+"${overlay_draw_list_test}"
 
 echo "Proxies, core Photorealism, captura Steam, depth, SSAO, telemetria, perfil, shaders e numeracao de versao validados."

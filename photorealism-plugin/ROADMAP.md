@@ -479,7 +479,17 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   medir depois: a chuva foi confirmada pelo usuario mas neblina, neve e
   tunel nao aparecem em nenhum bloco sustentado, entao a adaptacao os trata
   como interpolacao entre as tres que existem em vez de ancoras proprias;
-- **0.20.0** raios de sol. E o efeito que as referencias realmente
+- **0.20.5 (entregue)** menu in-game no Ctrl+P: 64 controles em quatro
+  paginas, ao vivo, com gravacao no `.cfg`. Os 17 campos de cor vao para uma
+  quarta camada, `[module.user.0.20.0]`, somada por ultimo, com o menu gravando
+  so a diferenca -- as tres camadas medidas ficam intocaveis. O mouse e tirado
+  do jogo por dois caminhos: porteira de vtable no DirectInput, pelo proprio
+  `dinput8.dll`, e remocao do registro de entrada bruta enquanto o menu estiver
+  aberto. A seta do menu anda por delta lido dessa mesma porteira, porque o
+  cursor do sistema fica recentralizado enquanto o DirectInput estiver em modo
+  relativo. O menu tambem anda por teclado -- setas, enter e tab -- que e o
+  caminho que nao depende de nada disso;
+- **0.21.0** raios de sol. E o efeito que as referencias realmente
   mostram, e que a medicao do bloom revelou: estriados radiais saindo do sol
   atras da linha de arvores, projetados no teto escuro da cabine. Sao
   **direcionais**, e nenhuma piramide gaussiana produz aquilo. Reaproveita o
@@ -488,7 +498,7 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   descobrir a posicao do sol na tela sem dados do motor no `Present`.
   **Desceu de prioridade na 0.18.0**: cor errada em toda condicao pesa mais
   que um efeito ausente;
-- **0.21.0 (condicional)** upgrade de bind flag via hook de `CreateTexture2D`,
+- **0.22.0 (condicional)** upgrade de bind flag via hook de `CreateTexture2D`,
   na tecnica do ReShade: promover o depth a typeless com
   `BIND_SHADER_RESOURCE`, sintetizando o descritor no `CreateDepthStencilView`.
   So entra se o `CopyResource` de um depth `DEPTH_STENCIL`-only falhar sob

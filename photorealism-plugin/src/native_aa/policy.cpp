@@ -2,7 +2,7 @@
 
 #include "config_file.hpp"
 #include "config_text.hpp"
-#include "path_utils.hpp"
+#include "../config/path_utils.hpp"
 
 #include <cwchar>
 
@@ -23,10 +23,10 @@ bool resolve_plugin_config(HMODULE proxy_module, wchar_t* path) {
     if (GetModuleFileNameW(proxy_module, path, MAX_PATH) == 0) {
         return false;
     }
-    if (!keep_directory_of(path)) {
+    if (!paths::keep_directory_of(path)) {
         return false;
     }
-    return append_path(
+    return paths::append_path(
         path, MAX_PATH, L"photorealism-plugin\\photorealism-plugin.cfg");
 }
 

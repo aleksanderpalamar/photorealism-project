@@ -1,15 +1,11 @@
 #pragma once
 
+#include "shader_compile.hpp"
 #include "shader_constants.hpp"
 
 #include <d3d11.h>
-#include <d3dcompiler.h>
 
 namespace photorealism {
-
-using CompileFromFileFunction = decltype(&D3DCompileFromFile);
-
-CompileFromFileFunction resolve_shader_compiler();
 
 class ShaderLibrary {
   public:
@@ -49,12 +45,6 @@ class ShaderLibrary {
         ID3D11PixelShader* bloom[kBloomPassCount];
     };
 
-    ID3DBlob* compile_shader_blob(
-        CompileFromFileFunction compile_from_file,
-        const wchar_t* path,
-        const char* entry_point,
-        const char* target,
-        const char* stage);
     ID3D11PixelShader* create_optional_pixel_shader(
         ID3D11Device* device, ID3DBlob* blob, const char* description);
     void adopt_optional_shader(

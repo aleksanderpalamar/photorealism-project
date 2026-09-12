@@ -52,6 +52,8 @@ shaders=(
   "bloom.hlsl PSBloomBright ps_5_0"
   "bloom.hlsl PSBloomDownsample ps_5_0"
   "bloom.hlsl PSBloomUpsample ps_5_0"
+  "overlay.hlsl VSOverlay vs_5_0"
+  "overlay.hlsl PSOverlay ps_5_0"
 )
 
 cd "${project_dir}/shaders"

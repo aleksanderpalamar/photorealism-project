@@ -3,7 +3,7 @@
 #include <cwchar>
 
 namespace photorealism {
-namespace native_aa {
+namespace paths {
 
 bool append_path(wchar_t* path, std::size_t capacity, const wchar_t* suffix) {
     const std::size_t used = std::wcslen(path);

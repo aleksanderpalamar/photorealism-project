@@ -1,6 +1,6 @@
 #include "aa_log.hpp"
 
-#include "path_utils.hpp"
+#include "../config/path_utils.hpp"
 
 #include <cstdarg>
 #include <cstdio>
@@ -19,11 +19,11 @@ bool resolve_log_path(HMODULE module, wchar_t* path, std::size_t capacity) {
         return false;
     }
     *separator = L'\0';
-    if (!append_path(path, capacity, L"\\photorealism-plugin")) {
+    if (!paths::append_path(path, capacity, L"\\photorealism-plugin")) {
         return false;
     }
     CreateDirectoryW(path, nullptr);
-    return append_path(path, capacity, L"\\photorealism-aa-config.log");
+    return paths::append_path(path, capacity, L"\\photorealism-aa-config.log");
 }
 
 int format_line(char* line, std::size_t capacity, const char* message) {

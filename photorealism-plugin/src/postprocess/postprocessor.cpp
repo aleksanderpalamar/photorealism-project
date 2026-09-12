@@ -1,6 +1,7 @@
 #include "postprocess.hpp"
 
 #include "../config/config.hpp"
+#include "../overlay/overlay.hpp"
 #include "../resource_observer/resource_observer.hpp"
 #include "../runtime.hpp"
 
@@ -48,9 +49,13 @@ bool key_pressed_once(int virtual_key, bool* was_down) {
     return pressed;
 }
 
-class PostProcessor {
+class PostProcessor : public overlay::MenuHost {
 public:
-    PostProcessor() : settings_(default_settings()) {}
+    PostProcessor() : settings_(default_settings()) {
+        overlay::menu().bind(&settings_, this);
+    }
+
+    void observer_changed() override { apply_scene_observer_settings(); }
 
     struct FrameTargets {
         ID3D11Texture2D* back_buffer;
@@ -143,6 +148,16 @@ public:
         if (key_pressed_once(VK_INSERT, &insert_key_down_)) {
             cycle_depth_preview_mode();
         }
+        handle_menu_hotkey();
+    }
+
+    void handle_menu_hotkey() {
+        const bool control_down = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+        const bool pressed = key_pressed_once('P', &menu_key_down_);
+        if (!control_down || !pressed) {
+            return;
+        }
+        overlay::menu().toggle();
     }
 
     bool adopt_device(IDXGISwapChain* swap_chain, ID3D11Device* frame_device) {
@@ -157,6 +172,7 @@ public:
         device_->GetImmediateContext(&context_);
         load_settings(&settings_);
         apply_scene_observer_settings();
+        overlay::menu().bind(&settings_, this);
         if (!initialize_pipeline()) {
             return false;
         }
@@ -508,10 +524,10 @@ public:
 
         track_active_swap_chain(swap_chain);
         handle_hotkeys();
-        if (!settings_.enabled) {
+        if (!ensure_device_for(swap_chain)) {
             return;
         }
-        if (!ensure_device_for(swap_chain)) {
+        if (!settings_.enabled) {
             return;
         }
 
@@ -521,6 +537,53 @@ public:
         if (acquire_frame_targets(swap_chain, &targets)) {
             render_frame(targets);
         }
+        release_frame_targets(&targets);
+    }
+
+    bool acquire_overlay_target(
+        IDXGISwapChain* swap_chain, FrameTargets* targets) {
+        const HRESULT result = swap_chain->GetBuffer(
+            0,
+            IID_ID3D11Texture2D,
+            reinterpret_cast<void**>(&targets->back_buffer));
+        if (FAILED(result) || targets->back_buffer == nullptr) {
+            return false;
+        }
+        targets->back_buffer->GetDesc(&targets->description);
+        return create_output_view(targets);
+    }
+
+    void draw_overlay(IDXGISwapChain* swap_chain) {
+        if (swap_chain == nullptr || resize_in_progress_) {
+            return;
+        }
+        if (!overlay::menu().visible()) {
+            return;
+        }
+        if (!ensure_device_for(swap_chain)) {
+            return;
+        }
+
+        FrameTargets targets = {};
+        if (!acquire_overlay_target(swap_chain, &targets)) {
+            release_frame_targets(&targets);
+            return;
+        }
+
+        DXGI_SWAP_CHAIN_DESC chain = {};
+        swap_chain->GetDesc(&chain);
+
+        SavedState state = {};
+        capture_state(context_, &state);
+        overlay::menu().render(
+            device_,
+            context_,
+            targets.output,
+            chain.OutputWindow,
+            static_cast<float>(targets.description.Width),
+            static_cast<float>(targets.description.Height),
+            targets.output_needs_srgb_encode);
+        restore_state(context_, &state);
         release_frame_targets(&targets);
     }
 
@@ -730,23 +793,56 @@ private:
     bool home_key_down_ = false;
     bool end_key_down_ = false;
     bool insert_key_down_ = false;
+    bool menu_key_down_ = false;
     UINT depth_preview_mode_ = 0;
 };
 
 PostProcessor g_post_processor;
 thread_local bool g_inside_present = false;
 SRWLOCK g_processor_lock = SRWLOCK_INIT;
+
+class ProcessorScope {
+  public:
+    ProcessorScope() : entered_(!g_inside_present) {
+        if (!entered_) {
+            return;
+        }
+        g_inside_present = true;
+        AcquireSRWLockExclusive(&g_processor_lock);
+    }
+
+    ~ProcessorScope() {
+        if (!entered_) {
+            return;
+        }
+        ReleaseSRWLockExclusive(&g_processor_lock);
+        g_inside_present = false;
+    }
+
+    ProcessorScope(const ProcessorScope&) = delete;
+    ProcessorScope& operator=(const ProcessorScope&) = delete;
+
+    bool entered() const { return entered_; }
+
+  private:
+    bool entered_;
+};
 }
 
 void process_frame(IDXGISwapChain* swap_chain) {
-    if (g_inside_present) {
+    ProcessorScope scope;
+    if (!scope.entered()) {
         return;
     }
-    g_inside_present = true;
-    AcquireSRWLockExclusive(&g_processor_lock);
     g_post_processor.render(swap_chain);
-    ReleaseSRWLockExclusive(&g_processor_lock);
-    g_inside_present = false;
+}
+
+void draw_overlay_frame(IDXGISwapChain* swap_chain) {
+    ProcessorScope scope;
+    if (!scope.entered()) {
+        return;
+    }
+    g_post_processor.draw_overlay(swap_chain);
 }
 
 bool is_processing_frame() {

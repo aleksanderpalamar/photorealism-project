@@ -12,7 +12,7 @@ void report_discovery(const DiscoveryScan& scan) {
         log_message(
         "Descoberta depth 0.10.1 concluida: cycle=%llu mode=%s "
         "resources=%u grupos=%u "
-        "scan.resource_evictions=%u view_cache_replacements=%u janela=%llums "
+        "resource_evictions=%u view_cache_replacements=%u janela=%llums "
         "minimum_bindings=%llu minimum_rate=%llu/s scaled_area=%llu%%.",
         static_cast<unsigned long long>(scan.completed_cycle),
         scan.early_confidence ? "early-confidence" : "window-timeout",

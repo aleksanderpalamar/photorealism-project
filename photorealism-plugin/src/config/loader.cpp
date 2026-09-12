@@ -16,7 +16,7 @@
 namespace photorealism {
 namespace {
 
-Settings compose_stack(const CalibrationStack& stack) {
+Settings compose_layers(const CalibrationStack& stack) {
     Settings settings = stack.modules;
 
     if (stack.base.enabled) {
@@ -24,6 +24,7 @@ Settings compose_stack(const CalibrationStack& stack) {
     }
     add_delta_layer(&settings, stack.visual_0_2);
     add_delta_layer(&settings, stack.rain_overcast_0_3);
+    add_delta_layer(&settings, stack.user_0_20);
 
     apply_limits(&settings);
     return settings;
@@ -80,7 +81,25 @@ void read_stack_from_file(FILE* file, CalibrationStack* stack) {
 }
 
 Settings default_settings() {
-    return compose_stack(reference_stack());
+    return compose_layers(reference_stack());
+}
+
+Settings compose(const CalibrationStack& stack) {
+    return compose_layers(stack);
+}
+
+bool load_stack(CalibrationStack* stack) {
+    if (stack == nullptr) {
+        return false;
+    }
+    *stack = reference_stack();
+    FILE* file = _wfopen(config_path(), L"rb");
+    if (file == nullptr) {
+        return false;
+    }
+    read_stack_from_file(file, stack);
+    std::fclose(file);
+    return true;
 }
 
 bool load_settings(Settings* settings) {
@@ -91,7 +110,7 @@ bool load_settings(Settings* settings) {
     CalibrationStack stack = reference_stack();
     FILE* file = _wfopen(config_path(), L"rb");
     if (file == nullptr) {
-        *settings = compose_stack(stack);
+        *settings = compose_layers(stack);
         log_message("Configuracao ausente; usando a pilha cumulativa interna.");
         log_stack(stack, *settings);
         return false;
@@ -100,7 +119,7 @@ bool load_settings(Settings* settings) {
     read_stack_from_file(file, &stack);
     std::fclose(file);
 
-    *settings = compose_stack(stack);
+    *settings = compose_layers(stack);
     log_stack(stack, *settings);
     return true;
 }
