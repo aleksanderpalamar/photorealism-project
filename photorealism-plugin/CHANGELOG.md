@@ -1,5 +1,118 @@
 # Changelog
 
+## Pacote 0.22.2 - 2026-09-12
+
+**A imagem piscava entre a cena e um quadro preto com bordas coloridas. A causa
+e um pool de texturas do jogo, e a correcao troca "qual textura" por "qual
+posicao no quadro".** Mais tres defeitos achados no caminho, e os avisos falsos
+do log.
+
+### O que o teste da 0.22.1 mostrou
+
+A cadeia rodou pela primeira vez -- `fsr.dispatch=1050`, o EASU despachando a
+cada quadro. E a tela alternava entre duas imagens: a cena normal, e um quadro
+quase todo preto com contornos coloridos so nas bordas. Esse segundo e uma
+mascara de bordas de anti-aliasing: superficie lisa vira preto, borda vira cor.
+
+O log deu as pistas:
+
+- a cena do ETS2 roda em **1288x728** -- e o depth mais ligado, cerca de 20 mil
+  ligacoes por janela de 30 s. O tamanho do candidato estava certo;
+- o candidato foi escolhido com `ligado 3 vezes, entre 3 candidatos` -- existe
+  mais de uma textura nesse tamanho;
+- existe um segundo grupo em **1366x684**, que caia na janela de busca.
+
+### A causa
+
+O Prism3D reaproveita render targets de um pool. A mesma textura **fisica**
+recebe papeis diferentes em quadros diferentes: num quadro guarda a cena, no
+seguinte guarda a mascara de bordas. A regra da 0.22.0 -- "a textura mais
+ligada no tamanho certo" -- prendia uma textura fisica e, com o pool trocando os
+papeis, copiava cena e mascara em quadros alternados.
+
+Escolher textura pela identidade e errado por definicao neste jogo.
+
+### A correcao
+
+O que e estavel e a **posicao no quadro**: o ultimo alvo na resolucao interna
+antes de o jogo passar para a resolucao de saida. Esse e o quadro que o proprio
+jogo vai subir para 1080p, qualquer que seja a textura fisica que o pool deu a
+ele naquele quadro.
+
+- a copia acontece **no instante da transicao**, dentro do `OMSetRenderTargets`
+  que liga o alvo de saida, **depois** de o bind ser repassado ao jogo -- e nao
+  mais no `Present`, quando um alvo intermediario ja pode ter sido reusado;
+- o estado fecha a cada `Present`: um quadro sem transicao nao reconstroi nada,
+  em vez de reconstruir a copia de um quadro anterior;
+- a janela de busca ficou estreita: o tamanho esperado sai da escala com que o
+  jogo foi aberto, com tolerancia de 24 px. 1288x728 entra; 1366x684 sai;
+- formatos TYPELESS entram na busca. A tabela antiga so listava variante
+  tipada -- o mesmo defeito que desligou o observador de cena na 0.18.0.
+
+A regra mora em `FrameTransition`, pura e testada no host. O teste simula o pool
+trocando as texturas a cada quadro e exige a cena em todos -- e mostra que a
+regra antiga, pela identidade, alternava.
+
+### O que ainda e hipotese, e como a proxima sessao responde
+
+O teste modela a mascara sendo escrita **antes** do resultado final, que e como
+mascaras de AA funcionam em geral. Se no ETS2 for o contrario, a nova regra
+pegaria a mascara em todo quadro -- estavel, mas errada.
+
+Para nao depender de suposicao, o plugin registra **uma vez por sessao** a
+sequencia de passes de dois quadros seguidos, logo que a cena comeca: cada
+`OMSetRenderTargets`, tamanho, formato, se vai junto com depth, qual textura
+fisica (`#N`), e qual foi capturada. Com esse registro a ordem real do jogo fica
+escrita no log.
+
+### Tres defeitos achados no caminho
+
+**O grade era apagado com o FSR ativo.** A ordem era grade -> upscale, e o
+upscale substitui o backbuffer inteiro pela reconstrucao do quadro interno, que
+nao tem grade nenhum. Agora e upscale -> grade -> captura do Steam -> menu.
+
+**Gamma dupla.** O RTV do backbuffer e sRGB -- o hardware codifica na escrita.
+O RCAS le valores ja codificados e os escrevia sem decodificar antes, entao a
+imagem reconstruida saia lavada. Agora ele decodifica quando o RTV e sRGB.
+
+**Custo com o FSR desligado.** A observacao de cor da 0.22.0 fazia quatro
+chamadas COM em **todo** `OMSetRenderTargets` do jogo, ligado ou nao. Agora ela
+sai antes de qualquer chamada quando a captura esta inativa.
+
+### Os avisos falsos do log
+
+- `fsr.replacement=0` era zero **por construcao**: quem o incrementava era o
+  hook de backbuffer removido na 0.21.5. Agora conta os quadros de fato
+  reconstruidos;
+- `aquisicoes_do_jogo=0` idem -- o contador saiu;
+- `motivo=quadro interno ainda nao localizado` continuava aparecendo depois de o
+  quadro ser achado. Agora o motivo e o da **janela** do relatorio, e vira
+  `nenhum` quando a janela nao teve descarte;
+- `FSR ligado e sem efeito` repetia a cada 10 s. Agora sai uma vez quando o
+  modulo para de reconstruir, e volta a valer quando ele retoma.
+
+A guarda do validate so conferia que o nome `record_replacement` existia -- e a
+definicao existia, sem chamador. Ha guarda nova exigindo que **todo**
+`Telemetry::record_*` tenha chamador fora do proprio arquivo.
+
+### Onze guardas novas, todas quebradas de proposito
+
+Ordem do Present; captura pela posicao; o teste do pool com a regra antiga;
+copia depois do bind; zero COM com a captura inativa; fechamento do quadro no
+Present; tabela so de tipados; decode do RCAS; contagem de quadros
+reconstruidos; contador sem chamador; motivo limpo por janela.
+
+### O padrao
+
+O pacote volta a sair com `enabled=false`, que foi a escolha do usuario.
+
+### O que continua nao provado
+
+**Nada disso rodou no jogo.** E ha uma pergunta que so o registro de passes
+responde: o upscale substitui o backbuffer inteiro no `Present`. Se o ETS2
+desenha o HUD **no backbuffer depois** do proprio upscale, a reconstrucao cobre
+o HUD. O registro mostra se ha passes no alvo de saida depois da transicao.
+
 ## Pacote 0.22.1 - 2026-09-12
 
 **O pacote passa a sair com o FSR ligado, e o comentario do cfg passa a

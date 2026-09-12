@@ -27,6 +27,17 @@ inline bool is_readable(unsigned format) {
     return is_bgra(format) || is_rgba(format);
 }
 
+inline unsigned resolve_typeless(unsigned format) {
+    if (format == kB8G8R8X8Unorm || format == kB8G8R8X8UnormSrgb ||
+        format == kB8G8R8X8Typeless) {
+        return kB8G8R8X8Typeless;
+    }
+    if (is_bgra(format)) {
+        return kB8G8R8A8Typeless;
+    }
+    return kR8G8B8A8Typeless;
+}
+
 inline unsigned resolve_unorm(unsigned format) {
     if (format == kB8G8R8X8Unorm || format == kB8G8R8X8UnormSrgb ||
         format == kB8G8R8X8Typeless) {

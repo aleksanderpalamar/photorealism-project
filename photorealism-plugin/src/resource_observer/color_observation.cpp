@@ -1,157 +1,175 @@
 #include "color_observation.hpp"
 
-#include "../postprocess/com_utils.hpp"
-#include "../postprocess/format_utils.hpp"
 #include "../runtime.hpp"
+#include "color_capture.hpp"
+#include "frame_transition.hpp"
+#include "pass_trace.hpp"
+#include "view_shape.hpp"
 
+#include <atomic>
+#include <vector>
 #include <windows.h>
 
 namespace photorealism {
 namespace {
 
-constexpr UINT kMaximumColorCandidates = 16;
-constexpr UINT kMinimumSideFraction = 2;
-
-struct ColorCandidate {
-    ID3D11Texture2D* texture;
-    D3D11_TEXTURE2D_DESC description;
-    unsigned long long bindings;
-};
+constexpr unsigned kTraceFallbackFrames = 600;
 
 SRWLOCK g_color_lock = SRWLOCK_INIT;
-ColorCandidate g_candidates[kMaximumColorCandidates] = {};
-UINT g_candidate_count = 0;
-UINT g_output_width = 0;
-UINT g_output_height = 0;
-ID3D11Texture2D* g_reported = nullptr;
+std::atomic<bool> g_color_capture_active{false};
+observer::FrameTransition g_transition;
+observer::ColorCapture g_capture;
+observer::PassTrace g_trace;
+bool g_captured_this_frame = false;
+unsigned g_active_frames = 0;
+UINT g_configured[4] = {};
 
-bool inside_search_window(const D3D11_TEXTURE2D_DESC& description) {
-    if (g_output_width == 0 || g_output_height == 0) {
-        return false;
+void record_trace(
+    ID3D11Texture2D* texture,
+    const observer::TargetShape& shape,
+    const observer::TransitionStep& step,
+    UINT render_target_count,
+    ID3D11DepthStencilView* depth_target) {
+    observer::TraceEntry entry;
+    entry.texture = texture;
+    entry.shape = shape;
+    entry.targets = render_target_count;
+    entry.role = step.role;
+    entry.captured = step.capture;
+    ID3D11Texture2D* depth = nullptr;
+    observer::TargetShape depth_shape;
+    if (observer::describe_view(depth_target, &depth, &depth_shape)) {
+        entry.depth_width = depth_shape.width;
+        entry.depth_height = depth_shape.height;
+        depth->Release();
     }
-    if (description.SampleDesc.Count != 1 ||
-        !is_supported_format(description.Format)) {
-        return false;
-    }
-    if (description.Width >= g_output_width ||
-        description.Height >= g_output_height) {
-        return false;
-    }
-    return description.Width * kMinimumSideFraction >= g_output_width &&
-           description.Height * kMinimumSideFraction >= g_output_height;
-}
-
-void remember(ID3D11Texture2D* texture, const D3D11_TEXTURE2D_DESC& described) {
-    for (UINT index = 0; index < g_candidate_count; ++index) {
-        if (g_candidates[index].texture != texture) {
-            continue;
-        }
-        ++g_candidates[index].bindings;
-        return;
-    }
-    if (g_candidate_count >= kMaximumColorCandidates) {
-        return;
-    }
-    texture->AddRef();
-    g_candidates[g_candidate_count].texture = texture;
-    g_candidates[g_candidate_count].description = described;
-    g_candidates[g_candidate_count].bindings = 1;
-    ++g_candidate_count;
-}
-
-void inspect(ID3D11RenderTargetView* view) {
-    if (view == nullptr) {
-        return;
-    }
-    ID3D11Resource* resource = nullptr;
-    view->GetResource(&resource);
-    if (resource == nullptr) {
-        return;
-    }
-    ID3D11Texture2D* texture = nullptr;
-    resource->QueryInterface(
-        IID_ID3D11Texture2D, reinterpret_cast<void**>(&texture));
-    resource->Release();
-    if (texture == nullptr) {
-        return;
-    }
-
-    D3D11_TEXTURE2D_DESC described = {};
-    texture->GetDesc(&described);
-    if (inside_search_window(described)) {
-        remember(texture, described);
-    }
-    texture->Release();
+    g_trace.record(entry);
 }
 
 }
 
-void set_color_search_window(UINT width, UINT height) {
+void enable_color_capture(
+    UINT output_width,
+    UINT output_height,
+    UINT expected_width,
+    UINT expected_height) {
+    const UINT wanted[4] = {
+        output_width, output_height, expected_width, expected_height};
     AcquireSRWLockExclusive(&g_color_lock);
-    g_output_width = width;
-    g_output_height = height;
+    const bool changed = g_configured[0] != wanted[0] ||
+                         g_configured[1] != wanted[1] ||
+                         g_configured[2] != wanted[2] ||
+                         g_configured[3] != wanted[3];
+    for (UINT index = 0; index < 4; ++index) {
+        g_configured[index] = wanted[index];
+    }
+    g_transition.configure(
+        output_width, output_height, expected_width, expected_height);
     ReleaseSRWLockExclusive(&g_color_lock);
+    g_color_capture_active.store(true, std::memory_order_release);
+    if (changed) {
+        log_message(
+            "FSR procura o quadro interno perto de %ux%u para a saida %ux%u.",
+            expected_width,
+            expected_height,
+            output_width,
+            output_height);
+    }
 }
 
 void observe_color_targets(
-    UINT render_target_count, ID3D11RenderTargetView* const* render_targets) {
+    ID3D11DeviceContext* context,
+    UINT render_target_count,
+    ID3D11RenderTargetView* const* render_targets,
+    ID3D11DepthStencilView* depth_target) {
+    if (!g_color_capture_active.load(std::memory_order_acquire)) {
+        return;
+    }
     if (render_targets == nullptr || render_target_count == 0) {
         return;
     }
-    AcquireSRWLockExclusive(&g_color_lock);
-    for (UINT index = 0; index < render_target_count; ++index) {
-        inspect(render_targets[index]);
+    ID3D11Texture2D* texture = nullptr;
+    observer::TargetShape shape;
+    if (!observer::describe_view(render_targets[0], &texture, &shape)) {
+        return;
     }
+
+    AcquireSRWLockExclusive(&g_color_lock);
+    const observer::TransitionStep step = g_transition.observe(texture, shape);
+    if (step.acquired != nullptr) {
+        texture->AddRef();
+    }
+    observer::release_texture_handle(step.released);
+    if (step.capture != nullptr) {
+        g_captured_this_frame =
+            g_capture.copy_from(
+                context, static_cast<ID3D11Texture2D*>(step.capture)) ||
+            g_captured_this_frame;
+    }
+    if (g_trace.recording()) {
+        record_trace(texture, shape, step, render_target_count, depth_target);
+    }
+    observer::release_texture_handle(step.capture);
     ReleaseSRWLockExclusive(&g_color_lock);
+    texture->Release();
 }
 
-bool acquire_color_candidate(
-    ID3D11Texture2D** texture, D3D11_TEXTURE2D_DESC* description) {
-    if (texture == nullptr || description == nullptr) {
+bool acquire_captured_frame(
+    ID3D11ShaderResourceView** view, UINT* width, UINT* height) {
+    if (view == nullptr || width == nullptr || height == nullptr) {
         return false;
     }
     AcquireSRWLockExclusive(&g_color_lock);
-    UINT best = kMaximumColorCandidates;
-    unsigned long long most = 0;
-    for (UINT index = 0; index < g_candidate_count; ++index) {
-        if (g_candidates[index].bindings <= most) {
-            continue;
-        }
-        most = g_candidates[index].bindings;
-        best = index;
+    const bool available =
+        g_captured_this_frame && g_capture.view() != nullptr;
+    if (available) {
+        *view = g_capture.view();
+        (*view)->AddRef();
+        *width = g_capture.width();
+        *height = g_capture.height();
     }
-    if (best == kMaximumColorCandidates) {
-        ReleaseSRWLockExclusive(&g_color_lock);
-        return false;
-    }
+    ReleaseSRWLockExclusive(&g_color_lock);
+    return available;
+}
 
-    *texture = g_candidates[best].texture;
-    *description = g_candidates[best].description;
-    (*texture)->AddRef();
-    const bool first_time = g_reported != *texture;
-    g_reported = *texture;
+void end_color_frame() {
+    if (!g_color_capture_active.load(std::memory_order_acquire)) {
+        return;
+    }
+    std::vector<observer::TraceEntry> entries;
+    bool truncated = false;
+
+    AcquireSRWLockExclusive(&g_color_lock);
+    ++g_active_frames;
+    const bool scene_frame = g_transition.internal_binds() > 0;
+    if (scene_frame || g_active_frames >= kTraceFallbackFrames) {
+        g_trace.arm();
+    }
+    observer::release_texture_handle(g_transition.end_frame());
+    g_captured_this_frame = false;
+    g_trace.end_frame();
+    const bool flush = g_trace.take(&entries, &truncated);
     ReleaseSRWLockExclusive(&g_color_lock);
 
-    if (first_time) {
-        log_message(
-            "FSR achou o quadro interno do jogo: %ux%u formato=%u, ligado %llu "
-            "vezes, entre %u candidatos na janela de busca.",
-            description->Width,
-            description->Height,
-            static_cast<unsigned>(description->Format),
-            most,
-            g_candidate_count);
+    if (flush) {
+        observer::log_trace(entries, truncated);
     }
-    return true;
+}
+
+void disable_color_capture() {
+    g_color_capture_active.store(false, std::memory_order_release);
+    reset_color_discovery();
 }
 
 void reset_color_discovery() {
     AcquireSRWLockExclusive(&g_color_lock);
-    for (UINT index = 0; index < g_candidate_count; ++index) {
-        safe_release(g_candidates[index].texture);
+    observer::release_texture_handle(g_transition.end_frame());
+    g_transition.configure(0, 0, 0, 0);
+    g_capture.release();
+    g_captured_this_frame = false;
+    for (UINT& value : g_configured) {
+        value = 0;
     }
-    g_candidate_count = 0;
-    g_reported = nullptr;
     ReleaseSRWLockExclusive(&g_color_lock);
 }
 

@@ -21,7 +21,8 @@ class UpscalePipeline {
         ID3D11RenderTargetView* output,
         unsigned width,
         unsigned height,
-        float sharpness);
+        float sharpness,
+        bool output_is_srgb_view);
 
   private:
     void dispatch_easu(
@@ -35,7 +36,8 @@ class UpscalePipeline {
         ID3D11RenderTargetView* output,
         unsigned width,
         unsigned height,
-        float sharpness);
+        float sharpness,
+        bool output_is_srgb_view);
 
     FsrShaders shaders_;
     UpscaleResources resources_;

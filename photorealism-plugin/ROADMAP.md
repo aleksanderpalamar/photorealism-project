@@ -497,13 +497,14 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   ainda nao rodou no jogo -- o que falta e o numero que a Fase 1 existe para
   produzir, tempo de GPU nativo contra tempo com upscale. Fases 2 e 3 do plano
   (otimizacao para RDNA2 e reconstrucao temporal) seguem abertas;
-- **0.22.1 (entregue)** descoberta do quadro interno do jogo, a peca que
-  faltava para fechar a Fase 1 do plano de FSR. O `OMSetRenderTargets` que ja
-  achava o depth passa a catalogar render target de cor tambem, e o candidato
-  mais ligado dentro da janela de busca -- menor que a saida e pelo menos
-  metade dela -- vira a fonte do EASU. Nenhum dos oito hooks per-draw removidos
-  na 0.15.0 volta. Falta medir no jogo: se o candidato escolhido for o alvo da
-  cena, a cadeia 720p -> EASU -> RCAS -> 1080p fecha e a Fase 2 comeca;
+- **0.22.2 (entregue)** descoberta do quadro interno do jogo, a peca que
+  fecha a Fase 1 do plano de FSR. O quadro e capturado pela **posicao** -- o
+  ultimo alvo na resolucao interna antes de o jogo passar para a de saida --
+  porque o Prism3D reaproveita texturas de um pool e a mesma textura fisica
+  guarda a cena num quadro e uma mascara de bordas no seguinte, que foi a
+  piscada da 0.22.1. Falta rodar no jogo e ler o registro de passes que o
+  plugin grava uma vez por sessao: ele confirma a ordem e responde se o HUD e
+  desenhado no backbuffer depois do upscale do jogo;
 - **0.23.0** raios de sol. E o efeito que as referencias realmente
   mostram, e que a medicao do bloom revelou: estriados radiais saindo do sol
   atras da linha de arvores, projetados no teto escuro da cabine. Sao

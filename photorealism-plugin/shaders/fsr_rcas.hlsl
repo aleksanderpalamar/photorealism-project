@@ -4,7 +4,7 @@ cbuffer RcasBuffer : register(b0)
 {
     float2 OutputSize;
     float Attenuation;
-    float RcasPadding;
+    float DecodeBeforeWrite;
 };
 
 struct RcasPixel
@@ -26,6 +26,14 @@ float3 load_upscaled(int2 position)
 {
     int2 clamped = clamp(position, int2(0, 0), int2(OutputSize) - 1);
     return UpscaledTexture.Load(int3(clamped, 0)).rgb;
+}
+
+float3 srgb_to_linear(float3 color)
+{
+    float3 low = color / 12.92;
+    float3 high = pow(max((color + 0.055) / 1.055, 0.0), 2.4);
+    float3 use_low = step(color, 0.04045.xxx);
+    return lerp(high, low, use_low);
 }
 
 float ring_luma(float3 color)
@@ -70,5 +78,7 @@ float4 PSRcas(RcasPixel input) : SV_Target
 
     float3 sharpened = (lobe * (up + left + right + down) + center) /
                        (4.0 * lobe + 1.0);
-    return float4(clamp(sharpened, 0.0, 1.0), 1.0);
+    float3 encoded = clamp(sharpened, 0.0, 1.0);
+    float3 written = lerp(encoded, srgb_to_linear(encoded), DecodeBeforeWrite);
+    return float4(written, 1.0);
 }

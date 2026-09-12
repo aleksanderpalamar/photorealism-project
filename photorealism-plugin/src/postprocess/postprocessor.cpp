@@ -587,7 +587,8 @@ public:
             context_,
             targets.output,
             targets.description.Width,
-            targets.description.Height);
+            targets.description.Height,
+            !targets.output_needs_srgb_encode);
         restore_state(context_, &state);
         release_frame_targets(&targets);
     }
@@ -884,6 +885,7 @@ void upscale_present_frame(IDXGISwapChain* swap_chain) {
         return;
     }
     g_post_processor.upscale_frame(swap_chain);
+    end_color_frame();
 }
 
 void draw_overlay_frame(IDXGISwapChain* swap_chain) {

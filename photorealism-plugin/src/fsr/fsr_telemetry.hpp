@@ -2,8 +2,6 @@
 
 #include "render_scale.hpp"
 
-#include <atomic>
-
 namespace photorealism {
 namespace fsr {
 
@@ -12,26 +10,18 @@ class Telemetry {
     void record_replacement();
     void record_dispatch();
     void record_skip(const char* reason);
-    void record_game_acquire();
     void reset();
 
     void report(const RenderExtent& internal, unsigned width, unsigned height);
 
-    unsigned replacements() const {
-        return replacements_.load(std::memory_order_acquire);
-    }
-    unsigned dispatches() const {
-        return dispatches_.load(std::memory_order_acquire);
-    }
-
   private:
-    std::atomic<unsigned> replacements_{0};
-    std::atomic<unsigned> dispatches_{0};
-    std::atomic<unsigned> skips_{0};
-    std::atomic<unsigned> game_acquires_{0};
-    const char* last_skip_ = nullptr;
+    unsigned window_replacements_ = 0;
+    unsigned window_dispatches_ = 0;
+    unsigned window_skips_ = 0;
+    const char* window_reason_ = nullptr;
+    unsigned long long window_start_ms_ = 0;
     unsigned long long last_report_ms_ = 0;
-    bool announced_ = false;
+    bool silence_reported_ = false;
 };
 
 Telemetry& telemetry();

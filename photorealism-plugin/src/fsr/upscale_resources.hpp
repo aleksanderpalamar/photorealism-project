@@ -17,7 +17,7 @@ struct EasuConstants {
 struct RcasConstants {
     float output_size[2];
     float attenuation;
-    float padding;
+    float decode_before_write;
 };
 
 class UpscaleResources {

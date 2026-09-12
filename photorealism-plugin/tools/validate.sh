@@ -151,29 +151,36 @@ for steam_screenshot_message in \
   fi
 done
 
-# A captura do Steam vem DEPOIS de todos os passes visuais e ANTES do menu: o
-# screenshot tem que sair com a imagem final do plugin e sem a janela do menu
-# em cima. Na 0.21.0 o upscale entrou entre o grade e a captura -- e mais um
-# passe visual, entao a captura continua sendo a ultima coisa antes do menu.
+# Ordem do Present na 0.22.2: upscale -> grade -> captura do Steam -> menu.
+# O upscale SUBSTITUI o backbuffer inteiro pela reconstrucao do quadro interno,
+# que nao tem grade nenhum. Ate a 0.22.1 ele vinha DEPOIS do grade e apagava a
+# coloracao inteira sempre que o FSR estava ativo. A captura do Steam continua
+# sendo o ultimo passe visual, e o menu fica fora dela.
 present_order="$(rg -N -U -o \
-  'process_frame\(swap_chain\);[\s\S]*?draw_overlay_frame\(swap_chain\);' \
+  'upscale_present_frame\(swap_chain\);[\s\S]*?draw_overlay_frame\(swap_chain\);' \
   "${project_dir}/src/hooks/swap_chain_hooks.cpp" | head -20)"
 for present_step in \
-  'process_frame(swap_chain);' \
   'upscale_present_frame(swap_chain);' \
+  'process_frame(swap_chain);' \
   'observe_postprocessed_frame(swap_chain);' \
   'draw_overlay_frame(swap_chain);'; do
   if ! grep -Fq "${present_step}" <<<"${present_order}"; then
-    echo "Passe ausente da sequencia do Present: ${present_step}." >&2
+    echo "Passe ausente ou fora de ordem no Present: ${present_step}." >&2
     exit 1
   fi
 done
 upscale_line="$(grep -n 'upscale_present_frame' <<<"${present_order}" | head -1 | cut -d: -f1)"
+grade_line="$(grep -n 'process_frame' <<<"${present_order}" | head -1 | cut -d: -f1)"
 capture_line="$(grep -n 'observe_postprocessed_frame' <<<"${present_order}" | head -1 | cut -d: -f1)"
 overlay_line="$(grep -n 'draw_overlay_frame' <<<"${present_order}" | head -1 | cut -d: -f1)"
-if [[ "${upscale_line}" -gt "${capture_line}" ]]; then
-  echo "O upscale passou para depois da captura do Steam: o screenshot sairia \
-na resolucao interna, sem a reconstrucao." >&2
+if [[ "${upscale_line}" -gt "${grade_line}" ]]; then
+  echo "O upscale voltou para depois do grade: com o FSR ativo, a reconstrucao \
+sobrescreve o backbuffer e apaga a coloracao inteira do plugin." >&2
+  exit 1
+fi
+if [[ "${grade_line}" -gt "${capture_line}" ]]; then
+  echo "A captura do Steam passou para antes do grade: o screenshot sairia sem \
+a coloracao do plugin." >&2
   exit 1
 fi
 if [[ "${capture_line}" -gt "${overlay_line}" ]]; then
@@ -855,7 +862,7 @@ effective_profile="$(awk -F= '
 # que importa. Uma guarda que explica uma regressao sutil so serve se for ela
 # a falar. Nesta ordem o hash continua pegando tudo que as guardas nao
 # cobrem, e so isso.
-expected_cfg_sha256="9c9921eae6ac3554b1e2e533041cfd56405638fec867cb8417db4895125cab2c"
+expected_cfg_sha256="a9c5a39d6e4206601b27b9d38719f4ba2a7e32641ea2c5a7320e73d553d5bc1f"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
@@ -1222,11 +1229,17 @@ g++ -std=c++20 -Wall -Wextra -Werror \
 # A reconstrucao so pode rodar quando existir um quadro interno para ler. O
 # invariante substitui o da 0.21.2, que guardava a substituicao de backbuffer
 # -- mecanismo aposentado na 0.21.5 em favor do r_scale do proprio ETS2.
-upscaler_present_body="$(awk '/^bool Upscaler::present/,/^}/' \
+upscaler_reconstruct_body="$(awk '/^bool Upscaler::reconstruct/,/^}/' \
   "${project_dir}/src/fsr/upscaler.cpp")"
-if ! grep -Fq 'internal_.capture(device, context)' <<<"${upscaler_present_body}"; then
-  echo "Upscaler::present parou de exigir um quadro interno: reconstruiria uma \
-textura vazia por cima do quadro do jogo." >&2
+if ! grep -Fq 'internal_.acquire()' <<<"${upscaler_reconstruct_body}"; then
+  echo "A reconstrucao parou de exigir o quadro interno capturado NESTE quadro: \
+reconstruiria uma copia velha por cima do quadro do jogo." >&2
+  exit 1
+fi
+if ! grep -Fq 'record_replacement()' <<<"${upscaler_reconstruct_body}"; then
+  echo "A reconstrucao parou de contar os quadros substituidos: fsr.replacement \
+volta a ser zero por construcao e o aviso de sem efeito dispara a toa, que foi \
+o defeito da 0.22.1." >&2
   exit 1
 fi
 
@@ -1235,7 +1248,9 @@ fi
 # disso -- se alguem precisar de um, e sinal de que o desenho esta errado.
 for color_discovery_site in \
   'observe_color_targets' \
-  'set_color_search_window' \
+  'enable_color_capture' \
+  'acquire_captured_frame' \
+  'end_color_frame' \
   'reset_color_discovery'; do
   if ! grep -rFq "${color_discovery_site}" "${project_dir}/src"; then
     echo "A descoberta do quadro interno perdeu ${color_discovery_site}: sem \
@@ -1243,9 +1258,84 @@ ela o EASU nao tem de onde ler e o upscale nunca roda." >&2
     exit 1
   fi
 done
-if ! grep -Fq 'observe_color_targets' \
-  "${project_dir}/src/hooks/context_hooks.cpp"; then
-  echo "O hook de OMSetRenderTargets parou de observar render target de cor." >&2
+
+# A PISCADA DA 0.22.1. O ETS2 reaproveita texturas de um pool: a mesma textura
+# fisica guarda a cena num quadro e uma mascara de bordas no seguinte. Escolher
+# "a textura mais ligada" alternava cena e bordas a cada quadro. O que e estavel
+# e a POSICAO no quadro: o ultimo alvo na resolucao interna antes de o jogo
+# passar para a de saida. A regra mora em FrameTransition, e o teste simula o
+# pool trocando as texturas.
+if ! grep -Fq 'g_transition.observe' \
+  "${project_dir}/src/resource_observer/color_observation.cpp"; then
+  echo "A captura deixou de ser decidida pela posicao no quadro: volta a \
+escolher textura pela identidade, e o pool do jogo faz a imagem piscar." >&2
+  exit 1
+fi
+for context_hook in 'hooked_set_render_targets(' 'hooked_set_render_targets_and_uavs('; do
+  hook_body="$(awk -v name="${context_hook}" 'index($0, name) {inside=1} inside {print} inside && /^}/ {exit}' \
+    "${project_dir}/src/hooks/context_hooks.cpp")"
+  original_line="$(grep -n 'original(' <<<"${hook_body}" | head -1 | cut -d: -f1)"
+  color_line="$(grep -n 'observe_color_targets(' <<<"${hook_body}" | head -1 | cut -d: -f1)"
+  if [[ -z "${original_line}" || -z "${color_line}" || "${color_line}" -lt "${original_line}" ]]; then
+    echo "${context_hook%(} observa a cor antes de repassar o bind ao jogo: a \
+copia tem que acontecer depois que o alvo interno deixou de estar ligado." >&2
+    exit 1
+  fi
+done
+observe_body="$(awk '/^void observe_color_targets/,/^}/' \
+  "${project_dir}/src/resource_observer/color_observation.cpp")"
+active_line="$(grep -n 'g_color_capture_active.load' <<<"${observe_body}" | head -1 | cut -d: -f1)"
+describe_line="$(grep -n 'describe_view' <<<"${observe_body}" | head -1 | cut -d: -f1)"
+if [[ -z "${active_line}" || -z "${describe_line}" || "${describe_line}" -lt "${active_line}" ]]; then
+  echo "observe_color_targets consulta a textura antes de ver se a captura esta \
+ativa: com o FSR desligado, todo OMSetRenderTargets do jogo volta a pagar \
+chamadas COM a toa." >&2
+  exit 1
+fi
+if ! awk '/^void upscale_present_frame/,/^}/' \
+  "${project_dir}/src/postprocess/postprocessor.cpp" | grep -Fq 'end_color_frame();'; then
+  echo "O Present parou de fechar o quadro da captura: uma copia de quadro \
+anterior passaria a ser reconstruida por cima do atual." >&2
+  exit 1
+fi
+if grep -Fq 'is_supported_format' \
+  "${project_dir}/src/resource_observer/color_observation.cpp" \
+  "${project_dir}/src/resource_observer/color_capture.cpp" \
+  "${project_dir}/src/resource_observer/frame_transition.hpp"; then
+  echo "A captura de cor voltou a usar a tabela so de formatos tipados: um \
+alvo TYPELESS, que e o caso normal, some da busca em silencio." >&2
+  exit 1
+fi
+
+# Gamma: o RTV do backbuffer e sRGB e o hardware codifica na escrita. O RCAS le
+# valores ja codificados; escrever sem decodificar antes codifica duas vezes e a
+# imagem sai lavada. Foi assim ate a 0.22.1.
+if ! grep -Fq 'DecodeBeforeWrite' "${project_dir}/shaders/fsr_rcas.hlsl"; then
+  echo "O RCAS parou de decodificar antes de escrever num RTV sRGB: a imagem \
+reconstruida sai com gamma dupla." >&2
+  exit 1
+fi
+if ! grep -Fq '!targets.output_needs_srgb_encode' \
+  "${project_dir}/src/postprocess/postprocessor.cpp"; then
+  echo "O upscale parou de receber o estado sRGB do RTV de saida." >&2
+  exit 1
+fi
+
+# Contador que ninguem chama e diagnostico falso. A 0.22.1 imprimia
+# fsr.replacement=0 e aquisicoes_do_jogo=0 enquanto o EASU rodava 59 vezes por
+# segundo, porque os chamadores tinham saido junto com o hook de backbuffer.
+while IFS= read -r recorder; do
+  if ! grep -rFq "${recorder}(" "${project_dir}/src" --exclude=fsr_telemetry.cpp; then
+    echo "Telemetry::${recorder} nao tem chamador: o contador fica zero por \
+construcao e o log mente." >&2
+    exit 1
+  fi
+done < <(grep -oE 'void Telemetry::record_[a-z_]+' \
+  "${project_dir}/src/fsr/fsr_telemetry.cpp" | sed 's/void Telemetry:://' | sort -u)
+if ! awk '/^void Telemetry::report/,/^}/' "${project_dir}/src/fsr/fsr_telemetry.cpp" |
+  grep -Fq 'window_reason_ = nullptr;'; then
+  echo "O relatorio do FSR parou de limpar o motivo a cada janela: o motivo de \
+um descarte antigo continua aparecendo depois que o problema passou." >&2
   exit 1
 fi
 
@@ -1387,6 +1477,15 @@ o jogo herda a saida do upscale no proximo dispatch dele." >&2
     exit 1
   fi
 done
+
+# A regra que acabou com a piscada: o teste simula o pool do jogo trocando as
+# texturas a cada quadro e exige que a captura pegue a cena em todos eles -- e
+# mostra que a regra antiga, pela identidade da textura, alternava.
+frame_transition_test="/tmp/photorealism-frame-transition-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/frame_transition_test.cpp" \
+  -o "${frame_transition_test}"
+"${frame_transition_test}"
 
 fsr_render_scale_test="/tmp/photorealism-fsr-render-scale-test"
 g++ -std=c++20 -Wall -Wextra -Werror \

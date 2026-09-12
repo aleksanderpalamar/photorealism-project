@@ -70,11 +70,13 @@ void UpscalePipeline::draw_rcas(
     ID3D11RenderTargetView* output,
     unsigned width,
     unsigned height,
-    float sharpness) {
+    float sharpness,
+    bool output_is_srgb_view) {
     RcasConstants constants = {};
     constants.output_size[0] = static_cast<float>(width);
     constants.output_size[1] = static_cast<float>(height);
     constants.attenuation = sharpness;
+    constants.decode_before_write = output_is_srgb_view ? 1.0f : 0.0f;
     context->UpdateSubresource(
         shaders_.rcas_constants(), 0, nullptr, &constants, 0, 0);
 
@@ -109,7 +111,8 @@ bool UpscalePipeline::run(
     ID3D11RenderTargetView* output,
     unsigned width,
     unsigned height,
-    float sharpness) {
+    float sharpness,
+    bool output_is_srgb_view) {
     if (context == nullptr || source == nullptr || output == nullptr) {
         return false;
     }
@@ -117,7 +120,7 @@ bool UpscalePipeline::run(
         return false;
     }
     dispatch_easu(context, source, internal, width, height);
-    draw_rcas(context, output, width, height, sharpness);
+    draw_rcas(context, output, width, height, sharpness, output_is_srgb_view);
     return true;
 }
 

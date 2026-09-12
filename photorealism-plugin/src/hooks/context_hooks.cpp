@@ -14,14 +14,18 @@ void STDMETHODCALLTYPE hooked_set_render_targets(
     UINT render_target_count,
     ID3D11RenderTargetView* const* render_targets,
     ID3D11DepthStencilView* depth_target) {
-    if (!is_processing_frame()) {
+    const bool from_game = !is_processing_frame();
+    if (from_game) {
         observe_depth_target(context, depth_target);
-        observe_color_targets(render_target_count, render_targets);
     }
     const OMSetRenderTargetsFunction original =
         g_original_set_render_targets.load(std::memory_order_acquire);
     if (original != nullptr) {
         original(context, render_target_count, render_targets, depth_target);
+    }
+    if (from_game) {
+        observe_color_targets(
+            context, render_target_count, render_targets, depth_target);
     }
 }
 
@@ -34,9 +38,9 @@ void STDMETHODCALLTYPE hooked_set_render_targets_and_uavs(
     UINT uav_count,
     ID3D11UnorderedAccessView* const* unordered_views,
     const UINT* initial_counts) {
-    if (!is_processing_frame()) {
+    const bool from_game = !is_processing_frame();
+    if (from_game) {
         observe_depth_target(context, depth_target);
-        observe_color_targets(render_target_count, render_targets);
     }
     const OMSetRenderTargetsAndUavsFunction original =
         g_original_set_render_targets_and_uavs.load(std::memory_order_acquire);
@@ -50,6 +54,10 @@ void STDMETHODCALLTYPE hooked_set_render_targets_and_uavs(
             uav_count,
             unordered_views,
             initial_counts);
+    }
+    if (from_game) {
+        observe_color_targets(
+            context, render_target_count, render_targets, depth_target);
     }
 }
 

@@ -100,6 +100,9 @@ common_flags=(
   "${project_dir}/src/resource_observer/observer_state.cpp" \
   "${project_dir}/src/resource_observer/format_names.cpp" \
   "${project_dir}/src/resource_observer/color_observation.cpp" \
+  "${project_dir}/src/resource_observer/color_capture.cpp" \
+  "${project_dir}/src/resource_observer/pass_trace.cpp" \
+  "${project_dir}/src/resource_observer/view_shape.cpp" \
   "${project_dir}/src/scene/sampler.cpp" \
   "${project_dir}/src/scene/sampler_resources.cpp" \
   "${project_dir}/src/scene/observer.cpp" \
