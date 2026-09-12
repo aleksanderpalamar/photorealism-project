@@ -1233,6 +1233,26 @@ fi
 # A escala interna e do ETS2, escrita no config dele no bootstrap. E a caixa
 # "Frame em menor resolucao" do plano: quem reduz e o Prism3D, nao o plugin
 # enganando o jogo sobre o tamanho do backbuffer.
+# O r_scale e o Scaling das opcoes graficas do ETS2 -- config do usuario. O
+# plugin pode toma-lo emprestado quando o FSR esta ligado, mas tem que guardar
+# o valor anterior e devolver quando for desligado. A 0.21.5 escrevia 1.0 em
+# toda abertura mesmo com o FSR desligado, e apagava um Scaling de 83% que o
+# usuario tinha escolhido.
+game_scale_body="$(awk '/^void apply_render_scale_to_game/,/^}/' \
+  "${project_dir}/src/fsr/game_scale.cpp")"
+for scale_contract in 'fsr_is_enabled' 'remember_scale' 'forget_scale'; do
+  if ! grep -Fq "${scale_contract}" <<<"${game_scale_body}"; then
+    echo "A escala perdeu ${scale_contract}: o plugin volta a escrever o \
+Scaling do usuario sem guardar nem devolver o valor que era dele." >&2
+    exit 1
+  fi
+done
+if ! grep -Fq 'if (!enabled && saved.empty())' <<<"${game_scale_body}"; then
+  echo "O plugin voltou a mexer no r_scale com o FSR desligado e nada \
+emprestado: isso apaga o Scaling que o usuario escolheu." >&2
+  exit 1
+fi
+
 for game_scale_key in 'r_scale_x' 'r_scale_y'; do
   if ! grep -Fq "${game_scale_key}" "${project_dir}/src/fsr/game_scale.cpp"; then
     echo "A escala interna do jogo perdeu ${game_scale_key}: sem escrever \

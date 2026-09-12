@@ -489,7 +489,7 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   cursor do sistema fica recentralizado enquanto o DirectInput estiver em modo
   relativo. O menu tambem anda por teclado -- setas, enter e tab -- que e o
   caminho que nao depende de nada disso;
-- **0.21.5 (entregue)** FSR de volta, Fase 1 do plano do usuario: o jogo
+- **0.21.6 (entregue)** FSR de volta, Fase 1 do plano do usuario: o jogo
   desenha numa textura interna menor e o plugin reconstroi ate a resolucao real
   com EASU em compute e RCAS em pixel shader. O modulo removido na 0.15.0 nao
   volta: aquele observava recursos e nunca substituia nada, este troca a

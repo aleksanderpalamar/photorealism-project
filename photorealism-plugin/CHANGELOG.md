@@ -1,5 +1,49 @@
 # Changelog
 
+## Pacote 0.21.6 - 2026-09-12
+
+**A 0.21.5 apagava o Scaling das opcoes graficas do usuario a cada abertura do
+jogo.** Defeito meu, e o pior tipo: escrita num arquivo do usuario, sem
+desfazer.
+
+### O que estava errado
+
+O `r_scale_x`/`r_scale_y` do ETS2 e o **Scaling** das opcoes graficas -- config
+do usuario. A 0.21.5 escrevia essas chaves no bootstrap **em toda abertura,
+mesmo com o FSR desligado**, forcando `1.0`. Quem tinha Scaling em 83% perdia
+isso toda vez que o jogo iniciava.
+
+Do log do usuario:
+
+```
+15:10:20  FSR escala: r_scale_x/y de 1 para 1.0000   <- FSR DESLIGADO, e escreveu
+```
+
+E como qualquer chave grafica escrita pelo plugin tira o perfil do preset, o
+ETS2 grava `g_gfx_quality "-1"` e a tela passa a mostrar **Personalizado** em
+vez de "Ultra" -- que e a impressao de "resetou tudo".
+
+### O contrato agora e emprestimo, nao escrita
+
+- **FSR desligado e nada emprestado** -- o plugin **nao toca** no `r_scale`;
+- **ao ligar** -- guarda o valor que era do usuario num arquivo ao lado do
+  config (`config.photorealism-fsr-scale.saved`) e so entao escreve o seu;
+- **ao desligar** -- le esse arquivo, **devolve** o valor original e apaga o
+  registro.
+
+O log diz qual das tres aconteceu, com o valor de antes e o de depois.
+
+Cinco guardas prendem o contrato, e duas delas foram quebradas de proposito
+para provar que disparam: escrever com o FSR desligado, e pegar emprestado sem
+guardar o valor.
+
+### Uma nota sobre o que eu errei
+
+O que faltou nao foi cuidado na escrita -- havia guarda para a escrita ser
+atomica desde a 0.12.2, e ela funcionou. Faltou perguntar **se o plugin devia
+escrever**, e nao so **como**. Config do jogo e do usuario; o plugin pode pedir
+emprestado e tem que devolver.
+
 ## Pacote 0.21.5 - 2026-09-12
 
 **O mecanismo estava errado. A caixa "Frame em menor resolucao" do plano e uma
