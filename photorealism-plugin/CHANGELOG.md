@@ -1,5 +1,43 @@
 # Changelog
 
+## Pacote 0.21.4 - 2026-09-12
+
+**A aba FSR passa a mostrar o estado real na tela.** Quatro pacotes e o usuario
+nunca conseguiu saber, sem abrir o log, se o upscale estava rodando -- o menu
+mostrava o interruptor ligado enquanto nada acontecia.
+
+A primeira linha da aba agora diz uma de tres coisas:
+
+```
+ATIVO  1280x720 reconstruido
+LIGADO mas inativo -- reinicie o ETS2 para valer
+desligado
+```
+
+### Por que "reinicie" e nao "funciona agora"
+
+O log da 0.21.3 fechou a questao da ordem, e ela esta certa:
+
+```
+14:42:08.848  hooks instalados, inclusive o de GetBuffer
+14:42:09.944  primeiro ResizeBuffers do jogo      -- 1,1 s depois
+14:42:09.948  ResizeBuffers 1920x1080
+```
+
+O hook entra antes de o ETS2 pegar o backbuffer. Com `enabled=true` no cfg na
+hora da abertura, a textura interna e entregue e o upscale roda.
+
+O que nao da para fazer e trocar isso no meio da sessao: o ETS2 pega o
+backbuffer cinco vezes na abertura e **nenhuma** nas horas seguintes -- medido,
+nao suposto, pelo contador `aquisicoes_do_jogo`, que ficou parado em 5 durante
+sete minutos de jogo. A resolucao em que um quadro e desenhado se decide quando
+o alvo e adquirido, e enquanto o jogo nao adquirir de novo, nada que o plugin
+faca muda isso.
+
+Mexer no interruptor continua valendo a pena: ele grava no cfg e vale na
+proxima abertura. A diferenca e que agora a tela diz isso, em vez de o usuario
+ter que deduzir do log.
+
 ## Pacote 0.21.3 - 2026-09-12
 
 **O log da 0.21.2 provou que o upscale nunca rodou, e mostrou tres coisas de

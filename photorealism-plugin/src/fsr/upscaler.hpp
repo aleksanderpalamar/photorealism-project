@@ -15,6 +15,7 @@ class Upscaler {
 
     bool wants_proxy() const { return enabled_ || game_holds_proxy_; }
     bool game_holds_proxy() const { return game_holds_proxy_; }
+    const char* status() const;
     const RenderExtent& extent() const { return extent_; }
     ID3D11ShaderResourceView* source() const { return proxy_.view(); }
 

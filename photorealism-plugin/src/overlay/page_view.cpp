@@ -1,4 +1,6 @@
 #include "layout.hpp"
+
+#include <cstring>
 #include "overlay.hpp"
 #include "text.hpp"
 #include "theme.hpp"
@@ -123,6 +125,15 @@ void Menu::draw_body(UiContext& ui, const MenuFrame& frame) {
 
     step_selection(page, frame.body);
 
+    if (host_ != nullptr && page.tab != nullptr &&
+        std::strcmp(page.tab, "FSR") == 0) {
+        const Rect banner = {
+            frame.body.x, frame.body.y, frame.body.width, theme::kRowHeight};
+        ui.list->push_rect(banner, theme::kControl, theme::kControlRadius);
+        draw_text_centered(
+            *ui.list, *ui.font, banner, host_->upscale_status(), theme::kText);
+    }
+
     const bool over_body =
         rect_contains(frame.body, ui.pointer.x, ui.pointer.y);
     if (over_body && ui.pointer.wheel != 0.0f) {
@@ -136,6 +147,9 @@ void Menu::draw_body(UiContext& ui, const MenuFrame& frame) {
     ui.list->push_clip(frame.body);
     Rect rows = frame.body;
     rows.y -= scroll_;
+    if (page.tab != nullptr && std::strcmp(page.tab, "FSR") == 0) {
+        rows.y += theme::kRowHeight + theme::kRowGap;
+    }
     rows.width -= kScrollBarWidth + theme::kRowGap;
     Layout layout(rows, theme::kRowHeight, theme::kRowGap);
 

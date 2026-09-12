@@ -3,12 +3,28 @@
 #include "../runtime.hpp"
 #include "fsr_telemetry.hpp"
 
+#include <cstdio>
+
 namespace photorealism {
 namespace fsr {
 
 Upscaler& upscaler() {
     static Upscaler instance;
     return instance;
+}
+
+const char* Upscaler::status() const {
+    static char line[96] = {};
+    if (game_holds_proxy_ && extent_.width != 0) {
+        std::snprintf(
+            line, sizeof(line), "ATIVO  %ux%u reconstruido",
+            extent_.width, extent_.height);
+        return line;
+    }
+    if (enabled_) {
+        return "LIGADO mas inativo -- reinicie o ETS2 para valer";
+    }
+    return "desligado";
 }
 
 void Upscaler::configure(const Settings& settings) {

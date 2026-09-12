@@ -57,6 +57,10 @@ public:
         overlay::menu().bind(&settings_, this);
     }
 
+    const char* upscale_status() const override {
+        return fsr::upscaler().status();
+    }
+
     void settings_changed(const overlay::SettingBinding& binding) override {
         if (overlay::binding_touches_observer(binding)) {
             apply_scene_observer_settings();

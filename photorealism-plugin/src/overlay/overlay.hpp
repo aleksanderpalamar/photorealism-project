@@ -15,7 +15,7 @@
 namespace photorealism {
 namespace overlay {
 
-constexpr const char* kMenuTitle = "photorealism-plugin 0.21.3";
+constexpr const char* kMenuTitle = "photorealism-plugin 0.21.4";
 constexpr const char* kProjectUrl =
     "https://github.com/aleksanderpalamar/photorealism-project";
 
@@ -23,6 +23,7 @@ class MenuHost {
   public:
     virtual ~MenuHost() = default;
     virtual void settings_changed(const SettingBinding& binding) = 0;
+    virtual const char* upscale_status() const = 0;
 };
 
 struct MenuFrame {
