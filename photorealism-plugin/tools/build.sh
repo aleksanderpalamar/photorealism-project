@@ -99,6 +99,7 @@ common_flags=(
   "${project_dir}/src/resource_observer/discovery_report.cpp" \
   "${project_dir}/src/resource_observer/observer_state.cpp" \
   "${project_dir}/src/resource_observer/format_names.cpp" \
+  "${project_dir}/src/resource_observer/color_observation.cpp" \
   "${project_dir}/src/scene/sampler.cpp" \
   "${project_dir}/src/scene/sampler_resources.cpp" \
   "${project_dir}/src/scene/observer.cpp" \
@@ -130,6 +131,7 @@ common_flags=(
   "${project_dir}/src/fsr/upscale_resources.cpp" \
   "${project_dir}/src/fsr/fsr_shaders.cpp" \
   "${project_dir}/src/fsr/upscale_pipeline.cpp" \
+  "${project_dir}/src/fsr/internal_frame.cpp" \
   "${project_dir}/src/fsr/upscaler.cpp" \
   "${project_dir}/src/runtime.cpp" \
   "${project_dir}/src/dxgi.def" \

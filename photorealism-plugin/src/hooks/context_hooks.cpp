@@ -1,5 +1,6 @@
 #include "context_hooks.hpp"
 
+#include "../resource_observer/color_observation.hpp"
 #include "../resource_observer/resource_observer.hpp"
 #include "../postprocess/postprocess.hpp"
 #include "hook_state.hpp"
@@ -15,6 +16,7 @@ void STDMETHODCALLTYPE hooked_set_render_targets(
     ID3D11DepthStencilView* depth_target) {
     if (!is_processing_frame()) {
         observe_depth_target(context, depth_target);
+        observe_color_targets(render_target_count, render_targets);
     }
     const OMSetRenderTargetsFunction original =
         g_original_set_render_targets.load(std::memory_order_acquire);
@@ -34,6 +36,7 @@ void STDMETHODCALLTYPE hooked_set_render_targets_and_uavs(
     const UINT* initial_counts) {
     if (!is_processing_frame()) {
         observe_depth_target(context, depth_target);
+        observe_color_targets(render_target_count, render_targets);
     }
     const OMSetRenderTargetsAndUavsFunction original =
         g_original_set_render_targets_and_uavs.load(std::memory_order_acquire);

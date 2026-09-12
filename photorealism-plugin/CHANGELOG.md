@@ -1,5 +1,57 @@
 # Changelog
 
+## Pacote 0.22.0 - 2026-09-12
+
+**A peca que faltava para a Fase 1 do plano: achar o quadro interno do jogo.**
+E a correcao do spam de log que o teste da 0.21.6 revelou.
+
+### Por que o upscale nunca rodou
+
+Com `r_scale`, o ETS2 desenha a cena reduzida e **ele mesmo** sobe para 1080p
+antes de o plugin ver o backbuffer. Quando a imagem chegava ate nos, o detalhe
+ja tinha sido perdido. O EASU precisava ler o buffer **antes** desse upscale --
+que e exatamente o que o diagrama do plano diz: a entrada e o **Color buffer**,
+nao o backbuffer.
+
+### Como o quadro interno e achado
+
+O plugin ja fazia isso para o depth. O `OMSetRenderTargets` esta enganchado
+desde a 0.6.0 e agora cataloga render target de cor tambem, na mesma chamada --
+**nenhum hook novo**, e nenhum dos oito hooks per-draw removidos na 0.15.0
+volta.
+
+A janela de busca e estreita de proposito: textura menor que a saida, com pelo
+menos metade de cada lado, sem MSAA e num dos quatro formatos de cor
+suportados. Entre os que sobram, vence o mais ligado ao longo do frame -- o
+alvo da cena e ligado muito mais vezes que espelho ou mapa de sombra.
+
+Isso e mais determinista que o problema que o plano cita sobre o ReShade:
+**sabemos o tamanho que estamos procurando**, porque fomos nos que pedimos ao
+jogo para desenhar nessa fracao.
+
+Achado o candidato, ele e copiado a cada apresentacao -- do mesmo jeito que o
+`depth_capture` ja copia o depth -- e a copia vira o SRV que o EASU le.
+
+O log diz qual venceu:
+
+```
+FSR achou o quadro interno do jogo: 1280x720 formato=87, ligado N vezes,
+entre M candidatos na janela de busca.
+```
+
+### O spam do slider
+
+Arrastar "Escala de render" no menu rendeu **76 linhas** de log num unico
+arraste: `configure()` registrava uma linha por movimento do mouse. Agora so a
+troca de ligado/desligado merece linha -- o valor da escala esta na tela e sai
+no log do bootstrap quando e aplicado. Ha guarda proibindo o retorno.
+
+### O que medir agora
+
+Se o candidato escolhido for o alvo da cena, `fsr.dispatch` sobe e a cadeia
+`720p -> EASU -> RCAS -> 1080p` fecha. Se vier o tamanho errado, o log nomeia o
+que foi escolhido e o ajuste e na janela de busca, nao no desenho.
+
 ## Pacote 0.21.6 - 2026-09-12
 
 **A 0.21.5 apagava o Scaling das opcoes graficas do usuario a cada abertura do

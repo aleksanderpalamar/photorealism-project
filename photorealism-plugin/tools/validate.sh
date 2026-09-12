@@ -1224,15 +1224,46 @@ g++ -std=c++20 -Wall -Wextra -Werror \
 # -- mecanismo aposentado na 0.21.5 em favor do r_scale do proprio ETS2.
 upscaler_present_body="$(awk '/^bool Upscaler::present/,/^}/' \
   "${project_dir}/src/fsr/upscaler.cpp")"
-if ! grep -Fq 'internal_frame_ == nullptr' <<<"${upscaler_present_body}"; then
+if ! grep -Fq 'internal_.capture(device, context)' <<<"${upscaler_present_body}"; then
   echo "Upscaler::present parou de exigir um quadro interno: reconstruiria uma \
 textura vazia por cima do quadro do jogo." >&2
+  exit 1
+fi
+
+# A descoberta do quadro interno reusa o hook de OMSetRenderTargets que o depth
+# ja usa. Nenhum dos oito hooks per-draw removidos na 0.15.0 volta por causa
+# disso -- se alguem precisar de um, e sinal de que o desenho esta errado.
+for color_discovery_site in \
+  'observe_color_targets' \
+  'set_color_search_window' \
+  'reset_color_discovery'; do
+  if ! grep -rFq "${color_discovery_site}" "${project_dir}/src"; then
+    echo "A descoberta do quadro interno perdeu ${color_discovery_site}: sem \
+ela o EASU nao tem de onde ler e o upscale nunca roda." >&2
+    exit 1
+  fi
+done
+if ! grep -Fq 'observe_color_targets' \
+  "${project_dir}/src/hooks/context_hooks.cpp"; then
+  echo "O hook de OMSetRenderTargets parou de observar render target de cor." >&2
   exit 1
 fi
 
 # A escala interna e do ETS2, escrita no config dele no bootstrap. E a caixa
 # "Frame em menor resolucao" do plano: quem reduz e o Prism3D, nao o plugin
 # enganando o jogo sobre o tamanho do backbuffer.
+# Arrastar um slider no menu chama configure() a cada movimento do mouse. A
+# 0.21.6 registrava uma linha por chamada e um arraste do slider de escala
+# rendeu 76 linhas de log. So a troca de ligado/desligado merece linha; o valor
+# da escala esta na tela e sai no log do bootstrap quando e aplicado.
+configure_body="$(awk '/^void Upscaler::configure/,/^}/' \
+  "${project_dir}/src/fsr/upscaler.cpp")"
+if grep -Fq 'was_scale' <<<"${configure_body}"; then
+  echo "configure() voltou a registrar mudanca de escala: arrastar o slider no \
+menu enche o log com uma linha por quadro." >&2
+  exit 1
+fi
+
 # O r_scale e o Scaling das opcoes graficas do ETS2 -- config do usuario. O
 # plugin pode toma-lo emprestado quando o FSR esta ligado, mas tem que guardar
 # o valor anterior e devolver quando for desligado. A 0.21.5 escrevia 1.0 em

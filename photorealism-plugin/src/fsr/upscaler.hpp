@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../config/settings.hpp"
+#include "internal_frame.hpp"
 #include "render_scale.hpp"
 #include "upscale_pipeline.hpp"
 
@@ -13,8 +14,7 @@ class Upscaler {
     void release();
 
     bool wants_proxy() const { return enabled_; }
-    bool has_internal_frame() const { return internal_frame_ != nullptr; }
-    void set_internal_frame(ID3D11ShaderResourceView* frame) { internal_frame_ = frame; }
+    bool has_internal_frame() const { return internal_.view() != nullptr; }
     const char* status() const;
     const RenderExtent& extent() const { return extent_; }
 
@@ -30,7 +30,7 @@ class Upscaler {
     UpscalePipeline pipeline_;
     RenderExtent extent_;
     bool enabled_ = false;
-    ID3D11ShaderResourceView* internal_frame_ = nullptr;
+    InternalFrame internal_;
     float scale_ = 1.0f;
     float sharpness_ = 0.0f;
 };

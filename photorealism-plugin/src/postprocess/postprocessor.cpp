@@ -2,6 +2,7 @@
 
 #include "../config/config.hpp"
 #include "../fsr/upscaler.hpp"
+#include "../resource_observer/color_observation.hpp"
 #include "../hooks/present_target.hpp"
 #include "../overlay/overlay.hpp"
 #include "../resource_observer/resource_observer.hpp"
@@ -656,6 +657,7 @@ public:
             resize_in_progress_ = false;
         }
         fsr::upscaler().release();
+        reset_color_discovery();
         log_message(
             "ResizeBuffers concluido: swap_chain=%p result=0x%08X.",
             static_cast<void*>(swap_chain),

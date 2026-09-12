@@ -497,7 +497,14 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   ainda nao rodou no jogo -- o que falta e o numero que a Fase 1 existe para
   produzir, tempo de GPU nativo contra tempo com upscale. Fases 2 e 3 do plano
   (otimizacao para RDNA2 e reconstrucao temporal) seguem abertas;
-- **0.22.0** raios de sol. E o efeito que as referencias realmente
+- **0.22.0 (entregue)** descoberta do quadro interno do jogo, a peca que
+  faltava para fechar a Fase 1 do plano de FSR. O `OMSetRenderTargets` que ja
+  achava o depth passa a catalogar render target de cor tambem, e o candidato
+  mais ligado dentro da janela de busca -- menor que a saida e pelo menos
+  metade dela -- vira a fonte do EASU. Nenhum dos oito hooks per-draw removidos
+  na 0.15.0 volta. Falta medir no jogo: se o candidato escolhido for o alvo da
+  cena, a cadeia 720p -> EASU -> RCAS -> 1080p fecha e a Fase 2 comeca;
+- **0.23.0** raios de sol. E o efeito que as referencias realmente
   mostram, e que a medicao do bloom revelou: estriados radiais saindo do sol
   atras da linha de arvores, projetados no teto escuro da cabine. Sao
   **direcionais**, e nenhuma piramide gaussiana produz aquilo. Reaproveita o
@@ -506,7 +513,7 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   descobrir a posicao do sol na tela sem dados do motor no `Present`.
   **Desceu de prioridade na 0.18.0**: cor errada em toda condicao pesa mais
   que um efeito ausente;
-- **0.23.0 (condicional)** upgrade de bind flag via hook de `CreateTexture2D`,
+- **0.24.0 (condicional)** upgrade de bind flag via hook de `CreateTexture2D`,
   na tecnica do ReShade: promover o depth a typeless com
   `BIND_SHADER_RESOURCE`, sintetizando o descritor no `CreateDepthStencilView`.
   So entra se o `CopyResource` de um depth `DEPTH_STENCIL`-only falhar sob
