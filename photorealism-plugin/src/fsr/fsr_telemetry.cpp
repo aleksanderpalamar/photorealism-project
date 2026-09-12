@@ -30,6 +30,10 @@ void Telemetry::record_skip(const char* reason) {
     last_skip_ = reason;
 }
 
+void Telemetry::record_game_acquire() {
+    game_acquires_.fetch_add(1, std::memory_order_acq_rel);
+}
+
 void Telemetry::reset() {
     replacements_.store(0, std::memory_order_release);
     dispatches_.store(0, std::memory_order_release);
@@ -52,13 +56,14 @@ void Telemetry::report(
     const unsigned dispatched = dispatches();
     log_message(
         "FSR interno=%ux%u saida=%ux%u fsr.replacement=%u fsr.dispatch=%u "
-        "descartes=%u motivo=%s.",
+        "aquisicoes_do_jogo=%u descartes=%u motivo=%s.",
         internal.width,
         internal.height,
         width,
         height,
         replaced,
         dispatched,
+        game_acquires_.load(std::memory_order_acquire),
         skips_.load(std::memory_order_acquire),
         last_skip_ != nullptr ? last_skip_ : "nenhum");
 

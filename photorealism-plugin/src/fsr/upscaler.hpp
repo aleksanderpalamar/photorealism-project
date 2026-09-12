@@ -15,6 +15,9 @@ class Upscaler {
     void release();
 
     bool wants_proxy() const { return enabled_; }
+    bool pending() const {
+        return enabled_ != requested_enabled_ || scale_ != requested_scale_;
+    }
     const RenderExtent& extent() const { return extent_; }
     ID3D11ShaderResourceView* source() const { return proxy_.view(); }
 

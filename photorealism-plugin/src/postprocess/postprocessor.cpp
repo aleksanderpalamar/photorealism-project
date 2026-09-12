@@ -57,7 +57,12 @@ public:
         overlay::menu().bind(&settings_, this);
     }
 
-    void observer_changed() override { apply_scene_observer_settings(); }
+    void settings_changed(const overlay::SettingBinding& binding) override {
+        if (overlay::binding_touches_observer(binding)) {
+            apply_scene_observer_settings();
+        }
+        fsr::upscaler().configure(settings_);
+    }
 
     struct FrameTargets {
         ID3D11Texture2D* back_buffer;

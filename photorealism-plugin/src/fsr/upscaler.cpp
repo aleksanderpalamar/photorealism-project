@@ -12,12 +12,18 @@ Upscaler& upscaler() {
 }
 
 void Upscaler::configure(const Settings& settings) {
+    const bool was_pending = pending();
     requested_enabled_ = settings.fsr_enabled;
     requested_scale_ = clamp_scale(settings.fsr_render_scale);
     sharpness_ = settings.fsr_sharpness;
-    if (!proxy_.ready()) {
-        apply_requested();
+    if (!pending() || was_pending) {
+        return;
     }
+    log_message(
+        "FSR pedido: %s escala=%.4f. So vale quando o jogo recriar o "
+        "backbuffer -- troque a resolucao no ETS2 ou reinicie o jogo.",
+        requested_enabled_ ? "ligado" : "desligado",
+        static_cast<double>(requested_scale_));
 }
 
 void Upscaler::apply_requested() {

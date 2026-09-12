@@ -3,6 +3,7 @@
 #include "../fsr/fsr_telemetry.hpp"
 #include "../fsr/upscaler.hpp"
 #include "../postprocess/com_utils.hpp"
+#include "../postprocess/postprocess.hpp"
 #include "vtable_patch.hpp"
 
 #include <atomic>
@@ -64,6 +65,9 @@ HRESULT STDMETHODCALLTYPE hooked_get_buffer(
     }
     if (index != 0 || surface == nullptr) {
         return original(swap_chain, index, interface_id, surface);
+    }
+    if (!is_processing_frame()) {
+        fsr::telemetry().record_game_acquire();
     }
 
     ID3D11Texture2D* proxy = proxy_for(swap_chain);

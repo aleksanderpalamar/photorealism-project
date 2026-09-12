@@ -12,6 +12,7 @@ class Telemetry {
     void record_replacement();
     void record_dispatch();
     void record_skip(const char* reason);
+    void record_game_acquire();
     void reset();
 
     void report(const RenderExtent& internal, unsigned width, unsigned height);
@@ -27,6 +28,7 @@ class Telemetry {
     std::atomic<unsigned> replacements_{0};
     std::atomic<unsigned> dispatches_{0};
     std::atomic<unsigned> skips_{0};
+    std::atomic<unsigned> game_acquires_{0};
     const char* last_skip_ = nullptr;
     unsigned long long last_report_ms_ = 0;
     bool announced_ = false;

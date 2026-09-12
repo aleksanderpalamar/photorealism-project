@@ -1,5 +1,53 @@
 # Changelog
 
+## Pacote 0.21.1 - 2026-09-12
+
+**Ligar o FSR pelo menu gravava no cfg e nao chegava ao modulo.** O primeiro log
+de jogo da 0.21.0 trouxe uma linha de FSR so, a do startup, e nenhuma depois de
+o usuario ligar na aba FSR.
+
+### O fio que faltava
+
+O menu avisava o host quando um ajuste mudava -- mas **so para os campos do
+observador de cena**, que eram os unicos com efeito fora do caminho por quadro
+quando o menu foi escrito. O FSR e o segundo caso desses, e entrou sem o aviso.
+
+O resultado no log e exatamente o sintoma: `Menu gravou 1 ajuste(s) no cfg: ok`
+as 12:19:30, e nenhuma linha de FSR depois. O cfg instalado tem
+`enabled=true`; o modulo nunca soube.
+
+O aviso deixou de ser filtrado por grupo. O menu agora diz "isto mudou" e quem
+recebe decide o que refazer -- que era como deveria ter sido desde o comeco. Ha
+guarda proibindo o filtro de voltar.
+
+### E por que ligar ainda nao vale na hora
+
+Mesmo com o fio, ligar o FSR no meio da sessao nao pode valer imediatamente, e
+isso e do problema, nao do codigo: o jogo desenha na textura que **ja pegou**.
+Enquanto ele nao pedir o backbuffer de novo, entregar a nossa nao muda nada --
+e trocar o alvo por baixo dele, com a textura interna ainda vazia, poria lixo na
+tela.
+
+O momento em que o jogo pede de novo e o `ResizeBuffers`. O log da 0.21.0
+mostra os quatro do ETS2, todos as 12:18:03, na abertura -- nenhum durante a
+partida.
+
+Entao ligar vale ao **trocar a resolucao no ETS2 ou reiniciar o jogo**. O titulo
+da aba diz isso, e agora o log tambem, no instante em que voce mexe:
+
+```
+FSR pedido: ligado escala=0.6667. So vale quando o jogo recriar o backbuffer
+-- troque a resolucao no ETS2 ou reinicie o jogo.
+```
+
+### Um contador a mais, para a proxima duvida
+
+A linha periodica ganhou `aquisicoes_do_jogo`, que conta quantas vezes o jogo
+pediu o backbuffer -- separando as chamadas dele das nossas, que acontecem todo
+quadro. Se esse numero crescer por quadro, ligar ao vivo passa a ser possivel e
+a trava sai. Se ficar parado depois da abertura, esta confirmado que so
+`ResizeBuffers` serve, e ai e limitacao do jogo e nao escolha minha.
+
 ## Pacote 0.21.0 - 2026-09-12
 
 **FSR de volta, Fase 1 do plano escrito pelo usuario: o jogo desenha em 1280x720

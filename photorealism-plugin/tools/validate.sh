@@ -1219,6 +1219,28 @@ g++ -std=c++20 -Wall -Wextra -Werror \
 # A escala interna e a unica parte do FSR que roda fora da GPU, e a que decide
 # se o upscale vale a pena. 1920x1080 a 0.6667 tem que dar 1280x720 exatos --
 # a milestone do plano -- e todo lado tem que cair num multiplo do grupo 8x8.
+# Mexer num ajuste no menu tem que chegar a quem usa esse ajuste. Na 0.21.0 o
+# menu avisava o host so para os campos do observador de cena, entao ligar o
+# FSR pelo menu gravava no cfg e nao chegava ao modulo -- o log ficava sem uma
+# linha sequer e parecia que nada tinha acontecido.
+if ! grep -Fq 'settings_changed' "${project_dir}/src/overlay/overlay.cpp"; then
+  echo "O menu parou de avisar o host quando um ajuste muda: quem le a config \
+fora do caminho por quadro nunca fica sabendo." >&2
+  exit 1
+fi
+menu_change_body="$(awk '/^void Menu::apply_change/,/^}/' \
+  "${project_dir}/src/overlay/overlay.cpp")"
+if grep -Fq 'binding_touches_observer' <<<"${menu_change_body}"; then
+  echo "apply_change voltou a filtrar o aviso por grupo de ajuste: quem nao \
+estiver na lista volta a nao ser avisado, que foi o defeito do FSR na 0.21.0." >&2
+  exit 1
+fi
+if ! grep -Fq 'fsr::upscaler().configure' \
+  "${project_dir}/src/postprocess/postprocessor.cpp"; then
+  echo "O host parou de repassar a config ao FSR." >&2
+  exit 1
+fi
+
 # O upscale so existe se o GetBuffer do swap chain for trocado: e ele que
 # entrega ao jogo a textura menor no lugar do backbuffer. Sem essa instalacao o
 # jogo desenha em 1080p e o modulo inteiro vira enfeite.
