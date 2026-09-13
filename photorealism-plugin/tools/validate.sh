@@ -863,7 +863,7 @@ effective_profile="$(awk -F= '
 # que importa. Uma guarda que explica uma regressao sutil so serve se for ela
 # a falar. Nesta ordem o hash continua pegando tudo que as guardas nao
 # cobrem, e so isso.
-expected_cfg_sha256="a9c5a39d6e4206601b27b9d38719f4ba2a7e32641ea2c5a7320e73d553d5bc1f"
+expected_cfg_sha256="f076a1de558d0ea31fc2a8740aa22438dc1a72517ac1c1ef4129a74a4d111352"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
@@ -1483,6 +1483,20 @@ code_fsr_enabled="$(grep -oE 'stack\.modules\.fsr_enabled = (true|false)' \
 if [[ "${cfg_fsr_enabled}" != "${code_fsr_enabled}" ]]; then
   echo "O cfg empacotado diz FSR=${cfg_fsr_enabled} e o default interno diz \
 ${code_fsr_enabled}. Quem apagar o cfg ganha outro comportamento." >&2
+  exit 1
+fi
+
+# A nitidez do RCAS saiu de 0.35 para 0.60 na 0.22.5, escolhida pelo usuario no
+# jogo com o EASU ja igual ao da AMD. O cfg e o default do codigo tem que dizer o
+# mesmo, senao o "R" do menu devolve um valor e o pacote traz outro.
+cfg_fsr_sharpness="$(awk '/^\[module\.fsr\./,/^$/' \
+  "${project_dir}/config/photorealism-plugin.cfg" | grep -E '^sharpness=' |
+  cut -d= -f2)"
+code_fsr_sharpness="$(grep -oE 'stack\.modules\.fsr_sharpness = [0-9.]+f' \
+  "${project_dir}/src/config/defaults.cpp" | awk '{print $3}' | tr -d 'f')"
+if [[ "${cfg_fsr_sharpness}" != "0.60" || "${code_fsr_sharpness}" != "0.60" ]]; then
+  echo "A nitidez padrao do RCAS diverge: cfg=${cfg_fsr_sharpness} \
+codigo=${code_fsr_sharpness}, e o padrao escolhido no jogo e 0.60." >&2
   exit 1
 fi
 

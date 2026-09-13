@@ -1,5 +1,32 @@
 # Changelog
 
+## Pacote 0.22.5 - 2026-09-13
+
+**A nitidez do RCAS passa a vir em 0.60.** Escolha do usuario no jogo, com o
+EASU ja igual ao da AMD.
+
+### O que o teste da 0.22.4 mostrou
+
+- 68.971 quadros reconstruidos em 1288x728 -> 1920x1080, sem descarte de
+  00:14:55 a 00:33:58. Os 11.223 sem reconstrucao ficam no carregamento, em
+  2 min a 60 quadros por segundo sem cena interna logo depois da entrega da
+  carga, e em 2 min a 1 quadro por segundo, jogo em segundo plano;
+- o usuario avaliou a imagem como otima e comparou a nitidez do RCAS em 0.35 e
+  0.60 no jogo, preferindo 0.60;
+- nas capturas em 0.60, bordas diagonais continuas, sem halo claro em volta da
+  cabine nem das arvores contra o ceu;
+- a notificacao de carga pronta aparece por cima da imagem reconstruida: a
+  interface desenhada depois do FSR, como a 0.22.3 pos, continua visivel.
+
+### A mudanca
+
+`sharpness` do `[module.fsr.0.21.0]` e o default do codigo foram de 0.35 para
+0.60. O "R" do menu passa a devolver 0.60. Guarda nova exige que os dois digam
+o mesmo valor.
+
+Quem ja tem o cfg instalado mantem o valor gravado nele: o pacote so muda o
+padrao de quem instala ou apaga o cfg.
+
 ## Pacote 0.22.4 - 2026-09-13
 
 **O EASU agora e o da AMD, bit a bit.** O shader anterior somava a borda com

@@ -515,6 +515,8 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   comparado na GPU contra o original, com zero bits diferentes. O anterior
   somava a borda com `max()` e deixava a adaptacao em 25%. Falta o numero da
   Fase 1, tempo de GPU nativo contra tempo com upscale;
+- **0.22.5 (entregue)** nitidez do RCAS padrao em 0.60, escolhida pelo usuario
+  no jogo depois do EASU corrigido. Falta o numero da Fase 1;
 - **0.23.0** raios de sol. E o efeito que as referencias realmente
   mostram, e que a medicao do bloom revelou: estriados radiais saindo do sol
   atras da linha de arvores, projetados no teto escuro da cabine. Sao

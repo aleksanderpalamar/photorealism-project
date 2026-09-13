@@ -137,7 +137,7 @@ CalibrationStack reference_stack() {
 
     stack.modules.fsr_enabled = false;
     stack.modules.fsr_render_scale = 0.6667f;
-    stack.modules.fsr_sharpness = 0.35f;
+    stack.modules.fsr_sharpness = 0.60f;
 
     stack.modules.scene_observer_enabled = true;
     stack.modules.scene_observer_interval_frames = 30.0f;
