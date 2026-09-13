@@ -18,7 +18,8 @@ bool UpscalePipeline::ensure(
     }
     if (device_ != device) {
         release();
-        if (!shaders_.create(device)) {
+        if (!shaders_.create(device) || !states_.create(device)) {
+            release();
             return false;
         }
         device_ = device;
@@ -28,6 +29,7 @@ bool UpscalePipeline::ensure(
 
 void UpscalePipeline::release() {
     resources_.release();
+    states_.release();
     shaders_.release();
     device_ = nullptr;
 }
@@ -88,6 +90,7 @@ void UpscalePipeline::draw_rcas(
     ID3D11ShaderResourceView* upscaled = resources_.view();
     ID3D11Buffer* buffer = shaders_.rcas_constants();
     context->OMSetRenderTargets(1, &output, nullptr);
+    states_.bind(context);
     context->RSSetViewports(1, &viewport);
     context->IASetInputLayout(nullptr);
     context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -116,7 +119,8 @@ bool UpscalePipeline::run(
     if (context == nullptr || source == nullptr || output == nullptr) {
         return false;
     }
-    if (!ready() || internal.width == 0 || internal.height == 0) {
+    if (!ready_for(width, height) || internal.width == 0 ||
+        internal.height == 0) {
         return false;
     }
     dispatch_easu(context, source, internal, width, height);

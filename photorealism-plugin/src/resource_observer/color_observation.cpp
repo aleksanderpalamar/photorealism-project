@@ -13,15 +13,13 @@
 namespace photorealism {
 namespace {
 
-constexpr unsigned kTraceFallbackFrames = 600;
-
 SRWLOCK g_color_lock = SRWLOCK_INIT;
 std::atomic<bool> g_color_capture_active{false};
 observer::FrameTransition g_transition;
 observer::ColorCapture g_capture;
 observer::PassTrace g_trace;
+observer::TraceArming g_arming;
 bool g_captured_this_frame = false;
-unsigned g_active_frames = 0;
 UINT g_configured[4] = {};
 
 void record_trace(
@@ -36,6 +34,7 @@ void record_trace(
     entry.targets = render_target_count;
     entry.role = step.role;
     entry.captured = step.capture;
+    entry.reconstruct = step.reconstruct;
     ID3D11Texture2D* depth = nullptr;
     observer::TargetShape depth_shape;
     if (observer::describe_view(depth_target, &depth, &depth_shape)) {
@@ -49,6 +48,7 @@ void record_trace(
 }
 
 void enable_color_capture(
+    ID3D11Texture2D* output,
     UINT output_width,
     UINT output_height,
     UINT expected_width,
@@ -63,8 +63,7 @@ void enable_color_capture(
     for (UINT index = 0; index < 4; ++index) {
         g_configured[index] = wanted[index];
     }
-    g_transition.configure(
-        output_width, output_height, expected_width, expected_height);
+    g_transition.configure(output, expected_width, expected_height);
     ReleaseSRWLockExclusive(&g_color_lock);
     g_color_capture_active.store(true, std::memory_order_release);
     if (changed) {
@@ -77,21 +76,21 @@ void enable_color_capture(
     }
 }
 
-void observe_color_targets(
+bool observe_color_targets(
     ID3D11DeviceContext* context,
     UINT render_target_count,
     ID3D11RenderTargetView* const* render_targets,
     ID3D11DepthStencilView* depth_target) {
     if (!g_color_capture_active.load(std::memory_order_acquire)) {
-        return;
+        return false;
     }
     if (render_targets == nullptr || render_target_count == 0) {
-        return;
+        return false;
     }
     ID3D11Texture2D* texture = nullptr;
     observer::TargetShape shape;
     if (!observer::describe_view(render_targets[0], &texture, &shape)) {
-        return;
+        return false;
     }
 
     AcquireSRWLockExclusive(&g_color_lock);
@@ -110,8 +109,10 @@ void observe_color_targets(
         record_trace(texture, shape, step, render_target_count, depth_target);
     }
     observer::release_texture_handle(step.capture);
+    const bool reconstruct = step.reconstruct && g_captured_this_frame;
     ReleaseSRWLockExclusive(&g_color_lock);
     texture->Release();
+    return reconstruct;
 }
 
 bool acquire_captured_frame(
@@ -132,6 +133,13 @@ bool acquire_captured_frame(
     return available;
 }
 
+bool color_frame_captured() {
+    AcquireSRWLockExclusive(&g_color_lock);
+    const bool captured = g_captured_this_frame;
+    ReleaseSRWLockExclusive(&g_color_lock);
+    return captured;
+}
+
 void end_color_frame() {
     if (!g_color_capture_active.load(std::memory_order_acquire)) {
         return;
@@ -140,9 +148,7 @@ void end_color_frame() {
     bool truncated = false;
 
     AcquireSRWLockExclusive(&g_color_lock);
-    ++g_active_frames;
-    const bool scene_frame = g_transition.internal_binds() > 0;
-    if (scene_frame || g_active_frames >= kTraceFallbackFrames) {
+    if (g_arming.end_frame(g_transition.binds())) {
         g_trace.arm();
     }
     observer::release_texture_handle(g_transition.end_frame());
@@ -164,7 +170,8 @@ void disable_color_capture() {
 void reset_color_discovery() {
     AcquireSRWLockExclusive(&g_color_lock);
     observer::release_texture_handle(g_transition.end_frame());
-    g_transition.configure(0, 0, 0, 0);
+    g_transition.configure(nullptr, 0, 0);
+    g_arming = observer::TraceArming();
     g_capture.release();
     g_captured_this_frame = false;
     for (UINT& value : g_configured) {

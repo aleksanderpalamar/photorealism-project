@@ -17,28 +17,25 @@ class Upscaler {
     const char* status() const;
     const RenderExtent& extent() const { return extent_; }
 
-    bool present(
+    void present(
         ID3D11Device* device,
-        ID3D11DeviceContext* context,
-        ID3D11RenderTargetView* output,
+        ID3D11Texture2D* back_buffer,
         unsigned width,
-        unsigned height,
-        bool output_is_srgb_view);
+        unsigned height);
+    bool reconstruct(
+        ID3D11DeviceContext* context, ID3D11RenderTargetView* output);
 
   private:
-    bool reconstruct(
-        ID3D11Device* device,
-        ID3D11DeviceContext* context,
-        ID3D11RenderTargetView* output,
-        unsigned width,
-        unsigned height,
-        bool output_is_srgb_view);
+    void account_frame();
+    const char* skip_reason() const;
 
     UpscalePipeline pipeline_;
     InternalFrame internal_;
     RenderExtent extent_;
     bool enabled_ = false;
     bool reconstructing_ = false;
+    bool reconstructed_this_frame_ = false;
+    bool placement_logged_ = false;
     bool capture_scale_known_ = false;
     float capture_scale_ = 1.0f;
     float scale_ = 1.0f;

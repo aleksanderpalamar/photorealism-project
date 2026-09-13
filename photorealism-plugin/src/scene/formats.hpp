@@ -27,6 +27,11 @@ inline bool is_readable(unsigned format) {
     return is_bgra(format) || is_rgba(format);
 }
 
+inline bool is_srgb(unsigned format) {
+    return format == kR8G8B8A8UnormSrgb || format == kB8G8R8A8UnormSrgb ||
+           format == kB8G8R8X8UnormSrgb;
+}
+
 inline unsigned resolve_typeless(unsigned format) {
     if (format == kB8G8R8X8Unorm || format == kB8G8R8X8UnormSrgb ||
         format == kB8G8R8X8Typeless) {

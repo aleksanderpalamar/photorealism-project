@@ -1,5 +1,78 @@
 # Changelog
 
+## Pacote 0.22.3 - 2026-09-12
+
+**A mensagem de dormir piscava com o FSR ligado. A causa e o desenho do RCAS
+herdando o estado da interface do jogo, e a correcao move a reconstrucao para
+antes da interface.** O registro de passes passa a esperar o mapa carregar.
+
+### O que o teste da 0.22.2 mostrou
+
+Na sessao das 22:23 o FSR reconstruiu pela primeira vez no jogo:
+`FSR copia o quadro interno de 1288x728 formato=29` e depois
+`fsr.replacement=600` a cada 10 s, sem descarte. Dois defeitos apareceram:
+
+- a imagem piscou na saida da tela de carregamento;
+- parado numa area de descanso, a **mensagem de dormir** piscava. Desligar o
+  FSR pelo menu parava a piscada na hora.
+
+Na sessao das 21:02 o FSR nao reconstruiu nada em 8 minutos. Ali o depth da
+cena ficou em 1920x1080 a sessao inteira: o jogo desenhou em resolucao cheia,
+e o borrao daquela sessao era o resolve temporal do plugin, que estava ativo.
+
+### A causa
+
+`draw_rcas` ligava o proprio shader, a view e o viewport, e **nenhum** estado de
+blend, depth ou rasterizacao. No `Present` o contexto ainda tem o que o jogo
+deixou ligado para o ultimo elemento da interface -- inclusive o scissor com o
+retangulo daquele elemento. A reconstrucao cobria so esse retangulo, e so nos
+quadros em que ele era o ultimo desenhado. O contador dizia 600 quadros
+reconstruidos porque o desenho acontecia; o que ele cobria nao aparecia no log.
+
+A correcao obvia -- ligar estados proprios -- cobriria a tela inteira, e com
+ela **a interface inteira**: o jogo desenha o HUD no backbuffer depois do
+proprio upscale, e o `Present` vem depois do HUD. Essa era a pergunta em aberto
+da 0.22.2, e a resposta e sim.
+
+### A correcao
+
+- o FSR tem estados proprios: blend desligado, depth desligado, rasterizacao
+  sem culling e **sem scissor**, ligados em todo desenho do RCAS;
+- a reconstrucao saiu do `Present`. Ela roda dentro do `OMSetRenderTargets`,
+  na **segunda** vez que o jogo liga o backbuffer depois de passar da
+  resolucao interna: a primeira e o upscale do proprio jogo, a seguinte e a
+  interface. O FSR escreve por cima do upscale do jogo e devolve o estado; a
+  interface e desenhada por cima da reconstrucao, como seria num upscaler
+  nativo;
+- a saida agora e reconhecida pela **textura do backbuffer**, e nao pelo
+  tamanho: um alvo qualquer de 1920x1080 no meio do quadro nunca recebe a
+  reconstrucao;
+- o sRGB vem da view que o proprio jogo ligou;
+- quadro com uma unica passagem pelo backbuffer nao reconstroi, e o log diz
+  por que: `o jogo nao voltou ao backbuffer depois de esticar o quadro interno`;
+- bind que tambem liga UAVs nao recebe a reconstrucao: restaurar o estado com
+  `OMSetRenderTargets` desligaria as UAVs do jogo.
+
+A regra mora em `FrameTransition`, pura. O teste novo modela o quadro medido na
+0.22.2 -- backbuffer no inicio, alvos internos, o de tom mapeado, e tres binds
+do backbuffer no fim -- e exige a captura no primeiro e a reconstrucao so no
+segundo.
+
+### O registro de passes espera o mapa
+
+Na 0.22.2 o registro armava depois de 600 quadros quaisquer e caiu **duas
+vezes** na tela de carregamento, com 3 passes por quadro. Agora ele arma depois
+de 300 quadros **seguidos** com pelo menos 32 passes -- o jogo dirigindo tinha
+72, o carregamento 3 -- e um quadro de carregamento no meio zera a contagem.
+Cada linha marca `reconstrucao` no bind em que o FSR escreveu.
+
+### O que continua nao provado
+
+**Nada disso rodou no jogo.** A correcao supoe que o primeiro bind do
+backbuffer depois da cena contem so o upscale do jogo. Se o jogo desenhar parte
+da interface nesse mesmo bind, essa parte some -- de forma estavel, sem piscar.
+O registro de passes mostra os binds; o que cada um desenha, so a tela mostra.
+
 ## Pacote 0.22.2 - 2026-09-12
 
 **A imagem piscava entre a cena e um quadro preto com bordas coloridas. A causa

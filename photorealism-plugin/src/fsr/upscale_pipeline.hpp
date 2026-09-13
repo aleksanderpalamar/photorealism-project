@@ -1,6 +1,7 @@
 #pragma once
 
 #include "fsr_shaders.hpp"
+#include "fsr_states.hpp"
 #include "render_scale.hpp"
 #include "upscale_resources.hpp"
 
@@ -12,7 +13,13 @@ class UpscalePipeline {
     bool ensure(ID3D11Device* device, unsigned width, unsigned height);
     void release();
 
-    bool ready() const { return shaders_.ready() && resources_.ready(); }
+    bool ready() const {
+        return shaders_.ready() && states_.ready() && resources_.ready();
+    }
+    bool ready_for(unsigned width, unsigned height) const {
+        return shaders_.ready() && states_.ready() &&
+               resources_.matches(width, height);
+    }
 
     bool run(
         ID3D11DeviceContext* context,
@@ -40,6 +47,7 @@ class UpscalePipeline {
         bool output_is_srgb_view);
 
     FsrShaders shaders_;
+    FsrStates states_;
     UpscaleResources resources_;
     ID3D11Device* device_ = nullptr;
 };

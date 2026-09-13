@@ -26,6 +26,9 @@ class UpscaleResources {
     void release();
 
     bool ready() const { return access_ != nullptr && view_ != nullptr; }
+    bool matches(unsigned width, unsigned height) const {
+        return ready() && width_ == width && height_ == height;
+    }
     ID3D11UnorderedAccessView* access() const { return access_; }
     ID3D11ShaderResourceView* view() const { return view_; }
 

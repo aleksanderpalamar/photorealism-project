@@ -25,6 +25,7 @@ struct TransitionStep {
     void* acquired = nullptr;
     void* released = nullptr;
     void* capture = nullptr;
+    bool reconstruct = false;
 };
 
 inline unsigned distance_between(unsigned first, unsigned second) {
@@ -34,21 +35,17 @@ inline unsigned distance_between(unsigned first, unsigned second) {
 class FrameTransition {
   public:
     void configure(
-        unsigned output_width,
-        unsigned output_height,
-        unsigned expected_width,
-        unsigned expected_height) {
-        output_width_ = output_width;
-        output_height_ = output_height;
+        void* output, unsigned expected_width, unsigned expected_height) {
+        output_ = output;
         expected_width_ = expected_width;
         expected_height_ = expected_height;
     }
 
-    TargetRole classify(const TargetShape& shape) const {
-        if (output_width_ == 0 || output_height_ == 0) {
+    TargetRole classify(void* texture, const TargetShape& shape) const {
+        if (output_ == nullptr || texture == nullptr) {
             return TargetRole::Ignored;
         }
-        if (shape.width == output_width_ && shape.height == output_height_) {
+        if (texture == output_) {
             return TargetRole::Output;
         }
         if (shape.samples != 1 || !scene_formats::is_readable(shape.format)) {
@@ -66,8 +63,9 @@ class FrameTransition {
     }
 
     TransitionStep observe(void* texture, const TargetShape& shape) {
+        ++binds_;
         TransitionStep step;
-        step.role = classify(shape);
+        step.role = classify(texture, shape);
         if (step.role == TargetRole::Internal) {
             ++internal_binds_;
             if (texture == pending_) {
@@ -78,12 +76,20 @@ class FrameTransition {
             pending_ = texture;
             return step;
         }
-        if (step.role != TargetRole::Output || pending_ == nullptr) {
+        if (step.role != TargetRole::Output) {
             return step;
         }
-        step.capture = pending_;
-        pending_ = nullptr;
-        ++transitions_;
+        if (pending_ != nullptr) {
+            step.capture = pending_;
+            pending_ = nullptr;
+            ++transitions_;
+            return step;
+        }
+        if (transitions_ == 0 || reconstructed_) {
+            return step;
+        }
+        step.reconstruct = true;
+        reconstructed_ = true;
         return step;
     }
 
@@ -92,21 +98,26 @@ class FrameTransition {
         pending_ = nullptr;
         transitions_ = 0;
         internal_binds_ = 0;
+        binds_ = 0;
+        reconstructed_ = false;
         return leftover;
     }
 
     void* pending() const { return pending_; }
     unsigned transitions() const { return transitions_; }
     unsigned internal_binds() const { return internal_binds_; }
+    unsigned binds() const { return binds_; }
+    bool reconstructed() const { return reconstructed_; }
 
   private:
-    unsigned output_width_ = 0;
-    unsigned output_height_ = 0;
+    void* output_ = nullptr;
     unsigned expected_width_ = 0;
     unsigned expected_height_ = 0;
     void* pending_ = nullptr;
     unsigned transitions_ = 0;
     unsigned internal_binds_ = 0;
+    unsigned binds_ = 0;
+    bool reconstructed_ = false;
 };
 
 }

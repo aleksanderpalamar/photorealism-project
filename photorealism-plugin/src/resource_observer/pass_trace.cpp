@@ -74,9 +74,11 @@ bool PassTrace::take(std::vector<TraceEntry>* entries, bool* truncated) {
 
 void log_trace(const std::vector<TraceEntry>& entries, bool truncated) {
     log_message(
-        "FSR rastreio de %u quadros: %u passes%s. Cada linha e um "
-        "OMSetRenderTargets do jogo; #N identifica a textura fisica.",
+        "FSR rastreio de %u quadros, depois de %u quadros seguidos de cena: %u "
+        "passes%s. Cada linha e um OMSetRenderTargets do jogo; #N identifica a "
+        "textura fisica; saida e o backbuffer.",
         kTracedFrames,
+        kSettledSceneFrames,
         static_cast<unsigned>(entries.size()),
         truncated ? " (truncado)" : "");
 
@@ -100,7 +102,7 @@ void log_trace(const std::vector<TraceEntry>& entries, bool truncated) {
                 identity_of(&known, entry.captured));
         }
         log_message(
-            "FSR rastreio q%u p%03u: rt=#%u %ux%u f%u n%u ds=%s %s%s.",
+            "FSR rastreio q%u p%03u: rt=#%u %ux%u f%u n%u ds=%s %s%s%s.",
             entry.frame,
             pass,
             identity_of(&known, entry.texture),
@@ -110,7 +112,8 @@ void log_trace(const std::vector<TraceEntry>& entries, bool truncated) {
             entry.targets,
             depth,
             role_name(entry.role),
-            capture);
+            capture,
+            entry.reconstruct ? " reconstrucao" : "");
     }
 }
 

@@ -23,9 +23,12 @@ void STDMETHODCALLTYPE hooked_set_render_targets(
     if (original != nullptr) {
         original(context, render_target_count, render_targets, depth_target);
     }
-    if (from_game) {
-        observe_color_targets(
-            context, render_target_count, render_targets, depth_target);
+    if (!from_game) {
+        return;
+    }
+    if (observe_color_targets(
+            context, render_target_count, render_targets, depth_target)) {
+        reconstruct_game_frame(context, render_targets[0]);
     }
 }
 
@@ -55,9 +58,13 @@ void STDMETHODCALLTYPE hooked_set_render_targets_and_uavs(
             unordered_views,
             initial_counts);
     }
-    if (from_game) {
-        observe_color_targets(
-            context, render_target_count, render_targets, depth_target);
+    if (!from_game) {
+        return;
+    }
+    const bool reconstruct = observe_color_targets(
+        context, render_target_count, render_targets, depth_target);
+    if (reconstruct && uav_count == 0) {
+        reconstruct_game_frame(context, render_targets[0]);
     }
 }
 

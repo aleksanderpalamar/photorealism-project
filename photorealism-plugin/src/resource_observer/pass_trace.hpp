@@ -1,6 +1,7 @@
 #pragma once
 
 #include "frame_transition.hpp"
+#include "trace_arming.hpp"
 
 #include <vector>
 
@@ -19,6 +20,7 @@ struct TraceEntry {
     unsigned depth_height = 0;
     TargetRole role = TargetRole::Ignored;
     void* captured = nullptr;
+    bool reconstruct = false;
 };
 
 class PassTrace {

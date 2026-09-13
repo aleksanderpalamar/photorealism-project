@@ -151,11 +151,12 @@ for steam_screenshot_message in \
   fi
 done
 
-# Ordem do Present na 0.22.2: upscale -> grade -> captura do Steam -> menu.
-# O upscale SUBSTITUI o backbuffer inteiro pela reconstrucao do quadro interno,
-# que nao tem grade nenhum. Ate a 0.22.1 ele vinha DEPOIS do grade e apagava a
-# coloracao inteira sempre que o FSR estava ativo. A captura do Steam continua
-# sendo o ultimo passe visual, e o menu fica fora dela.
+# Ordem do Present: upscale -> grade -> captura do Steam -> menu. Desde a
+# 0.22.3 a reconstrucao roda no meio do quadro, antes da interface, e o passo
+# de upscale do Present so fecha o quadro da captura -- mas continua antes do
+# grade: ate a 0.22.1 o upscale vinha DEPOIS do grade e apagava a coloracao
+# inteira. A captura do Steam continua sendo o ultimo passe visual, e o menu
+# fica fora dela.
 present_order="$(rg -N -U -o \
   'upscale_present_frame\(swap_chain\);[\s\S]*?draw_overlay_frame\(swap_chain\);' \
   "${project_dir}/src/hooks/swap_chain_hooks.cpp" | head -20)"
@@ -1282,7 +1283,7 @@ copia tem que acontecer depois que o alvo interno deixou de estar ligado." >&2
     exit 1
   fi
 done
-observe_body="$(awk '/^void observe_color_targets/,/^}/' \
+observe_body="$(awk '/^bool observe_color_targets/,/^}/' \
   "${project_dir}/src/resource_observer/color_observation.cpp")"
 active_line="$(grep -n 'g_color_capture_active.load' <<<"${observe_body}" | head -1 | cut -d: -f1)"
 describe_line="$(grep -n 'describe_view' <<<"${observe_body}" | head -1 | cut -d: -f1)"
@@ -1315,9 +1316,106 @@ if ! grep -Fq 'DecodeBeforeWrite' "${project_dir}/shaders/fsr_rcas.hlsl"; then
 reconstruida sai com gamma dupla." >&2
   exit 1
 fi
-if ! grep -Fq '!targets.output_needs_srgb_encode' \
-  "${project_dir}/src/postprocess/postprocessor.cpp"; then
+if ! grep -Fq 'is_srgb(' "${project_dir}/src/fsr/output_target.cpp"; then
+  echo "A reconstrucao parou de ler o estado sRGB do RTV que o proprio jogo \
+ligou: a gamma sai dupla ou crua conforme o formato da view." >&2
+  exit 1
+fi
+upscaler_reconstruct_run="$(awk '/^bool Upscaler::reconstruct/,/^}/' \
+  "${project_dir}/src/fsr/upscaler.cpp")"
+if ! grep -Fq 'sharpness_, target.srgb_view);' <<<"${upscaler_reconstruct_run}"; then
   echo "O upscale parou de receber o estado sRGB do RTV de saida." >&2
+  exit 1
+fi
+
+# A PISCADA DA 0.22.2. O RCAS desenhava no backbuffer sem ligar estado proprio
+# e herdava o que a interface do jogo deixou: blend, depth e, sobretudo, o
+# scissor do ultimo elemento desenhado. A reconstrucao cobria so aquele
+# retangulo -- a mensagem de dormir -- e so nos quadros em que ela era a
+# ultima. Desligar o FSR pelo menu parava a piscada.
+rcas_body="$(awk '/^void UpscalePipeline::draw_rcas/,/^}/' \
+  "${project_dir}/src/fsr/upscale_pipeline.cpp")"
+if ! grep -Fq 'states_.bind(context);' <<<"${rcas_body}"; then
+  echo "draw_rcas desenha sem ligar os proprios estados: herda o scissor e o \
+blend da interface do jogo e a reconstrucao volta a piscar." >&2
+  exit 1
+fi
+for fsr_state_rule in \
+  'OMSetBlendState' \
+  'OMSetDepthStencilState' \
+  'RSSetState' \
+  'ScissorEnable = FALSE' \
+  'CullMode = D3D11_CULL_NONE' \
+  'BlendEnable = FALSE' \
+  'DepthEnable = FALSE'; do
+  if ! grep -Fq "${fsr_state_rule}" "${project_dir}/src/fsr/fsr_states.cpp"; then
+    echo "Os estados do FSR perderam ${fsr_state_rule}: o desenho volta a \
+depender do que o jogo deixou ligado." >&2
+    exit 1
+  fi
+done
+
+# A INTERFACE. O jogo desenha o HUD no backbuffer depois do proprio upscale.
+# Reconstruir no Present cobre o HUD; por isso a reconstrucao roda dentro do
+# OMSetRenderTargets, na segunda passagem do jogo pelo backbuffer, e a
+# interface continua sendo desenhada por cima.
+upscale_frame_body="$(awk '/^    void upscale_frame\(/,/^    }/' \
+  "${project_dir}/src/postprocess/postprocessor.cpp")"
+if grep -Eq 'OMSetRenderTargets|reconstruct\(' <<<"${upscale_frame_body}"; then
+  echo "O Present voltou a escrever no backbuffer: a reconstrucao cobre a \
+interface que o jogo ja desenhou." >&2
+  exit 1
+fi
+for context_hook in 'hooked_set_render_targets(' 'hooked_set_render_targets_and_uavs('; do
+  hook_body="$(awk -v name="${context_hook}" 'index($0, name) {inside=1} inside {print} inside && /^}/ {exit}' \
+    "${project_dir}/src/hooks/context_hooks.cpp")"
+  observe_line="$({ grep -n 'observe_color_targets(' <<<"${hook_body}" || true; } | head -1 | cut -d: -f1)"
+  rebuild_line="$({ grep -n 'reconstruct_game_frame(' <<<"${hook_body}" || true; } | head -1 | cut -d: -f1)"
+  if [[ -z "${observe_line}" || -z "${rebuild_line}" || "${rebuild_line}" -lt "${observe_line}" ]]; then
+    echo "${context_hook%(} parou de reconstruir no bind que a observacao \
+decide." >&2
+    exit 1
+  fi
+done
+if ! grep -Fq 'reconstruct && uav_count == 0' \
+  "${project_dir}/src/hooks/context_hooks.cpp"; then
+  echo "A reconstrucao passou a rodar num bind que tambem liga UAVs: restaurar \
+o estado com OMSetRenderTargets desligaria as UAVs do jogo." >&2
+  exit 1
+fi
+rebuild_body="$(awk '/^void reconstruct_game_frame/,/^}/' \
+  "${project_dir}/src/postprocess/postprocessor.cpp")"
+if ! grep -Fq 'ProcessorScope scope;' <<<"${rebuild_body}"; then
+  echo "reconstruct_game_frame roda sem ProcessorScope: os binds do proprio \
+FSR entram na observacao como se fossem do jogo." >&2
+  exit 1
+fi
+rebuild_state_body="$(awk '/^    void reconstruct_in_frame\(/,/^    }/' \
+  "${project_dir}/src/postprocess/postprocessor.cpp")"
+for rebuild_state_call in 'capture_state(' 'restore_state('; do
+  if ! grep -Fq "${rebuild_state_call}" <<<"${rebuild_state_body}"; then
+    echo "A reconstrucao no meio do quadro perdeu ${rebuild_state_call}: o jogo \
+desenharia a interface com o estado do FSR." >&2
+    exit 1
+  fi
+done
+if ! grep -Fq 'texture == output_' \
+  "${project_dir}/src/resource_observer/frame_transition.hpp"; then
+  echo "A saida voltou a ser reconhecida pelo tamanho: um alvo qualquer de \
+1920x1080 no meio do quadro receberia a reconstrucao." >&2
+  exit 1
+fi
+
+# O rastreio so arma com o mapa carregado.
+if grep -Fq 'kTraceFallbackFrames' \
+  "${project_dir}/src/resource_observer/color_observation.cpp"; then
+  echo "O rastreio voltou a armar por contagem de quadros quaisquer: cai na \
+tela de carregamento, como nas duas sessoes da 0.22.2." >&2
+  exit 1
+fi
+if ! grep -Fq 'g_arming.end_frame(g_transition.binds())' \
+  "${project_dir}/src/resource_observer/color_observation.cpp"; then
+  echo "O rastreio deixou de esperar os quadros seguidos de cena." >&2
   exit 1
 fi
 
@@ -1486,6 +1584,25 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/tests/frame_transition_test.cpp" \
   -o "${frame_transition_test}"
 "${frame_transition_test}"
+
+# A PISCADA DA 0.22.2 e a interface. O teste modela o quadro medido no jogo:
+# o bind do backbuffer que captura e o do upscale do proprio jogo; a
+# reconstrucao vai no bind seguinte, antes da interface; um alvo qualquer do
+# tamanho da tela nunca recebe a reconstrucao.
+frame_reconstruction_test="/tmp/photorealism-frame-reconstruction-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/frame_reconstruction_test.cpp" \
+  -o "${frame_reconstruction_test}"
+"${frame_reconstruction_test}"
+
+# O rastreio de passes da 0.22.2 disparava depois de 600 quadros quaisquer e
+# caiu duas vezes na tela de carregamento, com 3 passes por quadro. O teste
+# exige quadros seguidos de cena antes de armar.
+trace_arming_test="/tmp/photorealism-trace-arming-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/trace_arming_test.cpp" \
+  -o "${trace_arming_test}"
+"${trace_arming_test}"
 
 fsr_render_scale_test="/tmp/photorealism-fsr-render-scale-test"
 g++ -std=c++20 -Wall -Wextra -Werror \

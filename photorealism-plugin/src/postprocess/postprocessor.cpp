@@ -574,23 +574,26 @@ public:
             return;
         }
 
-        FrameTargets targets = {};
-        if (!acquire_overlay_target(swap_chain, &targets)) {
-            release_frame_targets(&targets);
+        ID3D11Texture2D* back_buffer = nullptr;
+        if (!present_back_buffer(swap_chain, &back_buffer)) {
             return;
         }
+        D3D11_TEXTURE2D_DESC description = {};
+        back_buffer->GetDesc(&description);
+        fsr::upscaler().present(
+            device_, back_buffer, description.Width, description.Height);
+        back_buffer->Release();
+    }
 
+    void reconstruct_in_frame(
+        ID3D11DeviceContext* context, ID3D11RenderTargetView* output) {
+        if (context == nullptr || context != context_ || resize_in_progress_) {
+            return;
+        }
         SavedState state = {};
         capture_state(context_, &state);
-        fsr::upscaler().present(
-            device_,
-            context_,
-            targets.output,
-            targets.description.Width,
-            targets.description.Height,
-            !targets.output_needs_srgb_encode);
+        fsr::upscaler().reconstruct(context_, output);
         restore_state(context_, &state);
-        release_frame_targets(&targets);
     }
 
     void draw_overlay(IDXGISwapChain* swap_chain) {
@@ -886,6 +889,15 @@ void upscale_present_frame(IDXGISwapChain* swap_chain) {
     }
     g_post_processor.upscale_frame(swap_chain);
     end_color_frame();
+}
+
+void reconstruct_game_frame(
+    ID3D11DeviceContext* context, ID3D11RenderTargetView* output) {
+    ProcessorScope scope;
+    if (!scope.entered()) {
+        return;
+    }
+    g_post_processor.reconstruct_in_frame(context, output);
 }
 
 void draw_overlay_frame(IDXGISwapChain* swap_chain) {

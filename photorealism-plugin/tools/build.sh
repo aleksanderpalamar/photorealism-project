@@ -133,6 +133,8 @@ common_flags=(
   "${project_dir}/src/fsr/fsr_telemetry.cpp" \
   "${project_dir}/src/fsr/upscale_resources.cpp" \
   "${project_dir}/src/fsr/fsr_shaders.cpp" \
+  "${project_dir}/src/fsr/fsr_states.cpp" \
+  "${project_dir}/src/fsr/output_target.cpp" \
   "${project_dir}/src/fsr/upscale_pipeline.cpp" \
   "${project_dir}/src/fsr/internal_frame.cpp" \
   "${project_dir}/src/fsr/upscaler.cpp" \

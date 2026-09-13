@@ -505,6 +505,12 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   piscada da 0.22.1. Falta rodar no jogo e ler o registro de passes que o
   plugin grava uma vez por sessao: ele confirma a ordem e responde se o HUD e
   desenhado no backbuffer depois do upscale do jogo;
+- **0.22.3 (entregue)** a reconstrucao roda antes da interface. No jogo a
+  0.22.2 reconstruiu todo quadro e a mensagem de dormir piscou: o RCAS herdava
+  o scissor da interface. Agora o FSR liga estados proprios e escreve na
+  segunda passagem do jogo pelo backbuffer, entre o upscale do jogo e o HUD. O
+  registro de passes so arma com o mapa carregado. Falta o teste no jogo e o
+  numero da Fase 1, tempo de GPU nativo contra tempo com upscale;
 - **0.23.0** raios de sol. E o efeito que as referencias realmente
   mostram, e que a medicao do bloom revelou: estriados radiais saindo do sol
   atras da linha de arvores, projetados no teto escuro da cabine. Sao
