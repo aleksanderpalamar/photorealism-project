@@ -40,6 +40,8 @@ class Upscaler {
     float capture_scale_ = 1.0f;
     float scale_ = 1.0f;
     float sharpness_ = 0.0f;
+    float grain_ = 0.0f;
+    unsigned grain_frame_ = 0;
 };
 
 Upscaler& upscaler();

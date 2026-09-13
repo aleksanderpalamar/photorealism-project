@@ -57,6 +57,7 @@ constexpr ModuleField kBloomFields[] = {
 constexpr ModuleField kFsrFields[] = {
     {"render_scale", &Settings::fsr_render_scale},
     {"sharpness", &Settings::fsr_sharpness},
+    {"grain", &Settings::fsr_grain},
 };
 
 constexpr ModuleField kSceneObserverFields[] = {

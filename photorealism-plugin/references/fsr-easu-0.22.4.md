@@ -64,9 +64,12 @@ o IEEE estrito. O `tests/fsr_easu_constants_test.cpp` prende esse valor.
 
 - EASU e espacial: 44% dos pixels continuam 44% dos pixels. A correcao tira a
   parte do borrao e dos degraus que era do nosso shader, nao o limite do FSR 1;
-- o RCAS ja batia com `ffx_fsr1.h` e nao foi alterado;
-- `rcp()` nao existe no vkd3d-shader do Proton; onde a AMD usa `rcp(x)` o
-  shader escreve `1.0 / x`, que e a definicao.
+- o RCAS nao foi alterado. **Correcao (0.22.6):** esta versao afirmava que ele
+  ja batia com `ffx_fsr1.h`. Nao batia em quatro pontos; ver
+  `fsr-rcas-lfga-0.22.6.md`;
+- onde a AMD usa `rcp(x)` o shader escreve `1.0 / x`, que e a definicao.
+  **Correcao (0.22.6):** esta versao afirmava que `rcp()` nao existe no
+  compilador do Proton. Existe; ver `fsr-rcas-lfga-0.22.6.md`.
 
 ## Licenca
 

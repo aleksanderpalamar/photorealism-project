@@ -134,6 +134,8 @@ common_flags=(
   "${project_dir}/src/fsr/upscale_resources.cpp" \
   "${project_dir}/src/fsr/fsr_shaders.cpp" \
   "${project_dir}/src/fsr/fsr_states.cpp" \
+  "${project_dir}/src/fsr/blue_noise.cpp" \
+  "${project_dir}/src/fsr/grain_texture.cpp" \
   "${project_dir}/src/fsr/output_target.cpp" \
   "${project_dir}/src/fsr/upscale_pipeline.cpp" \
   "${project_dir}/src/fsr/internal_frame.cpp" \

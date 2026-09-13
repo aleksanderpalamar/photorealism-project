@@ -1,5 +1,55 @@
 # Changelog
 
+## Pacote 0.22.6 - 2026-09-13
+
+**O RCAS agora e o da AMD, bit a bit, e o FSR ganhou a granulacao LFGA.** Escala
+padrao em 0.8660 (75% dos pixels).
+
+### Uma correcao, antes de tudo
+
+A 0.22.4 disse que o RCAS ja batia com `ffx_fsr1.h`. **Nao batia**, em quatro
+pontos: aplicava sempre a reducao de ruido que a AMD deixa desligada
+(`FSR_RCAS_DENOISE`), dividia sem a aproximacao media que a AMD usa, tinha
+pisos que a AMD nao tem, e lia a nitidez como multiplicador linear em vez de
+stops. A 0.22.4 tambem disse que `rcp()` nao existe no compilador HLSL do
+Proton: **existe**, e a guarda que proibia `rcp` saiu.
+
+### RCAS
+
+Transcrito de `FsrRcasF`, sem a reducao de ruido, como e o padrao da AMD -- e
+ela mesma recomenda granulacao depois do RCAS no lugar da reducao. A nitidez
+segue `FsrRcasCon` com o remapeamento da API do FSR 2: 1 e o maximo, cada 0.5 a
+menos corta pela metade. O 0.60 escolhido pelo usuario vira multiplicador
+0,5743, perto do 0,60 que ele aprovou; sem a reducao de ruido, texturas com
+granulo fino ficam um pouco mais afiadas que antes.
+
+### LFGA, a granulacao do FSR
+
+`FsrLfgaF` como esta, depois do RCAS, em espaco linear, com ruido azul 64x64
+gerado por void-and-cluster e animado pela razao aurea, para a soma no tempo
+nao ter vies. Granulacao monocromatica, como no exemplo da AMD. Novo ajuste
+`grain` no `[module.fsr.0.21.0]` e slider "Granulacao LFGA" na aba FSR do
+menu, valendo na hora; padrao 0.15. A granulacao so existe enquanto o FSR
+reconstroi, e fica abaixo da interface.
+
+### Como foi medido
+
+Na GPU, contra o `ffx_fsr1.h` original compilado pelo compilador do Proton e
+rodado no DXVK da RX 6600: RCAS em quatro nitidezes e LFGA, em tres entradas
+-- incluindo areas pretas e brancas puras, onde os limitadores dividem por zero
+-- com **zero bits diferentes**. O pixel shader inteiro, renderizado de verdade:
+sem granulacao, a no maximo 1 byte do RCAS em RTV sRGB e UNORM; com 0.15, 1,16
+byte de desvio por quadro e vies de -0,003 byte em 16 quadros. Detalhes em
+`references/fsr-rcas-lfga-0.22.6.md`.
+
+### Escala padrao
+
+O cfg do repositorio foi editado pelo usuario para `render_scale=0.8660` e ele
+escolheu esse valor como padrao do pacote; o default do codigo acompanha.
+Guarda nova exige que cfg e codigo concordem em escala e granulacao.
+
+**Ainda nao rodou no jogo.**
+
 ## Pacote 0.22.5 - 2026-09-13
 
 **A nitidez do RCAS passa a vir em 0.60.** Escolha do usuario no jogo, com o

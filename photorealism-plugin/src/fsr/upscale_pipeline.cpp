@@ -6,7 +6,7 @@ namespace photorealism {
 namespace fsr {
 namespace {
 
-ID3D11ShaderResourceView* const kNoResource[1] = {nullptr};
+ID3D11ShaderResourceView* const kNoResources[2] = {nullptr, nullptr};
 ID3D11UnorderedAccessView* const kNoAccess[1] = {nullptr};
 
 }
@@ -18,7 +18,8 @@ bool UpscalePipeline::ensure(
     }
     if (device_ != device) {
         release();
-        if (!shaders_.create(device) || !states_.create(device)) {
+        if (!shaders_.create(device) || !states_.create(device) ||
+            !grain_.create(device)) {
             release();
             return false;
         }
@@ -29,6 +30,7 @@ bool UpscalePipeline::ensure(
 
 void UpscalePipeline::release() {
     resources_.release();
+    grain_.release();
     states_.release();
     shaders_.release();
     device_ = nullptr;
@@ -61,7 +63,7 @@ void UpscalePipeline::dispatch_easu(
         0, 1, const_cast<ID3D11UnorderedAccessView* const*>(kNoAccess),
         nullptr);
     context->CSSetShaderResources(
-        0, 1, const_cast<ID3D11ShaderResourceView* const*>(kNoResource));
+        0, 1, const_cast<ID3D11ShaderResourceView* const*>(kNoResources));
     context->CSSetShader(nullptr, nullptr, 0);
 }
 
@@ -70,13 +72,16 @@ void UpscalePipeline::draw_rcas(
     ID3D11RenderTargetView* output,
     unsigned width,
     unsigned height,
-    float sharpness,
-    bool output_is_srgb_view) {
+    const OutputFinish& finish) {
     RcasConstants constants = {};
+    constants.rcas_con =
+        rcas_con_from_stops(rcas_stops_from_sharpness(finish.sharpness));
+    constants.decode_before_write = finish.output_is_srgb_view ? 1.0f : 0.0f;
+    constants.grain_amount = finish.grain_amount;
+    constants.grain_phase = grain_phase(finish.grain_frame);
     constants.output_size[0] = static_cast<float>(width);
     constants.output_size[1] = static_cast<float>(height);
-    constants.attenuation = sharpness;
-    constants.decode_before_write = output_is_srgb_view ? 1.0f : 0.0f;
+    constants.grain_tile_size = static_cast<float>(kGrainTileSize);
     context->UpdateSubresource(
         shaders_.rcas_constants(), 0, nullptr, &constants, 0, 0);
 
@@ -85,7 +90,8 @@ void UpscalePipeline::draw_rcas(
     viewport.Height = static_cast<float>(height);
     viewport.MaxDepth = 1.0f;
 
-    ID3D11ShaderResourceView* upscaled = resources_.view();
+    ID3D11ShaderResourceView* const inputs[2] = {
+        resources_.view(), grain_.view()};
     ID3D11Buffer* buffer = shaders_.rcas_constants();
     context->OMSetRenderTargets(1, &output, nullptr);
     states_.bind(context);
@@ -97,12 +103,12 @@ void UpscalePipeline::draw_rcas(
     context->GSSetShader(nullptr, nullptr, 0);
     context->HSSetShader(nullptr, nullptr, 0);
     context->DSSetShader(nullptr, nullptr, 0);
-    context->PSSetShaderResources(0, 1, &upscaled);
+    context->PSSetShaderResources(0, 2, inputs);
     context->PSSetConstantBuffers(0, 1, &buffer);
     context->Draw(3, 0);
 
     context->PSSetShaderResources(
-        0, 1, const_cast<ID3D11ShaderResourceView* const*>(kNoResource));
+        0, 2, const_cast<ID3D11ShaderResourceView* const*>(kNoResources));
 }
 
 bool UpscalePipeline::run(
@@ -112,8 +118,7 @@ bool UpscalePipeline::run(
     ID3D11RenderTargetView* output,
     unsigned width,
     unsigned height,
-    float sharpness,
-    bool output_is_srgb_view) {
+    const OutputFinish& finish) {
     if (context == nullptr || source == nullptr || output == nullptr) {
         return false;
     }
@@ -122,7 +127,7 @@ bool UpscalePipeline::run(
         return false;
     }
     dispatch_easu(context, source, internal, width, height);
-    draw_rcas(context, output, width, height, sharpness, output_is_srgb_view);
+    draw_rcas(context, output, width, height, finish);
     return true;
 }
 

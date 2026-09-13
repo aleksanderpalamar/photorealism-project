@@ -34,6 +34,7 @@ void Upscaler::configure(const Settings& settings) {
     enabled_ = settings.fsr_enabled;
     scale_ = clamp_scale(settings.fsr_render_scale);
     sharpness_ = settings.fsr_sharpness;
+    grain_ = settings.fsr_grain;
     if (!capture_scale_known_) {
         capture_scale_ = scale_;
         capture_scale_known_ = true;
@@ -43,11 +44,12 @@ void Upscaler::configure(const Settings& settings) {
     }
     telemetry().reset();
     log_message(
-        "FSR %s: escala=%.4f nitidez=%.2f. A escala vale no config do jogo, "
-        "aplicada no proximo inicio.",
+        "FSR %s: escala=%.4f nitidez=%.2f granulacao=%.2f. A escala vale no "
+        "config do jogo, aplicada no proximo inicio.",
         enabled_ ? "ligado" : "desligado",
         static_cast<double>(scale_),
-        static_cast<double>(sharpness_));
+        static_cast<double>(sharpness_),
+        static_cast<double>(grain_));
     if (!enabled_) {
         disable_color_capture();
         release();
@@ -74,9 +76,14 @@ bool Upscaler::reconstruct(
         return false;
     }
     extent_ = internal_.extent();
+    OutputFinish finish;
+    finish.sharpness = sharpness_;
+    finish.grain_amount = grain_;
+    finish.grain_frame = grain_frame_++;
+    finish.output_is_srgb_view = target.srgb_view;
     const bool ran = pipeline_.run(
         context, internal_.view(), extent_, output, target.width,
-        target.height, sharpness_, target.srgb_view);
+        target.height, finish);
     internal_.release();
     if (!ran) {
         return false;

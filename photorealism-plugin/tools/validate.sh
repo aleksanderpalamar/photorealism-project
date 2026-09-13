@@ -863,7 +863,7 @@ effective_profile="$(awk -F= '
 # que importa. Uma guarda que explica uma regressao sutil so serve se for ela
 # a falar. Nesta ordem o hash continua pegando tudo que as guardas nao
 # cobrem, e so isso.
-expected_cfg_sha256="f076a1de558d0ea31fc2a8740aa22438dc1a72517ac1c1ef4129a74a4d111352"
+expected_cfg_sha256="1554c5ed6d5d951cc625ceeb098760e5dd97e0ecd9b0db5ac98d527e2d29196f"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
@@ -1323,7 +1323,7 @@ ligou: a gamma sai dupla ou crua conforme o formato da view." >&2
 fi
 upscaler_reconstruct_run="$(awk '/^bool Upscaler::reconstruct/,/^}/' \
   "${project_dir}/src/fsr/upscaler.cpp")"
-if ! grep -Fq 'sharpness_, target.srgb_view);' <<<"${upscaler_reconstruct_run}"; then
+if ! grep -Fq 'finish.output_is_srgb_view = target.srgb_view;' <<<"${upscaler_reconstruct_run}"; then
   echo "O upscale parou de receber o estado sRGB do RTV de saida." >&2
   exit 1
 fi
@@ -1500,6 +1500,19 @@ codigo=${code_fsr_sharpness}, e o padrao escolhido no jogo e 0.60." >&2
   exit 1
 fi
 
+# 0.22.6: escala padrao 0.8660 (75% dos pixels), escolhida pelo usuario, e
+# granulacao LFGA 0.15. Mesma regra: cfg e codigo dizem o mesmo.
+for fsr_default in 'render_scale=0.8660=fsr_render_scale = 0.8660f' 'grain=0.15=fsr_grain = 0.15f'; do
+  cfg_line="${fsr_default%%=fsr_*}"
+  code_line="stack.modules.fsr_${fsr_default##*=fsr_}"
+  if ! awk '/^\[module\.fsr\./,/^$/' "${project_dir}/config/photorealism-plugin.cfg" |
+    grep -Fxq "${cfg_line}" ||
+    ! grep -Fq "${code_line};" "${project_dir}/src/config/defaults.cpp"; then
+    echo "Padrao do FSR diverge entre cfg e codigo: esperado ${cfg_line} e ${code_line}." >&2
+    exit 1
+  fi
+done
+
 for game_scale_key in 'r_scale_x' 'r_scale_y'; do
   if ! grep -Fq "${game_scale_key}" "${project_dir}/src/fsr/game_scale.cpp"; then
     echo "A escala interna do jogo perdeu ${game_scale_key}: sem escrever \
@@ -1613,11 +1626,6 @@ AMD acumula b c i j f e k l h g o n, e a soma em ponto flutuante depende da \
 ordem." >&2
   exit 1
 fi
-if grep -Fq 'rcp(' "${project_dir}"/shaders/*.hlsl; then
-  echo "Shader usa rcp(), que o compilador HLSL do Proton (vkd3d-shader) nao \
-conhece: o shader nao compila no jogo." >&2
-  exit 1
-fi
 easu_dispatch_body="$(awk '/^void UpscalePipeline::dispatch_easu/,/^}/' \
   "${project_dir}/src/fsr/upscale_pipeline.cpp")"
 if ! grep -Fq 'populate_easu_constants(' <<<"${easu_dispatch_body}"; then
@@ -1636,6 +1644,68 @@ if ! grep -Fq 'Advanced Micro Devices' \
 fi
 if ! grep -Fq 'FidelityFX-FSR2-LICENSE.txt' "${project_dir}/tools/package.sh"; then
   echo "O pacote saiu sem a licenca da AMD que o EASU exige." >&2
+  exit 1
+fi
+
+# O RCAS e o da AMD desde a 0.22.6, transcrito de FsrRcasF em ffx_fsr1.h e
+# comparado na GPU contra o original em quatro nitidezes: zero bits diferentes.
+# Ate a 0.22.5 ele aplicava a reducao de ruido que a AMD deixa desligada
+# (FSR_RCAS_DENOISE), dividia sem a aproximacao media e lia a nitidez como
+# multiplicador linear. A 0.22.4 afirmou que ele ja batia com a AMD; nao batia.
+rcas_shader="${project_dir}/shaders/fsr_rcas.hlsl"
+for rcas_rule in \
+  'asfloat(uint(0x7ef19fff) - asuint(value))' \
+  '#define FSR_RCAS_LIMIT (0.25 - (1.0 / 16.0))' \
+  'float hit_min_r = mn4r * rcp(float(4.0) * mx4r);' \
+  'float hit_max_r = (peak_c.x - mx4r) * rcp(float(4.0) * mn4r + peak_c.y);' \
+  'float rcp_l = approximate_reciprocal_medium(float(4.0) * lobe + float(1.0));' \
+  'pix.r = (lobe * br + lobe * dr + lobe * hr + lobe * fr + er) * rcp_l;'; do
+  if ! grep -Fq "${rcas_rule}" "${rcas_shader}"; then
+    echo "O RCAS deixou de ser o da AMD: falta ${rcas_rule}" >&2
+    exit 1
+  fi
+done
+if grep -Eq 'noise|lobe \*= nz' "${rcas_shader}"; then
+  echo "O RCAS voltou a reduzir nitidez em ruido: a AMD deixa FSR_RCAS_DENOISE \
+desligado e recomenda granulacao depois do RCAS no lugar dele." >&2
+  exit 1
+fi
+if ! grep -Fq 'return (-2.0f * sharpness) + 2.0f;' \
+  "${project_dir}/src/fsr/rcas_constants.hpp" ||
+  ! grep -Fq 'return std::exp2(-stops);' "${project_dir}/src/fsr/rcas_constants.hpp"; then
+  echo "A nitidez do RCAS deixou de seguir FsrRcasCon com o remapeamento da API \
+do FSR 2 (stops = 2 - 2 * nitidez)." >&2
+  exit 1
+fi
+
+# LFGA, a granulacao do FSR: formula de FsrLfgaF, aplicada depois do RCAS e em
+# espaco linear, como o ffx_fsr1.h pede, com ruido azul animado pela razao
+# aurea para a soma temporal nao ter vies. Medido no PS inteiro: sem granulacao
+# a saida fica a 1 byte do RCAS; com 0.15, 1,16 byte de desvio por quadro e
+# vies de -0,003 byte em 16 quadros.
+if ! grep -Fq 'c += (t * float3(a, a, a)) * min(float3(1.0, 1.0, 1.0) - c, c);' \
+  "${rcas_shader}"; then
+  echo "A granulacao deixou de ser o FsrLfgaF da AMD." >&2
+  exit 1
+fi
+rcas_ps_body="$(awk '/^float4 PSRcas/,/^}/' "${rcas_shader}")"
+filter_line="$({ grep -n 'rcas_filter(ip)' <<<"${rcas_ps_body}" || true; } | head -1 | cut -d: -f1)"
+linear_line="$({ grep -n 'srgb_to_linear(' <<<"${rcas_ps_body}" || true; } | head -1 | cut -d: -f1)"
+grain_line="$({ grep -n 'lfga(' <<<"${rcas_ps_body}" || true; } | head -1 | cut -d: -f1)"
+encode_line="$({ grep -n 'linear_to_srgb(' <<<"${rcas_ps_body}" || true; } | head -1 | cut -d: -f1)"
+if [[ -z "${filter_line}" || -z "${linear_line}" || -z "${grain_line}" || -z "${encode_line}" ]] ||
+  (( linear_line < filter_line || grain_line < linear_line || encode_line < grain_line )); then
+  echo "A granulacao saiu da ordem da AMD: RCAS, depois linear, depois LFGA, \
+depois a codificacao de saida." >&2
+  exit 1
+fi
+if ! grep -Fq 'generate_blue_noise(kGrainTileSize)' "${project_dir}/src/fsr/grain_texture.cpp" ||
+  ! grep -Fq 'kGoldenRatioConjugate' "${project_dir}/src/fsr/rcas_constants.hpp"; then
+  echo "A granulacao perdeu o ruido azul ou a animacao sem vies." >&2
+  exit 1
+fi
+if ! grep -Fq 'PSSetShaderResources(0, 2, inputs);' "${project_dir}/src/fsr/upscale_pipeline.cpp"; then
+  echo "O RCAS parou de ligar a textura de ruido azul no slot 1." >&2
   exit 1
 fi
 
@@ -1683,6 +1753,18 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/tests/fsr_easu_constants_test.cpp" \
   -o "${fsr_easu_constants_test}"
 "${fsr_easu_constants_test}"
+
+fsr_rcas_constants_test="/tmp/photorealism-fsr-rcas-constants-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/fsr_rcas_constants_test.cpp" \
+  -o "${fsr_rcas_constants_test}"
+"${fsr_rcas_constants_test}"
+
+blue_noise_test="/tmp/photorealism-blue-noise-test"
+g++ -std=c++20 -O2 -Wall -Wextra -Werror \
+  "${project_dir}/tests/blue_noise_test.cpp" \
+  -o "${blue_noise_test}"
+"${blue_noise_test}"
 
 fsr_render_scale_test="/tmp/photorealism-fsr-render-scale-test"
 g++ -std=c++20 -Wall -Wextra -Werror \

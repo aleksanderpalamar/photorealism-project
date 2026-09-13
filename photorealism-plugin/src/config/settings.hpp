@@ -56,6 +56,7 @@ struct Settings {
     bool fsr_enabled;
     float fsr_render_scale;
     float fsr_sharpness;
+    float fsr_grain;
 
     bool scene_observer_enabled;
     float scene_observer_interval_frames;

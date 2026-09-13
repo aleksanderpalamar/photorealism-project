@@ -2,11 +2,19 @@
 
 #include "fsr_shaders.hpp"
 #include "fsr_states.hpp"
+#include "grain_texture.hpp"
 #include "render_scale.hpp"
 #include "upscale_resources.hpp"
 
 namespace photorealism {
 namespace fsr {
+
+struct OutputFinish {
+    float sharpness = 0.0f;
+    float grain_amount = 0.0f;
+    unsigned grain_frame = 0;
+    bool output_is_srgb_view = false;
+};
 
 class UpscalePipeline {
   public:
@@ -14,10 +22,11 @@ class UpscalePipeline {
     void release();
 
     bool ready() const {
-        return shaders_.ready() && states_.ready() && resources_.ready();
+        return shaders_.ready() && states_.ready() && grain_.ready() &&
+               resources_.ready();
     }
     bool ready_for(unsigned width, unsigned height) const {
-        return shaders_.ready() && states_.ready() &&
+        return shaders_.ready() && states_.ready() && grain_.ready() &&
                resources_.matches(width, height);
     }
 
@@ -28,8 +37,7 @@ class UpscalePipeline {
         ID3D11RenderTargetView* output,
         unsigned width,
         unsigned height,
-        float sharpness,
-        bool output_is_srgb_view);
+        const OutputFinish& finish);
 
   private:
     void dispatch_easu(
@@ -43,11 +51,11 @@ class UpscalePipeline {
         ID3D11RenderTargetView* output,
         unsigned width,
         unsigned height,
-        float sharpness,
-        bool output_is_srgb_view);
+        const OutputFinish& finish);
 
     FsrShaders shaders_;
     FsrStates states_;
+    GrainTexture grain_;
     UpscaleResources resources_;
     ID3D11Device* device_ = nullptr;
 };

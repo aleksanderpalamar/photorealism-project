@@ -517,6 +517,10 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   Fase 1, tempo de GPU nativo contra tempo com upscale;
 - **0.22.5 (entregue)** nitidez do RCAS padrao em 0.60, escolhida pelo usuario
   no jogo depois do EASU corrigido. Falta o numero da Fase 1;
+- **0.22.6 (entregue)** RCAS igual ao da AMD, comparado na GPU contra o
+  original, e a granulacao LFGA do FSR com ruido azul. Escala padrao 0.8660.
+  Corrige duas afirmacoes da 0.22.4: o RCAS nao batia, e `rcp()` existe no
+  compilador do Proton. Falta o numero da Fase 1;
 - **0.23.0** raios de sol. E o efeito que as referencias realmente
   mostram, e que a medicao do bloom revelou: estriados radiais saindo do sol
   atras da linha de arvores, projetados no teto escuro da cabine. Sao
