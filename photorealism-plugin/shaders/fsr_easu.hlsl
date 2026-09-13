@@ -3,80 +3,106 @@ RWTexture2D<float4> OutputTexture : register(u0);
 
 cbuffer EasuBuffer : register(b0)
 {
+    float4 Con0;
     float2 InputSize;
     float2 OutputSize;
-    float2 InputTexelSize;
-    float2 EasuPadding;
 };
 
-float tap_luma(float3 color)
+float approximate_reciprocal(float value)
 {
-    return color.g;
+    return asfloat(uint(0x7ef07ebb) - asuint(value));
 }
 
-float3 load_input(int2 position)
+float approximate_reciprocal_square_root(float value)
+{
+    return asfloat(uint(0x5f347d74) - (asuint(value) >> uint(1)));
+}
+
+float3 load_tap(int2 position)
 {
     int2 clamped = clamp(position, int2(0, 0), int2(InputSize) - 1);
     return InputTexture.Load(int3(clamped, 0)).rgb;
 }
 
-void accumulate_direction(
-    inout float2 direction,
-    inout float length_estimate,
-    float weight,
-    float above,
-    float left,
-    float center,
-    float right,
-    float below)
+float tap_luma(float3 color)
 {
-    float horizontal_a = right - center;
-    float horizontal_b = center - left;
-    float horizontal_span = max(abs(horizontal_a), abs(horizontal_b));
-    float horizontal_dir = right - left;
-
-    float vertical_a = below - center;
-    float vertical_b = center - above;
-    float vertical_span = max(abs(vertical_a), abs(vertical_b));
-    float vertical_dir = below - above;
-
-    direction.x += horizontal_dir * weight;
-    direction.y += vertical_dir * weight;
-
-    float horizontal_len =
-        saturate(abs(horizontal_dir) / max(horizontal_span, 1.0 / 32768.0));
-    float vertical_len =
-        saturate(abs(vertical_dir) / max(vertical_span, 1.0 / 32768.0));
-    horizontal_len *= horizontal_len;
-    vertical_len *= vertical_len;
-    length_estimate += max(horizontal_len, vertical_len) * weight;
+    return color.b * float(0.5) + (color.r * float(0.5) + color.g);
 }
 
-void accumulate_tap(
-    inout float3 accumulated,
+void easu_tap(
+    inout float3 accumulated_color,
     inout float accumulated_weight,
-    float2 offset,
-    float2 direction,
-    float2 stretch,
-    float lobe,
-    float clip,
+    float2 pixel_offset,
+    float2 gradient_direction,
+    float2 anisotropy,
+    float negative_lobe_strength,
+    float clipping_point,
     float3 color)
 {
-    float2 rotated;
-    rotated.x = offset.x * direction.x + offset.y * direction.y;
-    rotated.y = offset.x * -direction.y + offset.y * direction.x;
-    rotated *= stretch;
+    float2 rotated_offset;
+    rotated_offset.x = (pixel_offset.x * (gradient_direction.x)) +
+                       (pixel_offset.y * gradient_direction.y);
+    rotated_offset.y = (pixel_offset.x * (-gradient_direction.y)) +
+                       (pixel_offset.y * gradient_direction.x);
+    rotated_offset *= anisotropy;
+    float distance_squared = rotated_offset.x * rotated_offset.x +
+                             rotated_offset.y * rotated_offset.y;
+    distance_squared = min(distance_squared, clipping_point);
 
-    float distance_squared = min(dot(rotated, rotated), clip);
-    float window = (2.0 / 5.0) * distance_squared - 1.0;
-    float lanczos = lobe * distance_squared - 1.0;
-    window *= window;
-    lanczos *= lanczos;
-    window = (25.0 / 16.0) * window - (25.0 / 16.0 - 1.0);
+    float weight_b = float(2.0 / 5.0) * distance_squared + float(-1.0);
+    float weight_a = negative_lobe_strength * distance_squared + float(-1.0);
+    weight_b *= weight_b;
+    weight_a *= weight_a;
+    weight_b = float(25.0 / 16.0) * weight_b + float(-(25.0 / 16.0 - 1.0));
+    float weight = weight_b * weight_a;
 
-    float weight = window * lanczos;
-    accumulated += color * weight;
+    accumulated_color += color * weight;
     accumulated_weight += weight;
+}
+
+void easu_set(
+    inout float2 direction,
+    inout float edge,
+    float2 pp,
+    bool bi_s,
+    bool bi_t,
+    bool bi_u,
+    bool bi_v,
+    float la,
+    float lb,
+    float lc,
+    float ld,
+    float le)
+{
+    float weight = float(0.0);
+    if (bi_s)
+        weight = (float(1.0) - pp.x) * (float(1.0) - pp.y);
+    if (bi_t)
+        weight = pp.x * (float(1.0) - pp.y);
+    if (bi_u)
+        weight = (float(1.0) - pp.x) * pp.y;
+    if (bi_v)
+        weight = pp.x * pp.y;
+
+    float dc = ld - lc;
+    float cb = lc - lb;
+    float edge_x = max(abs(dc), abs(cb));
+    edge_x = approximate_reciprocal(edge_x);
+    float direction_x = ld - lb;
+    direction.x += direction_x * weight;
+    edge_x = saturate(abs(direction_x) * edge_x);
+    edge_x *= edge_x;
+    edge += edge_x * weight;
+
+    float ec = le - lc;
+    float ca = lc - la;
+    float edge_y = max(abs(ec), abs(ca));
+    edge_y = approximate_reciprocal(edge_y);
+    float direction_y = le - la;
+    direction.y += direction_y * weight;
+    edge_y = saturate(abs(direction_y) * edge_y);
+    edge_y *= edge_y;
+    edge += edge_y * weight;
 }
 
 [numthreads(8, 8, 1)]
@@ -87,79 +113,87 @@ void CSEasu(uint3 id : SV_DispatchThreadID)
         return;
     }
 
-    float2 output_center = (float2(id.xy) + 0.5) / OutputSize;
-    float2 input_position = output_center * InputSize - 0.5;
-    int2 base = int2(floor(input_position));
-    float2 phase = input_position - float2(base);
+    float2 pp = float2(id.xy) * Con0.xy + Con0.zw;
+    float2 fp = floor(pp);
+    pp -= fp;
+    int2 origin = int2(fp);
 
-    float3 taps[12];
-    taps[0] = load_input(base + int2(0, -1));
-    taps[1] = load_input(base + int2(1, -1));
-    taps[2] = load_input(base + int2(-1, 0));
-    taps[3] = load_input(base + int2(0, 0));
-    taps[4] = load_input(base + int2(1, 0));
-    taps[5] = load_input(base + int2(2, 0));
-    taps[6] = load_input(base + int2(-1, 1));
-    taps[7] = load_input(base + int2(0, 1));
-    taps[8] = load_input(base + int2(1, 1));
-    taps[9] = load_input(base + int2(2, 1));
-    taps[10] = load_input(base + int2(0, 2));
-    taps[11] = load_input(base + int2(1, 2));
+    float3 b = load_tap(origin + int2(0, -1));
+    float3 c = load_tap(origin + int2(1, -1));
+    float3 e = load_tap(origin + int2(-1, 0));
+    float3 f = load_tap(origin + int2(0, 0));
+    float3 g = load_tap(origin + int2(1, 0));
+    float3 h = load_tap(origin + int2(2, 0));
+    float3 i = load_tap(origin + int2(-1, 1));
+    float3 j = load_tap(origin + int2(0, 1));
+    float3 k = load_tap(origin + int2(1, 1));
+    float3 l = load_tap(origin + int2(2, 1));
+    float3 n = load_tap(origin + int2(0, 2));
+    float3 o = load_tap(origin + int2(1, 2));
 
-    float luma[12];
-    for (int index = 0; index < 12; ++index)
-    {
-        luma[index] = tap_luma(taps[index]);
-    }
+    float bl = tap_luma(b);
+    float cl = tap_luma(c);
+    float il = tap_luma(i);
+    float jl = tap_luma(j);
+    float fl = tap_luma(f);
+    float el = tap_luma(e);
+    float kl = tap_luma(k);
+    float ll = tap_luma(l);
+    float hl = tap_luma(h);
+    float gl = tap_luma(g);
+    float ol = tap_luma(o);
+    float nl = tap_luma(n);
 
-    float2 direction = float2(0.0, 0.0);
-    float length_estimate = 0.0;
-    accumulate_direction(
-        direction, length_estimate, (1.0 - phase.x) * (1.0 - phase.y),
-        luma[0], luma[2], luma[3], luma[4], luma[7]);
-    accumulate_direction(
-        direction, length_estimate, phase.x * (1.0 - phase.y),
-        luma[1], luma[3], luma[4], luma[5], luma[8]);
-    accumulate_direction(
-        direction, length_estimate, (1.0 - phase.x) * phase.y,
-        luma[3], luma[6], luma[7], luma[8], luma[10]);
-    accumulate_direction(
-        direction, length_estimate, phase.x * phase.y,
-        luma[4], luma[7], luma[8], luma[9], luma[11]);
+    float2 dir = float2(0.0, 0.0);
+    float len = float(0.0);
+    easu_set(dir, len, pp, true, false, false, false, bl, el, fl, gl, jl);
+    easu_set(dir, len, pp, false, true, false, false, cl, fl, gl, hl, kl);
+    easu_set(dir, len, pp, false, false, true, false, fl, il, jl, kl, nl);
+    easu_set(dir, len, pp, false, false, false, true, gl, jl, kl, ll, ol);
 
-    float direction_squared = dot(direction, direction);
-    bool flat = direction_squared < (1.0 / 32768.0);
-    direction = flat ? float2(1.0, 0.0) : direction * rsqrt(direction_squared);
+    float2 dir2 = dir * dir;
+    float dir_r = dir2.x + dir2.y;
+    bool zro = dir_r < float(1.0 / 32768.0);
+    dir_r = approximate_reciprocal_square_root(dir_r);
+    dir_r = zro ? float(1.0) : dir_r;
+    dir.x = zro ? float(1.0) : dir.x;
+    dir *= float2(dir_r, dir_r);
 
-    float shaped = length_estimate * 0.5;
-    shaped = saturate(shaped * shaped);
+    len = len * float(0.5);
+    len *= len;
 
-    float stretch_factor =
-        dot(direction, direction) / max(abs(direction.x), abs(direction.y));
-    float2 stretch = float2(
-        1.0 + (stretch_factor - 1.0) * shaped, 1.0 - 0.5 * shaped);
-    float lobe = 0.5 + ((1.0 / 4.0 - 0.04) - 0.5) * shaped;
-    float clip = 1.0 / lobe;
+    float stretch = (dir.x * dir.x + dir.y * dir.y) *
+                    approximate_reciprocal(max(abs(dir.x), abs(dir.y)));
 
-    float2 offsets[12] = {
-        float2(0.0, -1.0), float2(1.0, -1.0),
-        float2(-1.0, 0.0), float2(0.0, 0.0), float2(1.0, 0.0), float2(2.0, 0.0),
-        float2(-1.0, 1.0), float2(0.0, 1.0), float2(1.0, 1.0), float2(2.0, 1.0),
-        float2(0.0, 2.0), float2(1.0, 2.0)};
+    float2 len2 = float2(
+        float(1.0) + (stretch - float(1.0)) * len,
+        float(1.0) + float(-0.5) * len);
 
-    float3 accumulated = float3(0.0, 0.0, 0.0);
-    float accumulated_weight = 0.0;
-    float3 lowest = taps[3];
-    float3 highest = taps[3];
-    for (int tap = 0; tap < 12; ++tap)
-    {
-        accumulate_tap(
-            accumulated, accumulated_weight, offsets[tap] - phase, direction,
-            stretch, lobe, clip, taps[tap]);
-    }
-    lowest = min(min(taps[3], taps[4]), min(taps[7], taps[8]));
-    highest = max(max(taps[3], taps[4]), max(taps[7], taps[8]));
+    float lob = float(0.5) + float((1.0 / 4.0 - 0.04) - 0.5) * len;
 
-    float3 resolved = accumulated / max(accumulated_weight, 1.0 / 32768.0);
-    OutputTexture[id.xy] = float4(clamp(resolved, lowest, highest), 1.0);
+    float clp = approximate_reciprocal(lob);
+
+    float3 min4 = min(min(f, min(g, j)), k);
+    float3 max4 = max(max(f, max(g, j)), k);
+
+    float3 ac = float3(0.0, 0.0, 0.0);
+    float aw = float(0.0);
+    easu_tap(ac, aw, float2(0.0, -1.0) - pp, dir, len2, lob, clp, b);
+    easu_tap(ac, aw, float2(1.0, -1.0) - pp, dir, len2, lob, clp, c);
+    easu_tap(ac, aw, float2(-1.0, 1.0) - pp, dir, len2, lob, clp, i);
+    easu_tap(ac, aw, float2(0.0, 1.0) - pp, dir, len2, lob, clp, j);
+    easu_tap(ac, aw, float2(0.0, 0.0) - pp, dir, len2, lob, clp, f);
+    easu_tap(ac, aw, float2(-1.0, 0.0) - pp, dir, len2, lob, clp, e);
+    easu_tap(ac, aw, float2(1.0, 1.0) - pp, dir, len2, lob, clp, k);
+    easu_tap(ac, aw, float2(2.0, 1.0) - pp, dir, len2, lob, clp, l);
+    easu_tap(ac, aw, float2(2.0, 0.0) - pp, dir, len2, lob, clp, h);
+    easu_tap(ac, aw, float2(1.0, 0.0) - pp, dir, len2, lob, clp, g);
+    easu_tap(ac, aw, float2(1.0, 2.0) - pp, dir, len2, lob, clp, o);
+    easu_tap(ac, aw, float2(0.0, 2.0) - pp, dir, len2, lob, clp, n);
+
+    float inverse_weight = float(1.0) / aw;
+    float3 pix = min(
+        max4,
+        max(min4, ac * float3(inverse_weight, inverse_weight, inverse_weight)));
+    OutputTexture[id.xy] = float4(pix, 1.0);
 }

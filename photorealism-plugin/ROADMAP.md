@@ -511,6 +511,10 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   segunda passagem do jogo pelo backbuffer, entre o upscale do jogo e o HUD. O
   registro de passes so arma com o mapa carregado. Falta o teste no jogo e o
   numero da Fase 1, tempo de GPU nativo contra tempo com upscale;
+- **0.22.4 (entregue)** o EASU e o da AMD: transcrito de `ffx_fsr1.h` e
+  comparado na GPU contra o original, com zero bits diferentes. O anterior
+  somava a borda com `max()` e deixava a adaptacao em 25%. Falta o numero da
+  Fase 1, tempo de GPU nativo contra tempo com upscale;
 - **0.23.0** raios de sol. E o efeito que as referencias realmente
   mostram, e que a medicao do bloom revelou: estriados radiais saindo do sol
   atras da linha de arvores, projetados no teto escuro da cabine. Sao

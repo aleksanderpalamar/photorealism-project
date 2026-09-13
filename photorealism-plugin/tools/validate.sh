@@ -1565,6 +1565,66 @@ roda fica indistinguivel de um que roda." >&2
   exit 1
 fi
 
+# O EASU e o da AMD, transcrito de ffx_fsr1.h (fsrEasuSetFloat, fsrEasuTapFloat,
+# ffxFsrEasuFloat). Ate a 0.22.3 ele somava a borda com max() em vez de soma e
+# detectava borda so pelo verde: a adaptacao chegava a 25% da AMD e as
+# diagonais saiam em degrau. Na 0.22.4 a saida foi comparada na GPU contra o
+# ffx_fsr1.h original, compilado pelo mesmo compilador do Proton: zero bits
+# diferentes. As guardas prendem os pontos que tinham divergido.
+easu_shader="${project_dir}/shaders/fsr_easu.hlsl"
+for easu_rule in \
+  'edge += edge_x * weight;' \
+  'edge += edge_y * weight;' \
+  'return color.b * float(0.5) + (color.r * float(0.5) + color.g);' \
+  'asfloat(uint(0x7ef07ebb) - asuint(value))' \
+  'asfloat(uint(0x5f347d74) - (asuint(value) >> uint(1)))' \
+  'dir.x = zro ? float(1.0) : dir.x;' \
+  'float lob = float(0.5) + float((1.0 / 4.0 - 0.04) - 0.5) * len;'; do
+  if ! grep -Fq "${easu_rule}" "${easu_shader}"; then
+    echo "O EASU deixou de ser o da AMD: falta ${easu_rule}" >&2
+    exit 1
+  fi
+done
+if grep -Eq 'max\(horizontal_len|return color\.g;|saturate\(shaped|max\(accumulated_weight' \
+  "${easu_shader}"; then
+  echo "O EASU voltou a ter a borda por max(), a luma so do verde ou os \
+limitadores que a AMD nao tem: a adaptacao a borda cai para 25%." >&2
+  exit 1
+fi
+easu_tap_order="$(grep -oE 'easu_tap\(ac, aw, .*, ([a-z])\);' "${easu_shader}" |
+  sed -E 's/.*, ([a-z])\);/\1/' | tr -d '\n')"
+if [[ "${easu_tap_order}" != "bcijfeklhgon" ]]; then
+  echo "A ordem de acumulacao dos 12 taps do EASU mudou (${easu_tap_order}): a \
+AMD acumula b c i j f e k l h g o n, e a soma em ponto flutuante depende da \
+ordem." >&2
+  exit 1
+fi
+if grep -Fq 'rcp(' "${project_dir}"/shaders/*.hlsl; then
+  echo "Shader usa rcp(), que o compilador HLSL do Proton (vkd3d-shader) nao \
+conhece: o shader nao compila no jogo." >&2
+  exit 1
+fi
+easu_dispatch_body="$(awk '/^void UpscalePipeline::dispatch_easu/,/^}/' \
+  "${project_dir}/src/fsr/upscale_pipeline.cpp")"
+if ! grep -Fq 'populate_easu_constants(' <<<"${easu_dispatch_body}"; then
+  echo "dispatch_easu deixou de montar as constantes como a AMD." >&2
+  exit 1
+fi
+if grep -Eq 'constants\.con0\[[23]\] = 0\.5f \*' "${project_dir}/src/fsr/easu_constants.hpp"; then
+  echo "O deslocamento de con0 voltou a ser uma expressao unica: o clang funde \
+multiplicacao e subtracao ao dobrar constantes e o bit final muda." >&2
+  exit 1
+fi
+if ! grep -Fq 'Advanced Micro Devices' \
+  "${project_dir}/references/licenses/FidelityFX-FSR2-LICENSE.txt"; then
+  echo "Falta a licenca MIT da AMD: o EASU e transcrito do FidelityFX." >&2
+  exit 1
+fi
+if ! grep -Fq 'FidelityFX-FSR2-LICENSE.txt' "${project_dir}/tools/package.sh"; then
+  echo "O pacote saiu sem a licenca da AMD que o EASU exige." >&2
+  exit 1
+fi
+
 # O compute do menu e do FSR escrevem em slots que o SavedState precisa cobrir,
 # senao o proximo desenho do jogo herda a UAV do upscale.
 for compute_slot_call in 'CSGetUnorderedAccessViews' 'CSSetUnorderedAccessViews'; do
@@ -1603,6 +1663,12 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/tests/trace_arming_test.cpp" \
   -o "${trace_arming_test}"
 "${trace_arming_test}"
+
+fsr_easu_constants_test="/tmp/photorealism-fsr-easu-constants-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/fsr_easu_constants_test.cpp" \
+  -o "${fsr_easu_constants_test}"
+"${fsr_easu_constants_test}"
 
 fsr_render_scale_test="/tmp/photorealism-fsr-render-scale-test"
 g++ -std=c++20 -Wall -Wextra -Werror \

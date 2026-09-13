@@ -40,13 +40,11 @@ void UpscalePipeline::dispatch_easu(
     const RenderExtent& internal,
     unsigned width,
     unsigned height) {
-    EasuConstants constants = {};
-    constants.input_size[0] = static_cast<float>(internal.width);
-    constants.input_size[1] = static_cast<float>(internal.height);
-    constants.output_size[0] = static_cast<float>(width);
-    constants.output_size[1] = static_cast<float>(height);
-    constants.input_texel_size[0] = 1.0f / static_cast<float>(internal.width);
-    constants.input_texel_size[1] = 1.0f / static_cast<float>(internal.height);
+    const EasuConstants constants = populate_easu_constants(
+        static_cast<float>(internal.width),
+        static_cast<float>(internal.height),
+        static_cast<float>(width),
+        static_cast<float>(height));
     context->UpdateSubresource(
         shaders_.easu_constants(), 0, nullptr, &constants, 0, 0);
 

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-version="0.22.3"
+version="0.22.4"
 package_name="photorealism-plugin-${version}-ets2-ats-1.60-proton"
 output_dir="${project_dir}/dist"
 staging_dir="$(mktemp -d)"
@@ -38,6 +38,8 @@ cp "${project_dir}/shaders/fsr_easu.hlsl" \
   "${staging_dir}/${package_name}/photorealism-plugin/shaders/fsr_easu.hlsl"
 cp "${project_dir}/shaders/fsr_rcas.hlsl" \
   "${staging_dir}/${package_name}/photorealism-plugin/shaders/fsr_rcas.hlsl"
+cp "${project_dir}/references/licenses/FidelityFX-FSR2-LICENSE.txt" \
+  "${staging_dir}/${package_name}/photorealism-plugin/FidelityFX-FSR2-LICENSE.txt"
 cp "${project_dir}/README.md" "${staging_dir}/${package_name}/README.md"
 cp "${project_dir}/CHANGELOG.md" \
   "${staging_dir}/${package_name}/CHANGELOG.md"

@@ -1,5 +1,65 @@
 # Changelog
 
+## Pacote 0.22.4 - 2026-09-13
+
+**O EASU agora e o da AMD, bit a bit.** O shader anterior somava a borda com
+`max()` em vez de soma e detectava borda so pelo verde; a adaptacao a borda
+chegava a 25% da AMD, e as diagonais saiam em degrau.
+
+### O que o teste da 0.22.3 mostrou
+
+A reconstrucao rodou em todo quadro, antes da interface, sem piscar. O
+registro de passes confirmou a posicao: o jogo termina o quadro em 1288x728
+(`f29`), faz o proprio upscale no backbuffer, o FSR escreve no bind seguinte e a
+interface vem por cima. Em 100% o quadro fecha com 3 passagens pelo backbuffer;
+em 44% com 4 -- a a mais e o upscale do jogo.
+
+Continuou borrado. Com a nitidez do RCAS em 0.70 e 1.00 as capturas mostraram
+degraus nas bordas diagonais (silhueta do predio, rota no GPS da cabine) e
+folhagem com aspecto de pintura -- degrau em diagonal e justamente o que o EASU
+existe para suavizar.
+
+### A causa
+
+Comparado com `ffx_fsr1.h` do FidelityFX-FSR2 v2.2.1, o nosso EASU divergia em
+oito pontos. O que pesa: a forca da borda usava a **maior** entre horizontal e
+vertical, e a AMD **soma** as duas. Depois de `* 0.5` e ao quadrado, a
+adaptacao ficava em no maximo 25% da AMD, e a perda e maior na diagonal. A luma
+de deteccao era so o verde. Os outros seis -- reciproco aproximado, direcao
+nula, `saturate` extra, piso na normalizacao, posicao de amostragem e ordem de
+acumulacao -- estao em `references/fsr-easu-0.22.4.md`.
+
+### A correcao, e como foi medida
+
+O shader foi transcrito de `fsrEasuSetFloat`, `fsrEasuTapFloat` e
+`ffxFsrEasuFloat`, e as constantes de `ffxFsrPopulateEasuConstants`. As
+aproximacoes de reciproco por bits da AMD entram como estao.
+
+A saida foi comparada **na GPU** contra o `ffx_fsr1.h` original, sem alteracao,
+compilado pelo mesmo compilador HLSL do Proton do usuario e rodado no DXVK dele
+na RX 6600: **zero bits diferentes** em 6,2 milhoes de canais, numa captura do
+jogo e num padrao de linhas finas em 26 angulos. A 0.22.3, na mesma comparacao,
+diferia em ate 22% da escala na captura do jogo.
+
+Achado no caminho: o LLVM dobrava `0.5 * 1288 * (1/1920) - 0.5` como expressao
+fundida e mudava o ultimo bit de `con0[2]`. As constantes agora sao montadas em
+instrucoes separadas, e o teste prende o valor IEEE estrito.
+
+O RCAS ja batia com a AMD e nao mudou. `rcp()` nao existe no compilador do
+Proton; o shader escreve `1.0 / x`.
+
+### Licenca
+
+O EASU e transcricao de codigo MIT da AMD. A licenca vai em
+`references/licenses/` e dentro do pacote, em
+`photorealism-plugin/FidelityFX-FSR2-LICENSE.txt`.
+
+### O que continua igual
+
+EASU e espacial: 44% dos pixels continuam 44%. A correcao tira a parte do
+borrao e dos degraus que era nossa, nao o limite do FSR 1. Recuperar detalhe e
+a Fase 3 do plano, a reconstrucao temporal. **Ainda nao rodou no jogo.**
+
 ## Pacote 0.22.3 - 2026-09-12
 
 **A mensagem de dormir piscava com o FSR ligado. A causa e o desenho do RCAS
