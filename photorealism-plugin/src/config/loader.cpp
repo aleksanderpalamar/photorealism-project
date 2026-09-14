@@ -5,6 +5,7 @@
 #include "grade_fields.hpp"
 #include "limits.hpp"
 #include "logging.hpp"
+#include "profile_layer.hpp"
 #include "section_table.hpp"
 #include "text_utils.hpp"
 
@@ -16,14 +17,30 @@
 namespace photorealism {
 namespace {
 
+void compose_measured(const CalibrationStack& stack, Settings* settings) {
+    if (stack.base.enabled) {
+        copy_base_layer(settings, stack.base);
+    }
+    add_delta_layer(settings, stack.visual_0_2);
+    add_delta_layer(settings, stack.rain_overcast_0_3);
+}
+
+void compose_profile(const CalibrationStack& stack, Settings* settings) {
+    copy_base_layer(settings, profile_base_layer(stack.profile));
+    settings->ssao_intensity_scale = stack.profile.ssao_intensity;
+    settings->condition_color_locked = true;
+}
+
 Settings compose_layers(const CalibrationStack& stack) {
     Settings settings = stack.modules;
+    settings.ssao_intensity_scale = 1.0f;
+    settings.condition_color_locked = false;
 
-    if (stack.base.enabled) {
-        copy_base_layer(&settings, stack.base);
+    if (settings.photorealism_profile_enabled) {
+        compose_profile(stack, &settings);
+    } else {
+        compose_measured(stack, &settings);
     }
-    add_delta_layer(&settings, stack.visual_0_2);
-    add_delta_layer(&settings, stack.rain_overcast_0_3);
     add_delta_layer(&settings, stack.user_0_20);
 
     apply_limits(&settings);

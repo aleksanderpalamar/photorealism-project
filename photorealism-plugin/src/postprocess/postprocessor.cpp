@@ -1,6 +1,7 @@
 #include "postprocess.hpp"
 
 #include "../config/config.hpp"
+#include "../config/profile_switch.hpp"
 #include "../fsr/upscaler.hpp"
 #include "../resource_observer/color_observation.hpp"
 #include "../hooks/present_target.hpp"
@@ -63,10 +64,23 @@ public:
     }
 
     void settings_changed(const overlay::SettingBinding& binding) override {
+        if (overlay::binding_switches_profile(binding)) {
+            apply_profile_switch();
+        }
         if (overlay::binding_touches_observer(binding)) {
             apply_scene_observer_settings();
         }
         fsr::upscaler().configure(settings_);
+    }
+
+    void apply_profile_switch() {
+        switch_grade_profile(&settings_);
+        apply_scene_observer_settings();
+        overlay::menu().bind(&settings_, this);
+        log_message(
+            "Menu trocou o grade: perfil photorealism %s; valores recompostos "
+            "do cfg em disco, sem recompilar shader.",
+            settings_.photorealism_profile_enabled ? "ligado" : "desligado");
     }
 
     struct FrameTargets {

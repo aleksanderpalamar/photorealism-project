@@ -4,6 +4,9 @@ namespace photorealism {
 
 struct Settings {
     bool enabled;
+    bool photorealism_profile_enabled;
+    bool condition_color_locked;
+    float ssao_intensity_scale;
     float temperature;
     float exposure;
     float contrast;

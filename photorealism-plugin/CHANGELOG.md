@@ -1,5 +1,52 @@
 # Changelog
 
+## Pacote 0.23.0 - 2026-09-14
+
+**Perfil de tom do photorealism-plugin.** O grade pode sair de um perfil com os
+valores de um cfg de referencia fornecido pelo usuario, em vez das camadas
+medidas. Primeira entrega do plano de efeitos desse cfg; detalhes em
+`references/perfil-photorealism-0.23.0.md`.
+
+### O que muda
+
+- secao nova `[profile.photorealism.0.23.0]`, **ligada por padrao**: cinco
+  conjuntos de tom (`tonemap_<controle>_<n>`), o escolhido em `tonemap_set`, e
+  `sharpness`, `sharpen_edges`, `ssao_intensity`;
+- o pacote sai com o conjunto 4: exposicao -0.06, contraste 0.99, saturacao
+  1.00, sombras -0.01, altas luzes -0.07, brancos -0.01, temperatura 6500 K;
+  nitidez 0.6, contraste local 0.4, SSAO x1.5;
+- com o perfil ligado as camadas medidas ficam guardadas no cfg, fora da
+  composicao; a camada do usuario do menu continua somada por cima. Desligado,
+  o grade volta a ser exatamente o medido;
+- a cor fica travada no conjunto: a adaptacao por condicao continua medindo a
+  cena, mas nao mexe em temperatura e matiz;
+- o multiplicador de SSAO entra so na hora de desenhar. Gravado no ajuste,
+  cada Salvar do menu multiplicaria de novo;
+- aba **Perfil** no Ctrl+P com o botao de ligar e desligar, que recompoe o
+  grade na hora a partir do cfg em disco, sem recompilar shader; a referencia
+  do menu segue o botao, para o delta gravado bater com a tela;
+- o log mostra o perfil ativo, o conjunto e os valores, e avisa quando o
+  conjunto escolhido usa pre-exposicao, pre-contraste, contraste dinamico ou
+  exposicao noturna, que ainda nao sao aplicados.
+
+### O que e suposicao
+
+As formulas do cfg de referencia nao sao conhecidas; cada valor entra no
+controle homonimo do grade. `sharpness` e `sharpen_edges` vem numa escala
+0-10 e entram divididos por 10. Mesmos valores nao garantem a mesma imagem.
+
+### Verificacao
+
+Teste novo `photorealism_profile_test` (chaves por conjunto, chaves
+malformadas recusadas, conversao das escalas, composicao com o perfil ligado e
+desligado) e um caso novo no `menu_roundtrip_test` com o perfil ligado. Os
+testes das camadas medidas passam a desligar o perfil explicitamente. Guardas
+novas, quebradas de proposito numa copia: multiplicador de SSAO no desenho e
+fora do cfg, cor travada, referencia do menu, camada do usuario por ultimo e
+nenhum nome de plugin de terceiros no codigo.
+
+**Ainda nao rodou no jogo.**
+
 ## Pacote 0.22.8 - 2026-09-13
 
 **Dois defeitos apontados pela revisao automatica do PR #5.** Os dois foram

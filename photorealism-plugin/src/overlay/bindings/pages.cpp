@@ -5,6 +5,8 @@ namespace overlay {
 namespace {
 
 const SettingPage kPages[] = {
+    {"Perfil", "Perfil de tom -- desligado, o grade volta as camadas medidas",
+     kProfileBindings, kProfileBindingCount},
     {"Cor", "Cor e curva de tom", kGradeBindings, kGradeBindingCount},
     {"Render", "Renderizacao e iluminacao", kRenderBindings,
      kRenderBindingCount},

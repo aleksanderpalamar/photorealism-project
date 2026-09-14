@@ -89,6 +89,12 @@ int main() {
             assert(near(internal.black_lift_r, shipped.black_lift_r, 1e-7f));
             assert(near(internal.black_lift_g, shipped.black_lift_g, 1e-7f));
             assert(near(internal.black_lift_b, shipped.black_lift_b, 1e-7f));
+            assert(internal.photorealism_profile_enabled ==
+                   shipped.photorealism_profile_enabled);
+            assert(near(internal.ssao_intensity_scale,
+                        shipped.ssao_intensity_scale, 1e-6f));
+            assert(internal.condition_color_locked ==
+                   shipped.condition_color_locked);
 
             assert(near(internal.condition_sun_temperature,
                         shipped.condition_sun_temperature, 0.01f));
@@ -104,6 +110,8 @@ int main() {
 
     {
         const Settings s = load_from_text(
+            "[profile.photorealism.0.23.0]\n"
+            "enabled=false\n"
             "[base.0.1.2]\n"
             "enabled=true\n"
             "temperature=6000\n"
@@ -122,6 +130,8 @@ int main() {
 
     {
         const Settings s = load_from_text(
+            "[profile.photorealism.0.23.0]\n"
+            "enabled=false\n"
             "[base.0.1.2]\n"
             "enabled=true\n"
             "temperature=6000\n"
@@ -136,6 +146,8 @@ int main() {
 
     {
         const Settings s = load_from_text(
+            "[profile.photorealism.0.23.0]\n"
+            "enabled=false\n"
             "[base.0.1.2]\n"
             "enabled=true\n"
             "black_lift=0.0027\n"

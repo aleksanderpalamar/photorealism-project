@@ -99,8 +99,11 @@ void Menu::ensure_baseline() {
     }
     CalibrationStack stack = {};
     load_stack(&stack);
-    baseline_ = measured_baseline(stack);
     on_disk_ = compose(stack);
+    stack.modules.photorealism_profile_enabled =
+        settings_ != nullptr ? settings_->photorealism_profile_enabled
+                             : stack.modules.photorealism_profile_enabled;
+    baseline_ = measured_baseline(stack);
     defaults_ = default_settings();
     baseline_loaded_ = true;
 }

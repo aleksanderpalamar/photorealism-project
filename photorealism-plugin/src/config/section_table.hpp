@@ -18,6 +18,7 @@ struct SectionSpec {
     CalibrationLayer CalibrationStack::*layer;
     const ModuleField* fields;
     std::size_t field_count;
+    bool (*reader)(CalibrationStack* stack, const char* key, const char* value);
 };
 
 const SectionSpec* find_section(const char* name);

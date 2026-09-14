@@ -98,6 +98,8 @@ CalibrationStack reference_stack() {
     stack.visual_0_2 = visual_delta_0_2();
     stack.rain_overcast_0_3 = rain_overcast_delta_0_3();
     stack.user_0_20 = user_delta_0_20();
+    stack.profile = reference_profile();
+    stack.modules.photorealism_profile_enabled = true;
 
     stack.modules.depth_near_plane = 0.1f;
     stack.modules.depth_preview_distance = 50.0f;

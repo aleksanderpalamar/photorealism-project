@@ -1,5 +1,6 @@
 #pragma once
 
+#include "photorealism_profile.hpp"
 #include "settings.hpp"
 
 namespace photorealism {
@@ -31,6 +32,7 @@ struct CalibrationStack {
     CalibrationLayer visual_0_2;
     CalibrationLayer rain_overcast_0_3;
     CalibrationLayer user_0_20;
+    PhotorealismProfile profile;
     Settings modules;
 };
 }

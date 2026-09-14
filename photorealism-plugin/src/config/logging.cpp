@@ -115,15 +115,47 @@ void log_modules(const Settings& settings) {
         static_cast<double>(settings.tint));
 }
 
+void log_profile(const CalibrationStack& stack, const Settings& settings) {
+    if (!settings.photorealism_profile_enabled) {
+        log_message(
+            "Perfil photorealism 0.23.0: inativo; o grade vem das camadas "
+            "medidas.");
+        return;
+    }
+    const PhotorealismTonemap& tonemap = active_tonemap(stack.profile);
+    log_message(
+        "Perfil photorealism 0.23.0: ativo conjunto=%u temperatura=%.0f "
+        "exposicao=%.3f contraste=%.3f saturacao=%.3f vibracao=%.3f "
+        "sombras=%.3f altas_luzes=%.3f pretos=%.3f brancos=%.3f nitidez=%.1f "
+        "bordas=%.1f ssao=x%.2f. Camadas medidas fora da composicao; cor sem "
+        "adaptacao por condicao.",
+        stack.profile.tonemap_set, tonemap.temperature, tonemap.exposure,
+        tonemap.contrast, tonemap.saturation, tonemap.vibrance,
+        tonemap.shadows, tonemap.highlights, tonemap.blacks, tonemap.whites,
+        stack.profile.sharpness, stack.profile.sharpen_edges,
+        stack.profile.ssao_intensity);
+    if (uses_pending_controls(tonemap)) {
+        log_message(
+            "Perfil photorealism 0.23.0: o conjunto %u tem pre_exposure, "
+            "pre_contrast, dynamic_contrast ou night_exposure fora do neutro, "
+            "e esta versao ainda nao os aplica.",
+            stack.profile.tonemap_set);
+    }
+}
+
 }
 
 void log_stack(const CalibrationStack& stack, const Settings& settings) {
     log_message(
         "Camadas cumulativas: base_0.1.2=%s visual_0.2.0=%s "
-        "rain_overcast_0.3.0=%s.",
+        "rain_overcast_0.3.0=%s%s.",
         stack.base.enabled ? "ativa" : "inativa",
         stack.visual_0_2.enabled ? "ativa" : "inativa",
-        stack.rain_overcast_0_3.enabled ? "ativa" : "inativa");
+        stack.rain_overcast_0_3.enabled ? "ativa" : "inativa",
+        settings.photorealism_profile_enabled
+            ? " (guardadas, fora da composicao pelo perfil)"
+            : "");
+    log_profile(stack, settings);
     log_effective_profile(settings);
     log_white_balance(settings);
     log_modules(settings);

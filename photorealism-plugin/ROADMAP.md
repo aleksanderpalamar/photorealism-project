@@ -527,7 +527,19 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
 - **0.22.8 (entregue)** a escala do jogo e guardada e devolvida por eixo, e a
   captura do FSR se reinicia na troca de dispositivo D3D11 -- os dois defeitos
   da revisao do PR #5, reproduzidos antes de corrigidos;
-- **0.23.0** raios de sol. E o efeito que as referencias realmente
+- **0.23.0 (entregue)** perfil de tom do photorealism-plugin: o grade pode sair
+  de um perfil com os valores de um cfg de referencia do usuario, conjunto 4,
+  no lugar das camadas medidas, que ficam intactas; aba Perfil no menu. Falta
+  rodar no jogo;
+- **0.23.1** FXAA do cfg de referencia, na imagem final e, com o FSR ligado,
+  sobre o quadro interno antes do EASU;
+- **0.24.0** descoberta do G-buffer e do HDR do jogo, sem mudar a imagem:
+  registro de todos os alvos de cada passe e captura unica para analise. Decide
+  quais efeitos entre passes sao viaveis -- saturacao de albedo, iluminacao de
+  interior, espelhos, normais da estrada, SSS, motion blur -- e em que ordem.
+  Vegetacao e chuva so com troca de shader, sob nova decisao do usuario. A Fase 2
+  do FSR (medicao e otimizacao dentro do D3D11) fica depois desses efeitos;
+- **0.25.0** raios de sol. E o efeito que as referencias realmente
   mostram, e que a medicao do bloom revelou: estriados radiais saindo do sol
   atras da linha de arvores, projetados no teto escuro da cabine. Sao
   **direcionais**, e nenhuma piramide gaussiana produz aquilo. Reaproveita o
@@ -536,7 +548,7 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   descobrir a posicao do sol na tela sem dados do motor no `Present`.
   **Desceu de prioridade na 0.18.0**: cor errada em toda condicao pesa mais
   que um efeito ausente;
-- **0.24.0 (condicional)** upgrade de bind flag via hook de `CreateTexture2D`,
+- **0.26.0 (condicional)** upgrade de bind flag via hook de `CreateTexture2D`,
   na tecnica do ReShade: promover o depth a typeless com
   `BIND_SHADER_RESOURCE`, sintetizando o descritor no `CreateDepthStencilView`.
   So entra se o `CopyResource` de um depth `DEPTH_STENCIL`-only falhar sob

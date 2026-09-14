@@ -91,6 +91,12 @@ void copy_base_layer(Settings* settings, const CalibrationLayer& layer) {
     }
 }
 
+void copy_grade_fields(Settings* settings, const Settings& source) {
+    for (const GradeField& field : kGradeFields) {
+        settings->*(field.effective) = source.*(field.effective);
+    }
+}
+
 void add_delta_layer(Settings* settings, const CalibrationLayer& layer) {
     if (!layer.enabled) {
         return;

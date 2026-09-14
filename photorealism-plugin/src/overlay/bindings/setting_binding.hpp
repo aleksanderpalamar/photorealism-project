@@ -41,6 +41,8 @@ extern const SettingBinding kUpscaleBindings[];
 extern const std::size_t kUpscaleBindingCount;
 extern const SettingBinding kObserverBindings[];
 extern const std::size_t kObserverBindingCount;
+extern const SettingBinding kProfileBindings[];
+extern const std::size_t kProfileBindingCount;
 
 const SettingPage* setting_pages();
 std::size_t setting_page_count();
@@ -52,6 +54,7 @@ bool binding_flag(const SettingBinding& binding, const Settings& settings);
 void set_binding_flag(
     const SettingBinding& binding, Settings* settings, bool value);
 bool binding_touches_observer(const SettingBinding& binding);
+bool binding_switches_profile(const SettingBinding& binding);
 
 }
 }

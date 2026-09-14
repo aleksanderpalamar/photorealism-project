@@ -89,6 +89,9 @@ common_flags=(
   "${project_dir}/src/config/defaults.cpp" \
   "${project_dir}/src/config/section_table.cpp" \
   "${project_dir}/src/config/grade_fields.cpp" \
+  "${project_dir}/src/config/photorealism_profile.cpp" \
+  "${project_dir}/src/config/profile_layer.cpp" \
+  "${project_dir}/src/config/profile_switch.cpp" \
   "${project_dir}/src/config/limits.cpp" \
   "${project_dir}/src/config/logging.cpp" \
   "${project_dir}/src/resource_observer/discovery_control.cpp" \
@@ -118,6 +121,7 @@ common_flags=(
   "${project_dir}/src/overlay/bindings/render_bindings.cpp" \
   "${project_dir}/src/overlay/bindings/condition_bindings.cpp" \
   "${project_dir}/src/overlay/bindings/upscale_bindings.cpp" \
+  "${project_dir}/src/overlay/bindings/profile_bindings.cpp" \
   "${project_dir}/src/overlay/bindings/pages.cpp" \
   "${project_dir}/src/overlay/font.cpp" \
   "${project_dir}/src/overlay/font_bitmap.cpp" \

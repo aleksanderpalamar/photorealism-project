@@ -87,31 +87,40 @@ constexpr std::size_t count_of(const ModuleField (&)[N]) {
     return N;
 }
 
+bool read_profile_key(CalibrationStack* stack, const char* key, const char* value) {
+    return apply_profile_key(&stack->profile, key, value);
+}
+
 const SectionSpec kSections[] = {
-    {"plugin", &Settings::enabled, nullptr, nullptr, 0},
-    {"base.0.1.2", nullptr, &CalibrationStack::base, nullptr, 0},
-    {"module.visual.0.2.0", nullptr, &CalibrationStack::visual_0_2, nullptr, 0},
+    {"plugin", &Settings::enabled, nullptr, nullptr, 0, nullptr},
+    {"profile.photorealism.0.23.0", &Settings::photorealism_profile_enabled,
+     nullptr, nullptr, 0, read_profile_key},
+    {"base.0.1.2", nullptr, &CalibrationStack::base, nullptr, 0, nullptr},
+    {"module.visual.0.2.0", nullptr, &CalibrationStack::visual_0_2, nullptr, 0,
+     nullptr},
     {"module.rain_overcast.0.3.0", nullptr,
-     &CalibrationStack::rain_overcast_0_3, nullptr, 0},
-    {"module.user.0.20.0", nullptr, &CalibrationStack::user_0_20, nullptr, 0},
-    {"depth.0.6.4", nullptr, nullptr, kDepthFields, count_of(kDepthFields)},
+     &CalibrationStack::rain_overcast_0_3, nullptr, 0, nullptr},
+    {"module.user.0.20.0", nullptr, &CalibrationStack::user_0_20, nullptr, 0,
+     nullptr},
+    {"depth.0.6.4", nullptr, nullptr, kDepthFields, count_of(kDepthFields),
+     nullptr},
     {"module.ssao.0.7.0", &Settings::ssao_enabled, nullptr,
-     kSsaoFields, count_of(kSsaoFields)},
+     kSsaoFields, count_of(kSsaoFields), nullptr},
     {"module.ssao_refinement.0.8.0", &Settings::ssao_refinement_enabled,
-     nullptr, kSsaoRefinementFields, count_of(kSsaoRefinementFields)},
+     nullptr, kSsaoRefinementFields, count_of(kSsaoRefinementFields), nullptr},
     {"module.ssao_interior.0.9.0", &Settings::ssao_interior_enabled,
-     nullptr, kSsaoInteriorFields, count_of(kSsaoInteriorFields)},
+     nullptr, kSsaoInteriorFields, count_of(kSsaoInteriorFields), nullptr},
     {"module.temporal.0.10.0", &Settings::temporal_enabled, nullptr,
-     kTemporalFields, count_of(kTemporalFields)},
+     kTemporalFields, count_of(kTemporalFields), nullptr},
     {"module.bloom.0.17.0", &Settings::bloom_enabled, nullptr,
-     kBloomFields, count_of(kBloomFields)},
+     kBloomFields, count_of(kBloomFields), nullptr},
     {"module.fsr.0.21.0", &Settings::fsr_enabled, nullptr,
-     kFsrFields, count_of(kFsrFields)},
+     kFsrFields, count_of(kFsrFields), nullptr},
     {"module.scene_observer.0.18.0", &Settings::scene_observer_enabled,
-     nullptr, kSceneObserverFields, count_of(kSceneObserverFields)},
+     nullptr, kSceneObserverFields, count_of(kSceneObserverFields), nullptr},
     {"module.condition_adaptation.0.19.0",
      &Settings::condition_adaptation_enabled, nullptr, kConditionFields,
-     count_of(kConditionFields)},
+     count_of(kConditionFields), nullptr},
 };
 
 constexpr std::size_t kSectionCount = sizeof(kSections) / sizeof(kSections[0]);
@@ -168,6 +177,10 @@ void apply_setting(
     }
     if (section->flag != nullptr && _stricmp(key, "enabled") == 0) {
         stack->modules.*(section->flag) = config_text::parse_bool(value);
+        return;
+    }
+    if (section->reader != nullptr) {
+        section->reader(stack, key, value);
         return;
     }
     for (std::size_t i = 0; i < section->field_count; ++i) {

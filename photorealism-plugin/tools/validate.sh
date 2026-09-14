@@ -792,10 +792,29 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/src/config/defaults.cpp" \
   "${project_dir}/src/config/section_table.cpp" \
   "${project_dir}/src/config/grade_fields.cpp" \
+  "${project_dir}/src/config/photorealism_profile.cpp" \
+  "${project_dir}/src/config/profile_layer.cpp" \
   "${project_dir}/src/config/limits.cpp" \
   "${project_dir}/src/config/logging.cpp" \
   -o "${config_load_test}"
 PHOTOREALISM_PROJECT_DIR="${project_dir}" "${config_load_test}"
+
+# Perfil de tom 0.23.0: chaves por conjunto, escalas convertidas, e a composicao
+# troca as camadas medidas pelo perfil sem tocar na camada do usuario.
+photorealism_profile_test="/tmp/photorealism-profile-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  -I"${project_dir}/tests/support" -I"${project_dir}/src" \
+  "${project_dir}/tests/photorealism_profile_test.cpp" \
+  "${project_dir}/src/config/loader.cpp" \
+  "${project_dir}/src/config/defaults.cpp" \
+  "${project_dir}/src/config/section_table.cpp" \
+  "${project_dir}/src/config/grade_fields.cpp" \
+  "${project_dir}/src/config/photorealism_profile.cpp" \
+  "${project_dir}/src/config/profile_layer.cpp" \
+  "${project_dir}/src/config/limits.cpp" \
+  "${project_dir}/src/config/logging.cpp" \
+  -o "${photorealism_profile_test}"
+"${photorealism_profile_test}"
 
 # 0.19.13. A suavizacao nao pode depender da taxa de quadros. GetTickCount64
 # tem resolucao de ~15,6 ms: acima de 64 fps muitos quadros chegam com
@@ -863,7 +882,7 @@ effective_profile="$(awk -F= '
 # que importa. Uma guarda que explica uma regressao sutil so serve se for ela
 # a falar. Nesta ordem o hash continua pegando tudo que as guardas nao
 # cobrem, e so isso.
-expected_cfg_sha256="7dc2b330eda15ed1c21a53960ed0066167b9c6cbb54ae008d91a9877dcd5aba1"
+expected_cfg_sha256="f25fcd07eb3cdbc3dd9bcc2bd960f279356cd0ab6ee4540d62f280e385edc81d"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
@@ -1215,6 +1234,8 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/src/config/defaults.cpp" \
   "${project_dir}/src/config/section_table.cpp" \
   "${project_dir}/src/config/grade_fields.cpp" \
+  "${project_dir}/src/config/photorealism_profile.cpp" \
+  "${project_dir}/src/config/profile_layer.cpp" \
   "${project_dir}/src/config/limits.cpp" \
   "${project_dir}/src/config/logging.cpp" \
   -o "${menu_roundtrip_test}"
@@ -1504,6 +1525,43 @@ for device_swap_call in 'fsr::upscaler().release();' 'reset_color_discovery();';
 done
 if ! grep -Fq 'owner_ == context' "${project_dir}/src/resource_observer/color_capture.cpp"; then
   echo "A copia do quadro interno voltou a ignorar a qual contexto pertence." >&2
+  exit 1
+fi
+
+# Perfil de tom 0.23.0. O perfil troca a origem do grade, nunca o que esta
+# gravado: o multiplicador do SSAO entra so na hora de desenhar (gravado no
+# ajuste, cada Salvar multiplicaria de novo), a cor fica travada na adaptacao
+# por condicao sem desligar o modulo, e a referencia do menu segue o botao do
+# perfil -- senao o delta gravado sai contra a composicao errada.
+if ! grep -Fq 'settings.ssao_intensity * settings.ssao_intensity_scale' \
+  "${project_dir}/src/postprocess/frame_constants.cpp" ||
+  ! grep -Fq 'settings.ssao_interior_intensity * settings.ssao_intensity_scale' \
+  "${project_dir}/src/postprocess/frame_constants.cpp"; then
+  echo "O multiplicador de SSAO do perfil deixou de ser aplicado no desenho." >&2
+  exit 1
+fi
+if grep -rn 'ssao_intensity_scale' "${project_dir}/src/config/section_table.cpp" >/dev/null; then
+  echo "O multiplicador de SSAO virou ajuste gravado: cada Salvar do menu \
+multiplica a intensidade de novo." >&2
+  exit 1
+fi
+if ! grep -Fq 'settings.condition_color_locked' \
+  "${project_dir}/src/postprocess/condition_adapter.cpp"; then
+  echo "A adaptacao por condicao voltou a mexer na cor com o perfil ligado." >&2
+  exit 1
+fi
+if ! awk '/^void Menu::ensure_baseline/,/^}/' "${project_dir}/src/overlay/overlay.cpp" |
+  grep -Fq 'settings_->photorealism_profile_enabled'; then
+  echo "A referencia do menu deixou de seguir o botao do perfil: o delta gravado \
+sai contra a composicao errada." >&2
+  exit 1
+fi
+third_party_hits="$(grep -rli 'snowy' "${project_dir}/src" "${project_dir}/shaders" \
+  "${project_dir}/config" "${project_dir}/tests" "${project_dir}/tools/build.sh" \
+  "${project_dir}/tools/package.sh" 2>/dev/null || true)"
+if [[ -n "${third_party_hits}" ]]; then
+  echo "Nome de plugin de terceiros no codigo do photorealism-plugin: \
+${third_party_hits//$'\n'/ }" >&2
   exit 1
 fi
 
@@ -1819,6 +1877,8 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/tests/menu_save_test.cpp" \
   "${project_dir}/src/config/section_table.cpp" \
   "${project_dir}/src/config/grade_fields.cpp" \
+  "${project_dir}/src/config/photorealism_profile.cpp" \
+  "${project_dir}/src/config/profile_layer.cpp" \
   -o "${menu_save_test}"
 "${menu_save_test}"
 
@@ -1909,6 +1969,8 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/tests/overlay_bindings_test.cpp" \
   "${project_dir}/src/config/section_table.cpp" \
   "${project_dir}/src/config/grade_fields.cpp" \
+  "${project_dir}/src/config/photorealism_profile.cpp" \
+  "${project_dir}/src/config/profile_layer.cpp" \
   -o "${overlay_bindings_test}"
 "${overlay_bindings_test}"
 
@@ -1923,8 +1985,12 @@ g++ -std=c++20 -Wall -Wextra -Werror \
 # A camada do usuario tem que ser a ULTIMA soma: o menu grava a diferenca entre
 # o que o usuario escolheu e o que as medidas dizem, e essa conta so fecha se
 # nada vier depois dela.
-if ! grep -A 12 'Settings compose_layers' "${project_dir}/src/config/loader.cpp" |
-  grep -A 2 'stack.rain_overcast_0_3' | grep -Fq 'stack.user_0_20'; then
+compose_body="$(awk '/^Settings compose_layers/,/^}/' "${project_dir}/src/config/loader.cpp")"
+choice_line="$({ grep -n 'compose_measured(stack, &settings);' <<<"${compose_body}" || true; } | head -1 | cut -d: -f1)"
+user_line="$({ grep -n 'add_delta_layer(&settings, stack.user_0_20);' <<<"${compose_body}" || true; } | head -1 | cut -d: -f1)"
+limits_line="$({ grep -n 'apply_limits(&settings);' <<<"${compose_body}" || true; } | head -1 | cut -d: -f1)"
+if [[ -z "${choice_line}" || -z "${user_line}" || -z "${limits_line}" ]] ||
+  (( user_line < choice_line || limits_line < user_line )); then
   echo "A camada do usuario deixou de ser somada por ultimo em compose_layers: \
 o delta que o menu grava para de reproduzir o valor que estava na tela." >&2
   exit 1

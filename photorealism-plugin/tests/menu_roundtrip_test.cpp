@@ -26,6 +26,9 @@ namespace {
 const char* kTempPath = "/tmp/photorealism-menu-roundtrip.cfg";
 
 const char* kSeed =
+    "[profile.photorealism.0.23.0]\n"
+    "enabled=false\n"
+    "\n"
     "[base.0.1.2]\n"
     "enabled=true\n"
     "exposure=0.20\n"
@@ -131,6 +134,29 @@ void saving_never_touches_the_measured_layers() {
     assert(near(after.exposure, before.exposure));
 }
 
+void with_the_profile_on_the_menu_value_also_comes_back() {
+    std::string seed = kSeed;
+    seed.replace(seed.find("enabled=false"), 13, "enabled=true");
+    write_cfg(seed);
+    Settings before = {};
+    assert(load_settings(&before));
+    assert(before.photorealism_profile_enabled);
+
+    const float on_screen = 0.31f;
+    char printed[32] = {};
+    std::snprintf(
+        printed, sizeof(printed), "%.6f",
+        static_cast<double>(on_screen - before.exposure));
+    std::string text = read_cfg();
+    assert(config_writer::set_value(
+        &text, kUserSection, grade_key_for(&Settings::exposure), printed));
+    write_cfg(text);
+
+    Settings after = {};
+    assert(load_settings(&after));
+    assert(near(after.exposure, on_screen));
+}
+
 void a_zeroed_user_layer_changes_nothing() {
     write_cfg(kSeed);
     Settings before = {};
@@ -155,6 +181,7 @@ int main() {
     the_measured_layers_still_sum_without_a_user_layer();
     what_the_menu_saves_is_what_the_loader_gives_back();
     saving_never_touches_the_measured_layers();
+    with_the_profile_on_the_menu_value_also_comes_back();
     a_zeroed_user_layer_changes_nothing();
     std::remove(kTempPath);
     std::printf("menu_roundtrip_test ok\n");

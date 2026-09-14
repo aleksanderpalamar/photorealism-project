@@ -103,7 +103,8 @@ void upload_ssao_constants(
                                                                  : 0.0f;
     ssao_constants.near_plane = settings.depth_near_plane;
     ssao_constants.radius = settings.ssao_radius;
-    ssao_constants.intensity = settings.ssao_intensity;
+    ssao_constants.intensity =
+        settings.ssao_intensity * settings.ssao_intensity_scale;
     ssao_constants.bias = settings.ssao_bias;
     ssao_constants.fade_start = settings.ssao_fade_start;
     ssao_constants.fade_end = settings.ssao_fade_end;
@@ -125,7 +126,8 @@ void upload_ssao_constants(
         settings.ssao_interior_near_start;
     ssao_constants.interior_near_end = settings.ssao_interior_near_end;
     ssao_constants.interior_radius = settings.ssao_interior_radius;
-    ssao_constants.interior_intensity = settings.ssao_interior_intensity;
+    ssao_constants.interior_intensity =
+        settings.ssao_interior_intensity * settings.ssao_intensity_scale;
     ssao_constants.interior_bias = settings.ssao_interior_bias;
     ssao_constants.interior_edge_rejection =
         settings.ssao_interior_edge_rejection;

@@ -16,7 +16,8 @@ void ConditionAdapter::reset_state() {
 
 void ConditionAdapter::update(
     const Settings& settings, const SceneFeatures& features) {
-    if (!settings.condition_adaptation_enabled) {
+    if (!settings.condition_adaptation_enabled ||
+        settings.condition_color_locked) {
         temperature_ = settings.temperature;
         tint_ = settings.tint;
         return;

@@ -83,7 +83,7 @@ void log_ssao_state(
             log_message(
                 "SSAO 0.9.1 ativo: source=%ux%u format=%u "
                 "generation=%llu samples=%u radius=%.3f intensity=%.3f "
-                "fade=%.1f-%.1f interior=%s.",
+                "escala_perfil=%.2f fade=%.1f-%.1f interior=%s.",
                 input.depth_description.Width,
                 input.depth_description.Height,
                 static_cast<unsigned>(input.depth_description.Format),
@@ -91,6 +91,7 @@ void log_ssao_state(
                 settings.ssao_refinement_enabled ? 16u : 8u,
                 settings.ssao_radius,
                 settings.ssao_intensity,
+                settings.ssao_intensity_scale,
                 settings.ssao_fade_start,
                 settings.ssao_fade_end,
                 settings.ssao_interior_enabled ? "ativo" : "inativo");
