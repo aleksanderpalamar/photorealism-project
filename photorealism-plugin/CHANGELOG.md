@@ -1,5 +1,845 @@
 # Changelog
 
+## Pacote 0.22.8 - 2026-09-13
+
+**Dois defeitos apontados pela revisao automatica do PR #5.** Os dois foram
+reproduzidos antes de corrigidos.
+
+### A escala do jogo voltava errada quando os eixos eram diferentes
+
+O ETS2 guarda a escala em `r_scale_x` e `r_scale_y`, e os presets do menu
+grafico usam valores diferentes em cada eixo: o de 75% grava `x=0.75` e `y=1`
+(visto no `config.cfg` do usuario na 0.22.4). Ao ligar o FSR, o plugin guardava
+so o `r_scale_x`; ao desligar, devolvia esse valor aos dois eixos. Reproduzido
+com a logica antiga: `x=0.75 y=1` voltava como `x=0.75 y=0.75` -- 56% no lugar
+de 75%, a configuracao grafica do jogador alterada pelo plugin.
+
+Agora os dois eixos sao lidos, guardados e devolvidos separados
+(`scale_axes.hpp`, testado no host). O arquivo `config.photorealism-fsr-scale.saved`
+passa a ter duas linhas; o de uma linha, das versoes anteriores, continua valendo
+para os dois eixos. Um eixo que o jogo nunca escreveu nunca e inventado.
+
+### A copia do quadro interno sobrevivia a troca de dispositivo D3D11
+
+A copia era reaproveitada por tamanho e formato. Se o jogo recriasse o
+dispositivo D3D11 com o FSR ligado, o resto do plugin se reiniciava, mas a
+captura do FSR nao: o proximo quadro copiava uma textura do dispositivo novo
+para dentro de um recurso do antigo e ligava esse recurso no contexto novo --
+proibido no D3D11, indefinido no DXVK. Reproduzido na GPU, no DXVK do usuario,
+com dois dispositivos reais: com a logica antiga a copia continuava no
+dispositivo antigo e `copy_from` dizia que tinha copiado.
+
+Agora a troca de dispositivo libera o FSR e reinicia a captura de cor, como o
+depth ja fazia, e a copia so e reaproveitada no mesmo contexto. Nenhuma sessao
+do usuario registrou troca de dispositivo; o defeito nao estava aparecendo.
+
+## Pacote 0.22.7 - 2026-09-13
+
+**A granulacao LFGA passa a vir em 0.30.** Escolha do usuario no jogo com a
+0.22.6.
+
+### O que o teste da 0.22.6 mostrou
+
+- 93.235 quadros reconstruidos de 1664x936 para 1920x1080, na escala 0.8660;
+- o ruido azul da granulacao foi gerado em 43 ms, e nenhum erro de shader ou de
+  recurso apareceu;
+- o usuario avaliou a imagem como otima e escolheu a granulacao em 0.30.
+
+### A mudanca
+
+`grain` do `[module.fsr.0.21.0]` e o default do codigo foram de 0.15 para 0.30.
+A guarda que exige cfg e codigo iguais passou a pedir 0.30.
+
+Quem ja tem o cfg instalado mantem o valor gravado nele.
+
+## Pacote 0.22.6 - 2026-09-13
+
+**O RCAS agora e o da AMD, bit a bit, e o FSR ganhou a granulacao LFGA.** Escala
+padrao em 0.8660 (75% dos pixels).
+
+### Uma correcao, antes de tudo
+
+A 0.22.4 disse que o RCAS ja batia com `ffx_fsr1.h`. **Nao batia**, em quatro
+pontos: aplicava sempre a reducao de ruido que a AMD deixa desligada
+(`FSR_RCAS_DENOISE`), dividia sem a aproximacao media que a AMD usa, tinha
+pisos que a AMD nao tem, e lia a nitidez como multiplicador linear em vez de
+stops. A 0.22.4 tambem disse que `rcp()` nao existe no compilador HLSL do
+Proton: **existe**, e a guarda que proibia `rcp` saiu.
+
+### RCAS
+
+Transcrito de `FsrRcasF`, sem a reducao de ruido, como e o padrao da AMD -- e
+ela mesma recomenda granulacao depois do RCAS no lugar da reducao. A nitidez
+segue `FsrRcasCon` com o remapeamento da API do FSR 2: 1 e o maximo, cada 0.5 a
+menos corta pela metade. O 0.60 escolhido pelo usuario vira multiplicador
+0,5743, perto do 0,60 que ele aprovou; sem a reducao de ruido, texturas com
+granulo fino ficam um pouco mais afiadas que antes.
+
+### LFGA, a granulacao do FSR
+
+`FsrLfgaF` como esta, depois do RCAS, em espaco linear, com ruido azul 64x64
+gerado por void-and-cluster e animado pela razao aurea, para a soma no tempo
+nao ter vies. Granulacao monocromatica, como no exemplo da AMD. Novo ajuste
+`grain` no `[module.fsr.0.21.0]` e slider "Granulacao LFGA" na aba FSR do
+menu, valendo na hora; padrao 0.15. A granulacao so existe enquanto o FSR
+reconstroi, e fica abaixo da interface.
+
+### Como foi medido
+
+Na GPU, contra o `ffx_fsr1.h` original compilado pelo compilador do Proton e
+rodado no DXVK da RX 6600: RCAS em quatro nitidezes e LFGA, em tres entradas
+-- incluindo areas pretas e brancas puras, onde os limitadores dividem por zero
+-- com **zero bits diferentes**. O pixel shader inteiro, renderizado de verdade:
+sem granulacao, a no maximo 1 byte do RCAS em RTV sRGB e UNORM; com 0.15, 1,16
+byte de desvio por quadro e vies de -0,003 byte em 16 quadros. Detalhes em
+`references/fsr-rcas-lfga-0.22.6.md`.
+
+### Escala padrao
+
+O cfg do repositorio foi editado pelo usuario para `render_scale=0.8660` e ele
+escolheu esse valor como padrao do pacote; o default do codigo acompanha.
+Guarda nova exige que cfg e codigo concordem em escala e granulacao.
+
+**Ainda nao rodou no jogo.**
+
+## Pacote 0.22.5 - 2026-09-13
+
+**A nitidez do RCAS passa a vir em 0.60.** Escolha do usuario no jogo, com o
+EASU ja igual ao da AMD.
+
+### O que o teste da 0.22.4 mostrou
+
+- 68.971 quadros reconstruidos em 1288x728 -> 1920x1080, sem descarte de
+  00:14:55 a 00:33:58. Os 11.223 sem reconstrucao ficam no carregamento, em
+  2 min a 60 quadros por segundo sem cena interna logo depois da entrega da
+  carga, e em 2 min a 1 quadro por segundo, jogo em segundo plano;
+- o usuario avaliou a imagem como otima e comparou a nitidez do RCAS em 0.35 e
+  0.60 no jogo, preferindo 0.60;
+- nas capturas em 0.60, bordas diagonais continuas, sem halo claro em volta da
+  cabine nem das arvores contra o ceu;
+- a notificacao de carga pronta aparece por cima da imagem reconstruida: a
+  interface desenhada depois do FSR, como a 0.22.3 pos, continua visivel.
+
+### A mudanca
+
+`sharpness` do `[module.fsr.0.21.0]` e o default do codigo foram de 0.35 para
+0.60. O "R" do menu passa a devolver 0.60. Guarda nova exige que os dois digam
+o mesmo valor.
+
+Quem ja tem o cfg instalado mantem o valor gravado nele: o pacote so muda o
+padrao de quem instala ou apaga o cfg.
+
+## Pacote 0.22.4 - 2026-09-13
+
+**O EASU agora e o da AMD, bit a bit.** O shader anterior somava a borda com
+`max()` em vez de soma e detectava borda so pelo verde; a adaptacao a borda
+chegava a 25% da AMD, e as diagonais saiam em degrau.
+
+### O que o teste da 0.22.3 mostrou
+
+A reconstrucao rodou em todo quadro, antes da interface, sem piscar. O
+registro de passes confirmou a posicao: o jogo termina o quadro em 1288x728
+(`f29`), faz o proprio upscale no backbuffer, o FSR escreve no bind seguinte e a
+interface vem por cima. Em 100% o quadro fecha com 3 passagens pelo backbuffer;
+em 44% com 4 -- a a mais e o upscale do jogo.
+
+Continuou borrado. Com a nitidez do RCAS em 0.70 e 1.00 as capturas mostraram
+degraus nas bordas diagonais (silhueta do predio, rota no GPS da cabine) e
+folhagem com aspecto de pintura -- degrau em diagonal e justamente o que o EASU
+existe para suavizar.
+
+### A causa
+
+Comparado com `ffx_fsr1.h` do FidelityFX-FSR2 v2.2.1, o nosso EASU divergia em
+oito pontos. O que pesa: a forca da borda usava a **maior** entre horizontal e
+vertical, e a AMD **soma** as duas. Depois de `* 0.5` e ao quadrado, a
+adaptacao ficava em no maximo 25% da AMD, e a perda e maior na diagonal. A luma
+de deteccao era so o verde. Os outros seis -- reciproco aproximado, direcao
+nula, `saturate` extra, piso na normalizacao, posicao de amostragem e ordem de
+acumulacao -- estao em `references/fsr-easu-0.22.4.md`.
+
+### A correcao, e como foi medida
+
+O shader foi transcrito de `fsrEasuSetFloat`, `fsrEasuTapFloat` e
+`ffxFsrEasuFloat`, e as constantes de `ffxFsrPopulateEasuConstants`. As
+aproximacoes de reciproco por bits da AMD entram como estao.
+
+A saida foi comparada **na GPU** contra o `ffx_fsr1.h` original, sem alteracao,
+compilado pelo mesmo compilador HLSL do Proton do usuario e rodado no DXVK dele
+na RX 6600: **zero bits diferentes** em 6,2 milhoes de canais, numa captura do
+jogo e num padrao de linhas finas em 26 angulos. A 0.22.3, na mesma comparacao,
+diferia em ate 22% da escala na captura do jogo.
+
+Achado no caminho: o LLVM dobrava `0.5 * 1288 * (1/1920) - 0.5` como expressao
+fundida e mudava o ultimo bit de `con0[2]`. As constantes agora sao montadas em
+instrucoes separadas, e o teste prende o valor IEEE estrito.
+
+O RCAS ja batia com a AMD e nao mudou. `rcp()` nao existe no compilador do
+Proton; o shader escreve `1.0 / x`.
+
+### Licenca
+
+O EASU e transcricao de codigo MIT da AMD. A licenca vai em
+`references/licenses/` e dentro do pacote, em
+`photorealism-plugin/FidelityFX-FSR2-LICENSE.txt`.
+
+### O que continua igual
+
+EASU e espacial: 44% dos pixels continuam 44%. A correcao tira a parte do
+borrao e dos degraus que era nossa, nao o limite do FSR 1. Recuperar detalhe e
+a Fase 3 do plano, a reconstrucao temporal. **Ainda nao rodou no jogo.**
+
+## Pacote 0.22.3 - 2026-09-12
+
+**A mensagem de dormir piscava com o FSR ligado. A causa e o desenho do RCAS
+herdando o estado da interface do jogo, e a correcao move a reconstrucao para
+antes da interface.** O registro de passes passa a esperar o mapa carregar.
+
+### O que o teste da 0.22.2 mostrou
+
+Na sessao das 22:23 o FSR reconstruiu pela primeira vez no jogo:
+`FSR copia o quadro interno de 1288x728 formato=29` e depois
+`fsr.replacement=600` a cada 10 s, sem descarte. Dois defeitos apareceram:
+
+- a imagem piscou na saida da tela de carregamento;
+- parado numa area de descanso, a **mensagem de dormir** piscava. Desligar o
+  FSR pelo menu parava a piscada na hora.
+
+Na sessao das 21:02 o FSR nao reconstruiu nada em 8 minutos. Ali o depth da
+cena ficou em 1920x1080 a sessao inteira: o jogo desenhou em resolucao cheia,
+e o borrao daquela sessao era o resolve temporal do plugin, que estava ativo.
+
+### A causa
+
+`draw_rcas` ligava o proprio shader, a view e o viewport, e **nenhum** estado de
+blend, depth ou rasterizacao. No `Present` o contexto ainda tem o que o jogo
+deixou ligado para o ultimo elemento da interface -- inclusive o scissor com o
+retangulo daquele elemento. A reconstrucao cobria so esse retangulo, e so nos
+quadros em que ele era o ultimo desenhado. O contador dizia 600 quadros
+reconstruidos porque o desenho acontecia; o que ele cobria nao aparecia no log.
+
+A correcao obvia -- ligar estados proprios -- cobriria a tela inteira, e com
+ela **a interface inteira**: o jogo desenha o HUD no backbuffer depois do
+proprio upscale, e o `Present` vem depois do HUD. Essa era a pergunta em aberto
+da 0.22.2, e a resposta e sim.
+
+### A correcao
+
+- o FSR tem estados proprios: blend desligado, depth desligado, rasterizacao
+  sem culling e **sem scissor**, ligados em todo desenho do RCAS;
+- a reconstrucao saiu do `Present`. Ela roda dentro do `OMSetRenderTargets`,
+  na **segunda** vez que o jogo liga o backbuffer depois de passar da
+  resolucao interna: a primeira e o upscale do proprio jogo, a seguinte e a
+  interface. O FSR escreve por cima do upscale do jogo e devolve o estado; a
+  interface e desenhada por cima da reconstrucao, como seria num upscaler
+  nativo;
+- a saida agora e reconhecida pela **textura do backbuffer**, e nao pelo
+  tamanho: um alvo qualquer de 1920x1080 no meio do quadro nunca recebe a
+  reconstrucao;
+- o sRGB vem da view que o proprio jogo ligou;
+- quadro com uma unica passagem pelo backbuffer nao reconstroi, e o log diz
+  por que: `o jogo nao voltou ao backbuffer depois de esticar o quadro interno`;
+- bind que tambem liga UAVs nao recebe a reconstrucao: restaurar o estado com
+  `OMSetRenderTargets` desligaria as UAVs do jogo.
+
+A regra mora em `FrameTransition`, pura. O teste novo modela o quadro medido na
+0.22.2 -- backbuffer no inicio, alvos internos, o de tom mapeado, e tres binds
+do backbuffer no fim -- e exige a captura no primeiro e a reconstrucao so no
+segundo.
+
+### O registro de passes espera o mapa
+
+Na 0.22.2 o registro armava depois de 600 quadros quaisquer e caiu **duas
+vezes** na tela de carregamento, com 3 passes por quadro. Agora ele arma depois
+de 300 quadros **seguidos** com pelo menos 32 passes -- o jogo dirigindo tinha
+72, o carregamento 3 -- e um quadro de carregamento no meio zera a contagem.
+Cada linha marca `reconstrucao` no bind em que o FSR escreveu.
+
+### O que continua nao provado
+
+**Nada disso rodou no jogo.** A correcao supoe que o primeiro bind do
+backbuffer depois da cena contem so o upscale do jogo. Se o jogo desenhar parte
+da interface nesse mesmo bind, essa parte some -- de forma estavel, sem piscar.
+O registro de passes mostra os binds; o que cada um desenha, so a tela mostra.
+
+## Pacote 0.22.2 - 2026-09-12
+
+**A imagem piscava entre a cena e um quadro preto com bordas coloridas. A causa
+e um pool de texturas do jogo, e a correcao troca "qual textura" por "qual
+posicao no quadro".** Mais tres defeitos achados no caminho, e os avisos falsos
+do log.
+
+### O que o teste da 0.22.1 mostrou
+
+A cadeia rodou pela primeira vez -- `fsr.dispatch=1050`, o EASU despachando a
+cada quadro. E a tela alternava entre duas imagens: a cena normal, e um quadro
+quase todo preto com contornos coloridos so nas bordas. Esse segundo e uma
+mascara de bordas de anti-aliasing: superficie lisa vira preto, borda vira cor.
+
+O log deu as pistas:
+
+- a cena do ETS2 roda em **1288x728** -- e o depth mais ligado, cerca de 20 mil
+  ligacoes por janela de 30 s. O tamanho do candidato estava certo;
+- o candidato foi escolhido com `ligado 3 vezes, entre 3 candidatos` -- existe
+  mais de uma textura nesse tamanho;
+- existe um segundo grupo em **1366x684**, que caia na janela de busca.
+
+### A causa
+
+O Prism3D reaproveita render targets de um pool. A mesma textura **fisica**
+recebe papeis diferentes em quadros diferentes: num quadro guarda a cena, no
+seguinte guarda a mascara de bordas. A regra da 0.22.0 -- "a textura mais
+ligada no tamanho certo" -- prendia uma textura fisica e, com o pool trocando os
+papeis, copiava cena e mascara em quadros alternados.
+
+Escolher textura pela identidade e errado por definicao neste jogo.
+
+### A correcao
+
+O que e estavel e a **posicao no quadro**: o ultimo alvo na resolucao interna
+antes de o jogo passar para a resolucao de saida. Esse e o quadro que o proprio
+jogo vai subir para 1080p, qualquer que seja a textura fisica que o pool deu a
+ele naquele quadro.
+
+- a copia acontece **no instante da transicao**, dentro do `OMSetRenderTargets`
+  que liga o alvo de saida, **depois** de o bind ser repassado ao jogo -- e nao
+  mais no `Present`, quando um alvo intermediario ja pode ter sido reusado;
+- o estado fecha a cada `Present`: um quadro sem transicao nao reconstroi nada,
+  em vez de reconstruir a copia de um quadro anterior;
+- a janela de busca ficou estreita: o tamanho esperado sai da escala com que o
+  jogo foi aberto, com tolerancia de 24 px. 1288x728 entra; 1366x684 sai;
+- formatos TYPELESS entram na busca. A tabela antiga so listava variante
+  tipada -- o mesmo defeito que desligou o observador de cena na 0.18.0.
+
+A regra mora em `FrameTransition`, pura e testada no host. O teste simula o pool
+trocando as texturas a cada quadro e exige a cena em todos -- e mostra que a
+regra antiga, pela identidade, alternava.
+
+### O que ainda e hipotese, e como a proxima sessao responde
+
+O teste modela a mascara sendo escrita **antes** do resultado final, que e como
+mascaras de AA funcionam em geral. Se no ETS2 for o contrario, a nova regra
+pegaria a mascara em todo quadro -- estavel, mas errada.
+
+Para nao depender de suposicao, o plugin registra **uma vez por sessao** a
+sequencia de passes de dois quadros seguidos, logo que a cena comeca: cada
+`OMSetRenderTargets`, tamanho, formato, se vai junto com depth, qual textura
+fisica (`#N`), e qual foi capturada. Com esse registro a ordem real do jogo fica
+escrita no log.
+
+### Tres defeitos achados no caminho
+
+**O grade era apagado com o FSR ativo.** A ordem era grade -> upscale, e o
+upscale substitui o backbuffer inteiro pela reconstrucao do quadro interno, que
+nao tem grade nenhum. Agora e upscale -> grade -> captura do Steam -> menu.
+
+**Gamma dupla.** O RTV do backbuffer e sRGB -- o hardware codifica na escrita.
+O RCAS le valores ja codificados e os escrevia sem decodificar antes, entao a
+imagem reconstruida saia lavada. Agora ele decodifica quando o RTV e sRGB.
+
+**Custo com o FSR desligado.** A observacao de cor da 0.22.0 fazia quatro
+chamadas COM em **todo** `OMSetRenderTargets` do jogo, ligado ou nao. Agora ela
+sai antes de qualquer chamada quando a captura esta inativa.
+
+### Os avisos falsos do log
+
+- `fsr.replacement=0` era zero **por construcao**: quem o incrementava era o
+  hook de backbuffer removido na 0.21.5. Agora conta os quadros de fato
+  reconstruidos;
+- `aquisicoes_do_jogo=0` idem -- o contador saiu;
+- `motivo=quadro interno ainda nao localizado` continuava aparecendo depois de o
+  quadro ser achado. Agora o motivo e o da **janela** do relatorio, e vira
+  `nenhum` quando a janela nao teve descarte;
+- `FSR ligado e sem efeito` repetia a cada 10 s. Agora sai uma vez quando o
+  modulo para de reconstruir, e volta a valer quando ele retoma.
+
+A guarda do validate so conferia que o nome `record_replacement` existia -- e a
+definicao existia, sem chamador. Ha guarda nova exigindo que **todo**
+`Telemetry::record_*` tenha chamador fora do proprio arquivo.
+
+### Onze guardas novas, todas quebradas de proposito
+
+Ordem do Present; captura pela posicao; o teste do pool com a regra antiga;
+copia depois do bind; zero COM com a captura inativa; fechamento do quadro no
+Present; tabela so de tipados; decode do RCAS; contagem de quadros
+reconstruidos; contador sem chamador; motivo limpo por janela.
+
+### O padrao
+
+O pacote volta a sair com `enabled=false`, que foi a escolha do usuario.
+
+### O que continua nao provado
+
+**Nada disso rodou no jogo.** E ha uma pergunta que so o registro de passes
+responde: o upscale substitui o backbuffer inteiro no `Present`. Se o ETS2
+desenha o HUD **no backbuffer depois** do proprio upscale, a reconstrucao cobre
+o HUD. O registro mostra se ha passes no alvo de saida depois da transicao.
+
+## Pacote 0.22.1 - 2026-09-12
+
+**O pacote passa a sair com o FSR ligado, e o comentario do cfg passa a
+descrever o mecanismo que existe.**
+
+### A documentacao estava descrevendo um mecanismo removido
+
+O bloco do `[module.fsr.0.21.0]` dizia:
+
+> COMECA DESLIGADO. O caminho troca a textura que o jogo recebe no lugar do
+> backbuffer, e isso e invasivo demais para ligar sozinho na primeira versao.
+
+Essa substituicao de backbuffer **saiu na 0.21.5**. A justificativa para comecar
+desligado morreu junto e o texto ficou. Quem lesse o cfg estaria lendo sobre
+codigo que nao existe mais.
+
+O bloco agora descreve o caminho real: o proprio ETS2 reduz, via `r_scale` no
+config dele; o plugin toma essa chave emprestada e devolve ao desligar; e a
+reconstrucao procura o alvo de cor interno entre os render targets do jogo.
+
+### Ligado por padrao
+
+Com o mecanismo invasivo fora, nao ha mais razao para o pacote sair desligado.
+`enabled=true`.
+
+O que isso significa na pratica: **instalar e abrir o jogo passa a mexer no
+`r_scale` do seu config**, guardando o valor anterior em
+`config.photorealism-fsr-scale.saved` e devolvendo quando o modulo for
+desligado. Quem nao quiser, `enabled=false` antes da primeira abertura -- e ai o
+plugin nao toca em nada.
+
+### Uma divergencia que estava para acontecer
+
+O default interno do codigo dizia `false` enquanto o cfg passava a dizer `true`.
+Quem apagasse o cfg ganharia comportamento diferente de quem nao apagasse, sem
+nenhum aviso. Os dois agora concordam, e ha guarda comparando o valor no cfg
+empacotado com o do `defaults.cpp`.
+
+## Pacote 0.22.0 - 2026-09-12
+
+**A peca que faltava para a Fase 1 do plano: achar o quadro interno do jogo.**
+E a correcao do spam de log que o teste da 0.21.6 revelou.
+
+### Por que o upscale nunca rodou
+
+Com `r_scale`, o ETS2 desenha a cena reduzida e **ele mesmo** sobe para 1080p
+antes de o plugin ver o backbuffer. Quando a imagem chegava ate nos, o detalhe
+ja tinha sido perdido. O EASU precisava ler o buffer **antes** desse upscale --
+que e exatamente o que o diagrama do plano diz: a entrada e o **Color buffer**,
+nao o backbuffer.
+
+### Como o quadro interno e achado
+
+O plugin ja fazia isso para o depth. O `OMSetRenderTargets` esta enganchado
+desde a 0.6.0 e agora cataloga render target de cor tambem, na mesma chamada --
+**nenhum hook novo**, e nenhum dos oito hooks per-draw removidos na 0.15.0
+volta.
+
+A janela de busca e estreita de proposito: textura menor que a saida, com pelo
+menos metade de cada lado, sem MSAA e num dos quatro formatos de cor
+suportados. Entre os que sobram, vence o mais ligado ao longo do frame -- o
+alvo da cena e ligado muito mais vezes que espelho ou mapa de sombra.
+
+Isso e mais determinista que o problema que o plano cita sobre o ReShade:
+**sabemos o tamanho que estamos procurando**, porque fomos nos que pedimos ao
+jogo para desenhar nessa fracao.
+
+Achado o candidato, ele e copiado a cada apresentacao -- do mesmo jeito que o
+`depth_capture` ja copia o depth -- e a copia vira o SRV que o EASU le.
+
+O log diz qual venceu:
+
+```
+FSR achou o quadro interno do jogo: 1280x720 formato=87, ligado N vezes,
+entre M candidatos na janela de busca.
+```
+
+### O spam do slider
+
+Arrastar "Escala de render" no menu rendeu **76 linhas** de log num unico
+arraste: `configure()` registrava uma linha por movimento do mouse. Agora so a
+troca de ligado/desligado merece linha -- o valor da escala esta na tela e sai
+no log do bootstrap quando e aplicado. Ha guarda proibindo o retorno.
+
+### O que medir agora
+
+Se o candidato escolhido for o alvo da cena, `fsr.dispatch` sobe e a cadeia
+`720p -> EASU -> RCAS -> 1080p` fecha. Se vier o tamanho errado, o log nomeia o
+que foi escolhido e o ajuste e na janela de busca, nao no desenho.
+
+## Pacote 0.21.6 - 2026-09-12
+
+**A 0.21.5 apagava o Scaling das opcoes graficas do usuario a cada abertura do
+jogo.** Defeito meu, e o pior tipo: escrita num arquivo do usuario, sem
+desfazer.
+
+### O que estava errado
+
+O `r_scale_x`/`r_scale_y` do ETS2 e o **Scaling** das opcoes graficas -- config
+do usuario. A 0.21.5 escrevia essas chaves no bootstrap **em toda abertura,
+mesmo com o FSR desligado**, forcando `1.0`. Quem tinha Scaling em 83% perdia
+isso toda vez que o jogo iniciava.
+
+Do log do usuario:
+
+```
+15:10:20  FSR escala: r_scale_x/y de 1 para 1.0000   <- FSR DESLIGADO, e escreveu
+```
+
+E como qualquer chave grafica escrita pelo plugin tira o perfil do preset, o
+ETS2 grava `g_gfx_quality "-1"` e a tela passa a mostrar **Personalizado** em
+vez de "Ultra" -- que e a impressao de "resetou tudo".
+
+### O contrato agora e emprestimo, nao escrita
+
+- **FSR desligado e nada emprestado** -- o plugin **nao toca** no `r_scale`;
+- **ao ligar** -- guarda o valor que era do usuario num arquivo ao lado do
+  config (`config.photorealism-fsr-scale.saved`) e so entao escreve o seu;
+- **ao desligar** -- le esse arquivo, **devolve** o valor original e apaga o
+  registro.
+
+O log diz qual das tres aconteceu, com o valor de antes e o de depois.
+
+Cinco guardas prendem o contrato, e duas delas foram quebradas de proposito
+para provar que disparam: escrever com o FSR desligado, e pegar emprestado sem
+guardar o valor.
+
+### Uma nota sobre o que eu errei
+
+O que faltou nao foi cuidado na escrita -- havia guarda para a escrita ser
+atomica desde a 0.12.2, e ela funcionou. Faltou perguntar **se o plugin devia
+escrever**, e nao so **como**. Config do jogo e do usuario; o plugin pode pedir
+emprestado e tem que devolver.
+
+## Pacote 0.21.5 - 2026-09-12
+
+**O mecanismo estava errado. A caixa "Frame em menor resolucao" do plano e uma
+config do proprio ETS2, nao um truque no backbuffer.**
+
+O usuario apontou o diagrama e tem razao. A entrada da reconstrucao, no plano
+dele, e **Color buffer / Depth buffer / Motion vectors** -- os buffers internos
+do jogo. Eu fui interceptar o **backbuffer**, que e a etapa final. E o "frame em
+menor resolucao" e o Prism3D desenhando menor, nao o plugin enganando o jogo
+sobre o tamanho da tela.
+
+### O que faltava estava no config do jogo
+
+`r_scale_x` e `r_scale_y` sao a escala interna do ETS2 -- o "Scaling" das opcoes
+graficas. O config antigo do usuario tinha `0.833333`. Eu tinha esse arquivo
+aberto na tela duas mensagens antes e nao fiz a ligacao.
+
+O plugin ja sabe escrever no config do jogo: o `native_aa` faz isso no
+bootstrap, com backup e escrita atomica, antes de o ETS2 abrir. A escala entrou
+pelo mesmo caminho.
+
+Com `[module.fsr.0.21.0] enabled=true` e `render_scale=0.6667`, o bootstrap
+grava `r_scale_x/y = 0.666700` e o **Prism3D sombreia 921.600 pixels em vez de
+2.073.600**. O ganho de quadro vem dai, e nao depende de nada que o plugin faca
+por frame.
+
+### O que saiu
+
+A substituicao do backbuffer foi removida inteira -- hooks de `GetBuffer`,
+`GetDesc` e `GetDesc1`, a textura interna e o estado que os acompanhava. Alem de
+ser o mecanismo errado, ela **empilharia** com o `r_scale`: o jogo desenharia a
+480p achando que estava em 720p. Ha guarda proibindo que volte.
+
+O que ficou de `src/hooks/back_buffer_proxy` foi so o acesso ao backbuffer que a
+captura do Steam e o menu usam, agora em `present_target`.
+
+### O que ainda nao esta pronto
+
+O EASU nao tem de onde ler. Com o `r_scale`, o ETS2 desenha a cena reduzida e
+**ele mesmo** sobe para 1080p antes de o plugin ver o backbuffer -- o detalhe ja
+se perdeu ali. Reconstruir com qualidade exige achar o color buffer interno
+antes desse upscale, que e a proxima etapa e usa a mesma maquinaria que ja acha
+o depth.
+
+Ate la a aba FSR diz exatamente isso:
+
+```
+LIGADO  o ETS2 desenha reduzido; reconstrucao propria pendente
+```
+
+Ou seja: **o ganho de FPS existe agora**; a reconstrucao melhor que a do jogo
+vem depois. Preferi entregar a metade que funciona a continuar prometendo a
+inteira.
+
+## Pacote 0.21.4 - 2026-09-12
+
+**A aba FSR passa a mostrar o estado real na tela.** Quatro pacotes e o usuario
+nunca conseguiu saber, sem abrir o log, se o upscale estava rodando -- o menu
+mostrava o interruptor ligado enquanto nada acontecia.
+
+A primeira linha da aba agora diz uma de tres coisas:
+
+```
+ATIVO  1280x720 reconstruido
+LIGADO mas inativo -- reinicie o ETS2 para valer
+desligado
+```
+
+### Por que "reinicie" e nao "funciona agora"
+
+O log da 0.21.3 fechou a questao da ordem, e ela esta certa:
+
+```
+14:42:08.848  hooks instalados, inclusive o de GetBuffer
+14:42:09.944  primeiro ResizeBuffers do jogo      -- 1,1 s depois
+14:42:09.948  ResizeBuffers 1920x1080
+```
+
+O hook entra antes de o ETS2 pegar o backbuffer. Com `enabled=true` no cfg na
+hora da abertura, a textura interna e entregue e o upscale roda.
+
+O que nao da para fazer e trocar isso no meio da sessao: o ETS2 pega o
+backbuffer cinco vezes na abertura e **nenhuma** nas horas seguintes -- medido,
+nao suposto, pelo contador `aquisicoes_do_jogo`, que ficou parado em 5 durante
+sete minutos de jogo. A resolucao em que um quadro e desenhado se decide quando
+o alvo e adquirido, e enquanto o jogo nao adquirir de novo, nada que o plugin
+faca muda isso.
+
+Mexer no interruptor continua valendo a pena: ele grava no cfg e vale na
+proxima abertura. A diferenca e que agora a tela diz isso, em vez de o usuario
+ter que deduzir do log.
+
+## Pacote 0.21.3 - 2026-09-12
+
+**O log da 0.21.2 provou que o upscale nunca rodou, e mostrou tres coisas de
+uma vez.** A tela nao mudou; o que mudou foi o rotulo no menu.
+
+### O que o log disse
+
+Duas linhas de FSR em vinte minutos de jogo: `desligado` na abertura e `ligado`
+as 14:09:35, quando o usuario ligou no menu. **Nenhuma** linha periodica com
+`fsr.replacement` e `fsr.dispatch`. O custo de GPU do passe ficou em 1,0-1,4 ms
+antes e depois, sem o degrau que um dispatch de EASU e um grade em 44% dos
+pixels teriam deixado.
+
+### 1. O ETS2 pede o backbuffer uma vez, e so na abertura
+
+Os seis `ResizeBuffers` estao todos entre 14:08:15 e 14:08:16. Depois disso, em
+vinte minutos, o jogo nao pediu o backbuffer nenhuma vez. A trava da 0.21.2 --
+esperar o jogo pegar a textura interna -- estava certa e nunca teve chance de
+disparar.
+
+### 2. A config chegava meio segundo tarde
+
+E o defeito de verdade. O jogo pega o backbuffer as **14:08:16.607**, logo apos
+o ultimo `ResizeBuffers`. O plugin so lia a configuracao as **14:08:17.164**,
+na adocao do device, que acontece no primeiro `Present` -- **depois**.
+
+Entao nem reiniciar o jogo com `enabled=true` no cfg teria funcionado: no unico
+instante em que o ETS2 pede o backbuffer, o modulo ainda achava que estava
+desligado.
+
+Agora a configuracao e lida na **instalacao dos hooks**, que no mesmo log
+acontece as 14:08:15.151 -- um segundo e meio antes do jogo pedir. Ha guarda
+exigindo que continue assim.
+
+### 3. O diagnostico estava atras do caminho de sucesso
+
+O contador `aquisicoes_do_jogo` existe exatamente para responder "o jogo pegou a
+textura?". Mas ele so era impresso **dentro** do upscale -- que so roda quando o
+jogo pegou. Ou seja: a unica pergunta que o log precisava responder era a unica
+que ele nao respondia.
+
+O relatorio agora sai sempre que o FSR esta ligado, com o motivo do descarte
+quando nao ha o que reconstruir. Ha guarda proibindo que ele volte para dentro
+do caminho de sucesso.
+
+### O que esperar agora
+
+Ligue no menu, **Salvar no cfg**, e reinicie o jogo. Na proxima abertura as
+linhas devem aparecer a cada dez segundos:
+
+```
+FSR interno=1280x720 saida=1920x1080 fsr.replacement=N fsr.dispatch=N
+aquisicoes_do_jogo=N descartes=N motivo=...
+```
+
+Ligar no meio da sessao continua sem efeito neste jogo, e agora isso esta
+medido, nao suposto: o log vai dizer `aquisicoes_do_jogo` parado e
+`motivo=o jogo ainda nao pegou a textura interna`.
+
+## Pacote 0.21.2 - 2026-09-12
+
+**O menu liga e desliga o FSR ao vivo.** A trava da 0.21.1, que so deixava valer
+num `ResizeBuffers`, saiu -- ela protegia contra um perigo real pelo jeito
+errado.
+
+### O perigo, e o jeito certo de evitar
+
+Ligar no meio da sessao nao pode reconstruir uma textura interna vazia por cima
+do quadro, porque o jogo continua desenhando na textura que **ja pegou**. Eu
+tratei isso adivinhando o momento -- so no `ResizeBuffers` -- em vez de
+**esperar o fato**.
+
+Agora o modulo nao adivinha: ele registra quando o jogo pega a textura interna.
+
+- o jogo pede o backbuffer e o FSR esta ligado -> recebe a textura interna, e o
+  modulo marca que o jogo passou a segura-la;
+- o jogo pede e o FSR esta desligado -> recebe o backbuffer real, e a marca cai;
+- **o upscale e o grade em 720p so acontecem enquanto essa marca estiver de
+  pe.**
+
+Enquanto o jogo nao pedir de novo, ligar no menu nao muda nada na tela -- nem
+para melhor nem para pior. Quando ele pedir, engata sozinho. E desligar continua
+seguro: o modulo segue reconstruindo o que o jogo ainda desenha na textura
+interna, ate ele voltar a pegar o backbuffer real.
+
+Vale para a escala tambem: mudar a escala so recria a textura no momento em que
+o jogo pede, nunca por baixo dele.
+
+Tres guardas novas prendem o invariante, uma por caminho: `Upscaler::present`,
+`proxy_for_plugin` e `upscale_frame` tem que seguir quem **segura** a textura,
+nunca o que foi **pedido**. Trocar qualquer uma por `enabled` derruba o
+validate.
+
+### O que isso muda na pratica
+
+Instalar o pacote devolve o cfg ao padrao `enabled=false`, entao ligar pelo menu
+e o caminho natural -- e agora ele funciona. Continua sendo verdade que o efeito
+aparece quando o ETS2 pedir o backbuffer de novo; a diferenca e que o modulo
+nao exige mais que isso seja um `ResizeBuffers`, e nao faz nada de errado
+enquanto espera.
+
+O contador `aquisicoes_do_jogo` continua no log e agora responde a pergunta que
+importa: se ele crescer depois de voce ligar no menu, o FSR engatou.
+
+## Pacote 0.21.1 - 2026-09-12
+
+**Ligar o FSR pelo menu gravava no cfg e nao chegava ao modulo.** O primeiro log
+de jogo da 0.21.0 trouxe uma linha de FSR so, a do startup, e nenhuma depois de
+o usuario ligar na aba FSR.
+
+### O fio que faltava
+
+O menu avisava o host quando um ajuste mudava -- mas **so para os campos do
+observador de cena**, que eram os unicos com efeito fora do caminho por quadro
+quando o menu foi escrito. O FSR e o segundo caso desses, e entrou sem o aviso.
+
+O resultado no log e exatamente o sintoma: `Menu gravou 1 ajuste(s) no cfg: ok`
+as 12:19:30, e nenhuma linha de FSR depois. O cfg instalado tem
+`enabled=true`; o modulo nunca soube.
+
+O aviso deixou de ser filtrado por grupo. O menu agora diz "isto mudou" e quem
+recebe decide o que refazer -- que era como deveria ter sido desde o comeco. Ha
+guarda proibindo o filtro de voltar.
+
+### E por que ligar ainda nao vale na hora
+
+Mesmo com o fio, ligar o FSR no meio da sessao nao pode valer imediatamente, e
+isso e do problema, nao do codigo: o jogo desenha na textura que **ja pegou**.
+Enquanto ele nao pedir o backbuffer de novo, entregar a nossa nao muda nada --
+e trocar o alvo por baixo dele, com a textura interna ainda vazia, poria lixo na
+tela.
+
+O momento em que o jogo pede de novo e o `ResizeBuffers`. O log da 0.21.0
+mostra os quatro do ETS2, todos as 12:18:03, na abertura -- nenhum durante a
+partida.
+
+Entao ligar vale ao **trocar a resolucao no ETS2 ou reiniciar o jogo**. O titulo
+da aba diz isso, e agora o log tambem, no instante em que voce mexe:
+
+```
+FSR pedido: ligado escala=0.6667. So vale quando o jogo recriar o backbuffer
+-- troque a resolucao no ETS2 ou reinicie o jogo.
+```
+
+### Um contador a mais, para a proxima duvida
+
+A linha periodica ganhou `aquisicoes_do_jogo`, que conta quantas vezes o jogo
+pediu o backbuffer -- separando as chamadas dele das nossas, que acontecem todo
+quadro. Se esse numero crescer por quadro, ligar ao vivo passa a ser possivel e
+a trava sai. Se ficar parado depois da abertura, esta confirmado que so
+`ResizeBuffers` serve, e ai e limitacao do jogo e nao escolha minha.
+
+## Pacote 0.21.0 - 2026-09-12
+
+**FSR de volta, Fase 1 do plano escrito pelo usuario: o jogo desenha em 1280x720
+e o plugin reconstroi 1920x1080 com EASU em compute shader.**
+
+### O que o modulo removido na 0.15.0 nao fazia, e este faz
+
+Aquele modulo eram 5.833 linhas cuja propria telemetria dizia
+`replacement=0 dispatch=0` -- observava recursos do jogo e nunca substituia
+nada. A diferenca desta versao nao e de tamanho, e de mecanismo: em vez de
+observar, ela **troca a textura que o jogo recebe**.
+
+O `IDXGISwapChain::GetBuffer` passa a devolver uma textura nossa no tamanho
+interno no lugar do backbuffer, e o `GetDesc`/`GetDesc1` passam a relatar esse
+tamanho. O Prism3D desenha o quadro inteiro em 1280x720 sem saber -- e essa e a
+unica parte que reduz trabalho de verdade. A 0.6667, sao 921.600 pixels
+sombreados em vez de 2.073.600.
+
+O grade do plugin tambem passa a rodar em 720p, de graca: 44% dos pixels.
+
+### Os dois passes
+
+**EASU em compute**, grupo 8x8, doze taps com analise de direcao e comprimento
+de borda e kernel anisotropico alinhado a ela, clampeado ao 2x2 central. E
+reimplementacao em HLSL proprio do algoritmo publicado da AMD -- o repo continua
+sem uma linha de terceiros, e o clone do FSR2 serviu de referencia, nao de
+fonte.
+
+**RCAS em pixel shader.** Nao por preguica: um compute precisa de UAV, e o
+backbuffer do jogo nao e criado com `DXGI_USAGE_UNORDERED_ACCESS`, entao nao ha
+UAV para escrever nele. O RCAS le a saida do EASU e escreve direto no RTV do
+backbuffer real, o que de quebra economiza uma textura de 1080p e um passe de
+copia.
+
+### O que muda na ordem do Present
+
+```
+process_frame          grade em 720p, na textura interna
+upscale_present_frame  EASU + RCAS -> backbuffer real
+observe_postprocessed  captura do Steam, ja reconstruida
+draw_overlay_frame     menu, por cima de tudo
+```
+
+A captura do Steam e o menu precisam do backbuffer **de verdade**, nao da
+textura interna, entao os dois passaram a pedi-lo por um caminho que desvia do
+proprio hook. Ha guarda para os dois.
+
+O `SavedState` ganhou o estagio de compute -- shader, SRV, UAV e constant buffer
+--, senao o proximo dispatch do jogo herdaria a UAV do upscale.
+
+### Duas guardas que mudaram
+
+A guarda de nao-retorno do FSR saiu, porque o usuario pediu o modulo de volta.
+A **licao** dela ficou, virando guarda ao efeito: o modulo e obrigado a contar
+`fsr.replacement` e `fsr.dispatch` e por os dois no log. Sem contador, um FSR
+que nao roda e indistinguivel de um que funciona -- foi exatamente assim que o
+anterior viveu ate ser apagado. Os oito hooks per-draw continuam proibidos; os
+do swap chain rodam por resize, nao por draw.
+
+A outra nao era sobre FSR. O awk que confere o perfil de cor somava **qualquer**
+chave de **qualquer** secao `[module.*]` no total do grade, e passava so porque
+nenhuma chave de modulo tinha nome de campo de cor. O `sharpness` do RCAS foi o
+primeiro a colidir: 0.35 entrava na nitidez e o perfil acusava 0.550 onde o
+medido e 0.200. Agora as quatro camadas somadas sao nomeadas uma a uma.
+
+### O que nao esta provado
+
+**Nada disso rodou no jogo.** O que esta provado: compila, linka, os tres
+shaders passam pelo `d3dcompiler_47.dll` do Wine, o disassembly do EASU mostra
+`dcl_uav_typed_texture2d u0` e `dcl_thread_group 8, 8, 1`, os literais
+sobrevivem no DLL, e renomear `dispatch_easu` ou `hooked_get_buffer` derruba o
+build.
+
+**Comeca desligado**, e a razao e honesta: entregar ao jogo uma textura no lugar
+do backbuffer e invasivo, e se o ETS2 tirar o tamanho do viewport de algum lugar
+que nao seja nem a textura nem o swap chain, o quadro sai cortado. Ligar esta em
+`[module.fsr.0.21.0]` ou no menu, aba FSR.
+
+A troca de ligado/desligado e de escala **so vale na proxima mudanca de
+resolucao**. Desligar no meio da sessao destruiria a textura em que o jogo ainda
+esta desenhando.
+
+O numero que a Fase 1 existe para produzir -- tempo de GPU nativo contra tempo
+com upscale -- depende de rodar. As linhas `fsr.replacement` e `fsr.dispatch`
+saem no log a cada dez segundos; se as duas vierem zero, o modulo nao rodou e o
+log diz o motivo do descarte.
+
 ## Pacote 0.20.5 - 2026-09-11
 
 **Tres defeitos apontados na revisao do PR #4, e um quarto que eu encontrei

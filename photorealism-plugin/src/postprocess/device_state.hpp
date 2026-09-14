@@ -28,6 +28,10 @@ struct SavedState {
     ID3D11ShaderResourceView* pixel_resources[4] = {};
     ID3D11SamplerState* pixel_samplers[2] = {};
     ID3D11Buffer* pixel_constant_buffer = nullptr;
+    ID3D11ComputeShader* compute_shader = nullptr;
+    ID3D11ShaderResourceView* compute_resource = nullptr;
+    ID3D11UnorderedAccessView* compute_access = nullptr;
+    ID3D11Buffer* compute_constant_buffer = nullptr;
 };
 
 void capture_state(ID3D11DeviceContext* context, SavedState* state);

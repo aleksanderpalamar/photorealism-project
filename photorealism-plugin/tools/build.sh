@@ -31,6 +31,8 @@ common_flags=(
   "${project_dir}/src/dinput/menu_gate.cpp" \
   "${project_dir}/src/hooks/vtable_patch.cpp" \
   "${project_dir}/src/native_aa/apply.cpp" \
+  "${project_dir}/src/fsr/game_scale.cpp" \
+  "${project_dir}/src/fsr/render_scale.cpp" \
   "${project_dir}/src/native_aa/policy.cpp" \
   "${project_dir}/src/native_aa/game_target.cpp" \
   "${project_dir}/src/native_aa/config_file.cpp" \
@@ -57,6 +59,7 @@ common_flags=(
   "${project_dir}/src/hooks/device_probe.cpp" \
   "${project_dir}/src/hooks/vtable_patch.cpp" \
   "${project_dir}/src/hooks/module_names.cpp" \
+  "${project_dir}/src/hooks/present_target.cpp" \
   "${project_dir}/src/postprocess/postprocessor.cpp" \
   "${project_dir}/src/postprocess/device_state.cpp" \
   "${project_dir}/src/postprocess/gpu_timer.cpp" \
@@ -96,6 +99,10 @@ common_flags=(
   "${project_dir}/src/resource_observer/discovery_report.cpp" \
   "${project_dir}/src/resource_observer/observer_state.cpp" \
   "${project_dir}/src/resource_observer/format_names.cpp" \
+  "${project_dir}/src/resource_observer/color_observation.cpp" \
+  "${project_dir}/src/resource_observer/color_capture.cpp" \
+  "${project_dir}/src/resource_observer/pass_trace.cpp" \
+  "${project_dir}/src/resource_observer/view_shape.cpp" \
   "${project_dir}/src/scene/sampler.cpp" \
   "${project_dir}/src/scene/sampler_resources.cpp" \
   "${project_dir}/src/scene/observer.cpp" \
@@ -110,6 +117,7 @@ common_flags=(
   "${project_dir}/src/overlay/bindings/grade_bindings.cpp" \
   "${project_dir}/src/overlay/bindings/render_bindings.cpp" \
   "${project_dir}/src/overlay/bindings/condition_bindings.cpp" \
+  "${project_dir}/src/overlay/bindings/upscale_bindings.cpp" \
   "${project_dir}/src/overlay/bindings/pages.cpp" \
   "${project_dir}/src/overlay/font.cpp" \
   "${project_dir}/src/overlay/font_bitmap.cpp" \
@@ -121,6 +129,17 @@ common_flags=(
   "${project_dir}/src/overlay/overlay.cpp" \
   "${project_dir}/src/overlay/pointer_feed.cpp" \
   "${project_dir}/src/overlay/menu_export.cpp" \
+  "${project_dir}/src/fsr/render_scale.cpp" \
+  "${project_dir}/src/fsr/fsr_telemetry.cpp" \
+  "${project_dir}/src/fsr/upscale_resources.cpp" \
+  "${project_dir}/src/fsr/fsr_shaders.cpp" \
+  "${project_dir}/src/fsr/fsr_states.cpp" \
+  "${project_dir}/src/fsr/blue_noise.cpp" \
+  "${project_dir}/src/fsr/grain_texture.cpp" \
+  "${project_dir}/src/fsr/output_target.cpp" \
+  "${project_dir}/src/fsr/upscale_pipeline.cpp" \
+  "${project_dir}/src/fsr/internal_frame.cpp" \
+  "${project_dir}/src/fsr/upscaler.cpp" \
   "${project_dir}/src/runtime.cpp" \
   "${project_dir}/src/dxgi.def" \
   -o "${build_dir}/dxgi.dll" \

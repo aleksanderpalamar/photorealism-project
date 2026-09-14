@@ -489,7 +489,45 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   cursor do sistema fica recentralizado enquanto o DirectInput estiver em modo
   relativo. O menu tambem anda por teclado -- setas, enter e tab -- que e o
   caminho que nao depende de nada disso;
-- **0.21.0** raios de sol. E o efeito que as referencias realmente
+- **0.21.6 (entregue)** FSR de volta, Fase 1 do plano do usuario: o jogo
+  desenha numa textura interna menor e o plugin reconstroi ate a resolucao real
+  com EASU em compute e RCAS em pixel shader. O modulo removido na 0.15.0 nao
+  volta: aquele observava recursos e nunca substituia nada, este troca a
+  textura que o jogo recebe no lugar do backbuffer. **Comeca desligado** e
+  ainda nao rodou no jogo -- o que falta e o numero que a Fase 1 existe para
+  produzir, tempo de GPU nativo contra tempo com upscale. Fases 2 e 3 do plano
+  (otimizacao para RDNA2 e reconstrucao temporal) seguem abertas;
+- **0.22.2 (entregue)** descoberta do quadro interno do jogo, a peca que
+  fecha a Fase 1 do plano de FSR. O quadro e capturado pela **posicao** -- o
+  ultimo alvo na resolucao interna antes de o jogo passar para a de saida --
+  porque o Prism3D reaproveita texturas de um pool e a mesma textura fisica
+  guarda a cena num quadro e uma mascara de bordas no seguinte, que foi a
+  piscada da 0.22.1. Falta rodar no jogo e ler o registro de passes que o
+  plugin grava uma vez por sessao: ele confirma a ordem e responde se o HUD e
+  desenhado no backbuffer depois do upscale do jogo;
+- **0.22.3 (entregue)** a reconstrucao roda antes da interface. No jogo a
+  0.22.2 reconstruiu todo quadro e a mensagem de dormir piscou: o RCAS herdava
+  o scissor da interface. Agora o FSR liga estados proprios e escreve na
+  segunda passagem do jogo pelo backbuffer, entre o upscale do jogo e o HUD. O
+  registro de passes so arma com o mapa carregado. Falta o teste no jogo e o
+  numero da Fase 1, tempo de GPU nativo contra tempo com upscale;
+- **0.22.4 (entregue)** o EASU e o da AMD: transcrito de `ffx_fsr1.h` e
+  comparado na GPU contra o original, com zero bits diferentes. O anterior
+  somava a borda com `max()` e deixava a adaptacao em 25%. Falta o numero da
+  Fase 1, tempo de GPU nativo contra tempo com upscale;
+- **0.22.5 (entregue)** nitidez do RCAS padrao em 0.60, escolhida pelo usuario
+  no jogo depois do EASU corrigido. Falta o numero da Fase 1;
+- **0.22.6 (entregue)** RCAS igual ao da AMD, comparado na GPU contra o
+  original, e a granulacao LFGA do FSR com ruido azul. Escala padrao 0.8660.
+  Corrige duas afirmacoes da 0.22.4: o RCAS nao batia, e `rcp()` existe no
+  compilador do Proton. Falta o numero da Fase 1;
+- **0.22.7 (entregue)** granulacao LFGA padrao em 0.30, escolhida pelo usuario
+  no jogo. Falta o numero da Fase 1, tempo de GPU nativo contra tempo com
+  upscale;
+- **0.22.8 (entregue)** a escala do jogo e guardada e devolvida por eixo, e a
+  captura do FSR se reinicia na troca de dispositivo D3D11 -- os dois defeitos
+  da revisao do PR #5, reproduzidos antes de corrigidos;
+- **0.23.0** raios de sol. E o efeito que as referencias realmente
   mostram, e que a medicao do bloom revelou: estriados radiais saindo do sol
   atras da linha de arvores, projetados no teto escuro da cabine. Sao
   **direcionais**, e nenhuma piramide gaussiana produz aquilo. Reaproveita o
@@ -498,7 +536,7 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   descobrir a posicao do sol na tela sem dados do motor no `Present`.
   **Desceu de prioridade na 0.18.0**: cor errada em toda condicao pesa mais
   que um efeito ausente;
-- **0.22.0 (condicional)** upgrade de bind flag via hook de `CreateTexture2D`,
+- **0.24.0 (condicional)** upgrade de bind flag via hook de `CreateTexture2D`,
   na tecnica do ReShade: promover o depth a typeless com
   `BIND_SHADER_RESOURCE`, sintetizando o descritor no `CreateDepthStencilView`.
   So entra se o `CopyResource` de um depth `DEPTH_STENCIL`-only falhar sob

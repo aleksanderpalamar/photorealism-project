@@ -135,6 +135,11 @@ CalibrationStack reference_stack() {
     stack.modules.bloom_intensity = 0.02f;
     stack.modules.bloom_radius = 0.03f;
 
+    stack.modules.fsr_enabled = false;
+    stack.modules.fsr_render_scale = 0.8660f;
+    stack.modules.fsr_sharpness = 0.60f;
+    stack.modules.fsr_grain = 0.30f;
+
     stack.modules.scene_observer_enabled = true;
     stack.modules.scene_observer_interval_frames = 30.0f;
     stack.modules.scene_observer_log_seconds = 30.0f;

@@ -53,6 +53,11 @@ struct Settings {
     float bloom_intensity;
     float bloom_radius;
 
+    bool fsr_enabled;
+    float fsr_render_scale;
+    float fsr_sharpness;
+    float fsr_grain;
+
     bool scene_observer_enabled;
     float scene_observer_interval_frames;
     float scene_observer_log_seconds;

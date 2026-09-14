@@ -1,6 +1,9 @@
 #include "postprocess.hpp"
 
 #include "../config/config.hpp"
+#include "../fsr/upscaler.hpp"
+#include "../resource_observer/color_observation.hpp"
+#include "../hooks/present_target.hpp"
 #include "../overlay/overlay.hpp"
 #include "../resource_observer/resource_observer.hpp"
 #include "../runtime.hpp"
@@ -55,7 +58,16 @@ public:
         overlay::menu().bind(&settings_, this);
     }
 
-    void observer_changed() override { apply_scene_observer_settings(); }
+    const char* upscale_status() const override {
+        return fsr::upscaler().status();
+    }
+
+    void settings_changed(const overlay::SettingBinding& binding) override {
+        if (overlay::binding_touches_observer(binding)) {
+            apply_scene_observer_settings();
+        }
+        fsr::upscaler().configure(settings_);
+    }
 
     struct FrameTargets {
         ID3D11Texture2D* back_buffer;
@@ -117,6 +129,7 @@ public:
     void reload_configuration() {
         load_settings(&settings_);
         apply_scene_observer_settings();
+        fsr::upscaler().configure(settings_);
         if (device_ != nullptr) {
             recompile_shaders();
         }
@@ -165,6 +178,8 @@ public:
         reset_device();
         if (replacing_device) {
             restart_depth_discovery_for_device_change();
+            fsr::upscaler().release();
+            reset_color_discovery();
         }
         active_swap_chain_ = swap_chain;
         device_ = frame_device;
@@ -172,6 +187,7 @@ public:
         device_->GetImmediateContext(&context_);
         load_settings(&settings_);
         apply_scene_observer_settings();
+        fsr::upscaler().configure(settings_);
         overlay::menu().bind(&settings_, this);
         if (!initialize_pipeline()) {
             return false;
@@ -542,15 +558,44 @@ public:
 
     bool acquire_overlay_target(
         IDXGISwapChain* swap_chain, FrameTargets* targets) {
-        const HRESULT result = swap_chain->GetBuffer(
-            0,
-            IID_ID3D11Texture2D,
-            reinterpret_cast<void**>(&targets->back_buffer));
-        if (FAILED(result) || targets->back_buffer == nullptr) {
+        if (!present_back_buffer(swap_chain, &targets->back_buffer)) {
             return false;
         }
         targets->back_buffer->GetDesc(&targets->description);
         return create_output_view(targets);
+    }
+
+    void upscale_frame(IDXGISwapChain* swap_chain) {
+        if (swap_chain == nullptr || resize_in_progress_) {
+            return;
+        }
+        if (!fsr::upscaler().wants_proxy()) {
+            return;
+        }
+        if (!ensure_device_for(swap_chain)) {
+            return;
+        }
+
+        ID3D11Texture2D* back_buffer = nullptr;
+        if (!present_back_buffer(swap_chain, &back_buffer)) {
+            return;
+        }
+        D3D11_TEXTURE2D_DESC description = {};
+        back_buffer->GetDesc(&description);
+        fsr::upscaler().present(
+            device_, back_buffer, description.Width, description.Height);
+        back_buffer->Release();
+    }
+
+    void reconstruct_in_frame(
+        ID3D11DeviceContext* context, ID3D11RenderTargetView* output) {
+        if (context == nullptr || context != context_ || resize_in_progress_) {
+            return;
+        }
+        SavedState state = {};
+        capture_state(context_, &state);
+        fsr::upscaler().reconstruct(context_, output);
+        restore_state(context_, &state);
     }
 
     void draw_overlay(IDXGISwapChain* swap_chain) {
@@ -617,6 +662,8 @@ public:
         if (active_swap_chain_ == swap_chain) {
             resize_in_progress_ = false;
         }
+        fsr::upscaler().release();
+        reset_color_discovery();
         log_message(
             "ResizeBuffers concluido: swap_chain=%p result=0x%08X.",
             static_cast<void*>(swap_chain),
@@ -835,6 +882,24 @@ void process_frame(IDXGISwapChain* swap_chain) {
         return;
     }
     g_post_processor.render(swap_chain);
+}
+
+void upscale_present_frame(IDXGISwapChain* swap_chain) {
+    ProcessorScope scope;
+    if (!scope.entered()) {
+        return;
+    }
+    g_post_processor.upscale_frame(swap_chain);
+    end_color_frame();
+}
+
+void reconstruct_game_frame(
+    ID3D11DeviceContext* context, ID3D11RenderTargetView* output) {
+    ProcessorScope scope;
+    if (!scope.entered()) {
+        return;
+    }
+    g_post_processor.reconstruct_in_frame(context, output);
 }
 
 void draw_overlay_frame(IDXGISwapChain* swap_chain) {

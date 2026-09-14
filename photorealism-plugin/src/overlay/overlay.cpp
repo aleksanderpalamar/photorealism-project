@@ -107,8 +107,8 @@ void Menu::ensure_baseline() {
 
 void Menu::apply_change(const SettingBinding& binding) {
     apply_limits(settings_);
-    if (host_ != nullptr && binding_touches_observer(binding)) {
-        host_->observer_changed();
+    if (host_ != nullptr) {
+        host_->settings_changed(binding);
     }
 }
 
@@ -133,7 +133,7 @@ void Menu::discard_changes() {
     baseline_loaded_ = false;
     ensure_baseline();
     if (host_ != nullptr) {
-        host_->observer_changed();
+        host_->settings_changed(kGradeBindings[0]);
     }
     log_message("Menu descartou as mudancas e releu o cfg.");
 }

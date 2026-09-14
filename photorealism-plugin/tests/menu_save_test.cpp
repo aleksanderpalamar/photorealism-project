@@ -37,6 +37,7 @@ Settings compose(const CalibrationStack& stack) { return stack.modules; }
 #include "../src/overlay/bindings/grade_bindings.cpp"
 #include "../src/overlay/bindings/pages.cpp"
 #include "../src/overlay/bindings/render_bindings.cpp"
+#include "../src/overlay/bindings/upscale_bindings.cpp"
 #include "../src/overlay/grade_keys.cpp"
 #include "../src/overlay/persistence.cpp"
 

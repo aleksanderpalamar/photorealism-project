@@ -11,6 +11,21 @@ int main() {
 
     assert(resolve_unorm(kB8G8R8A8Unorm) == resolve_unorm(kB8G8R8A8Typeless));
 
+    assert(resolve_typeless(kR8G8B8A8Unorm) == kR8G8B8A8Typeless);
+    assert(resolve_typeless(kR8G8B8A8UnormSrgb) == kR8G8B8A8Typeless);
+    assert(resolve_typeless(kR8G8B8A8Typeless) == kR8G8B8A8Typeless);
+    assert(resolve_typeless(kB8G8R8A8Unorm) == kB8G8R8A8Typeless);
+    assert(resolve_typeless(kB8G8R8A8UnormSrgb) == kB8G8R8A8Typeless);
+    assert(resolve_typeless(kB8G8R8X8Unorm) == kB8G8R8X8Typeless);
+
+    assert(is_srgb(kR8G8B8A8UnormSrgb));
+    assert(is_srgb(kB8G8R8A8UnormSrgb));
+    assert(is_srgb(kB8G8R8X8UnormSrgb));
+    assert(!is_srgb(kR8G8B8A8Unorm));
+    assert(!is_srgb(kB8G8R8A8Unorm));
+    assert(!is_srgb(kR8G8B8A8Typeless));
+    assert(!is_srgb(kB8G8R8A8Typeless));
+
     const unsigned bgra[] = {
         kB8G8R8A8Unorm, kB8G8R8A8UnormSrgb, kB8G8R8A8Typeless};
     for (unsigned format : bgra) {

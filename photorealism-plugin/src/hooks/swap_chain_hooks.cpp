@@ -14,6 +14,7 @@ HRESULT STDMETHODCALLTYPE hooked_present(
     IDXGISwapChain* swap_chain, UINT sync_interval, UINT flags) {
     PresentDispatchScope dispatch;
     if (dispatch.should_process()) {
+        upscale_present_frame(swap_chain);
         process_frame(swap_chain);
         observe_postprocessed_frame(swap_chain);
         draw_overlay_frame(swap_chain);
@@ -42,6 +43,7 @@ HRESULT STDMETHODCALLTYPE hooked_present1(
     const DXGI_PRESENT_PARAMETERS* parameters) {
     PresentDispatchScope dispatch;
     if (dispatch.should_process()) {
+        upscale_present_frame(swap_chain);
         process_frame(swap_chain);
         observe_postprocessed_frame(swap_chain);
         draw_overlay_frame(swap_chain);
