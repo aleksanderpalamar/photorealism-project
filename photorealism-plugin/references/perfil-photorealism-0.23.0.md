@@ -1,6 +1,6 @@
 # Perfil de tom 0.23.0
 
-Estado: entregue. Ainda nao rodou no jogo.
+Estado: entregue e aprovado no jogo pelo usuario. Continua em `perfil-photorealism-0.23.1.md`.
 
 ## De onde vem os valores
 

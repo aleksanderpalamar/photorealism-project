@@ -26,15 +26,14 @@ void compose_measured(const CalibrationStack& stack, Settings* settings) {
 }
 
 void compose_profile(const CalibrationStack& stack, Settings* settings) {
-    copy_base_layer(settings, profile_base_layer(stack.profile));
-    settings->ssao_intensity_scale = stack.profile.ssao_intensity;
-    settings->condition_color_locked = true;
+    copy_base_layer(
+        settings, profile_base_layer(stack.profile, settings->profile_tonemap_set));
+    apply_profile_outputs(settings, stack.profile);
 }
 
 Settings compose_layers(const CalibrationStack& stack) {
     Settings settings = stack.modules;
-    settings.ssao_intensity_scale = 1.0f;
-    settings.condition_color_locked = false;
+    reset_profile_outputs(&settings);
 
     if (settings.photorealism_profile_enabled) {
         compose_profile(stack, &settings);

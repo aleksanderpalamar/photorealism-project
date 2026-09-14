@@ -1,6 +1,7 @@
 #include "section_table.hpp"
 
 #include "grade_fields.hpp"
+#include "profile_pending.hpp"
 #include "text_utils.hpp"
 
 #include <windows.h>
@@ -10,6 +11,9 @@
 namespace photorealism {
 namespace {
 
+constexpr ModuleField kProfileFields[] = {
+    {"tonemap_set", &Settings::profile_tonemap_set},
+};
 
 constexpr ModuleField kDepthFields[] = {
     {"near_plane", &Settings::depth_near_plane},
@@ -81,20 +85,20 @@ constexpr ModuleField kConditionFields[] = {
     {"night_tint", &Settings::condition_night_tint},
 };
 
-
 template <std::size_t N>
 constexpr std::size_t count_of(const ModuleField (&)[N]) {
     return N;
 }
 
 bool read_profile_key(CalibrationStack* stack, const char* key, const char* value) {
-    return apply_profile_key(&stack->profile, key, value);
+    return apply_profile_key(&stack->profile, key, value) ||
+           apply_pending_key(&stack->modules, key, value);
 }
 
 const SectionSpec kSections[] = {
     {"plugin", &Settings::enabled, nullptr, nullptr, 0, nullptr},
     {"profile.photorealism.0.23.0", &Settings::photorealism_profile_enabled,
-     nullptr, nullptr, 0, read_profile_key},
+     nullptr, kProfileFields, count_of(kProfileFields), read_profile_key},
     {"base.0.1.2", nullptr, &CalibrationStack::base, nullptr, 0, nullptr},
     {"module.visual.0.2.0", nullptr, &CalibrationStack::visual_0_2, nullptr, 0,
      nullptr},
@@ -179,8 +183,7 @@ void apply_setting(
         stack->modules.*(section->flag) = config_text::parse_bool(value);
         return;
     }
-    if (section->reader != nullptr) {
-        section->reader(stack, key, value);
+    if (section->reader != nullptr && section->reader(stack, key, value)) {
         return;
     }
     for (std::size_t i = 0; i < section->field_count; ++i) {

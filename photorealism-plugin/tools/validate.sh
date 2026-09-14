@@ -350,6 +350,15 @@ negativo e empurra os pretos para baixo, contra o piso de black_lift." >&2
   exit 1
 fi
 
+# 0.23.1: os cinco conjuntos de tom sao escolhiveis no menu.
+for profile_set in 1 2 3 4 5; do
+  if ! grep -Eq "^tonemap_exposure_${profile_set}=" "${cfg}"; then
+    echo "O conjunto de tom ${profile_set} sumiu do cfg: escolher esse conjunto \
+no menu cai nos neutros internos sem aviso." >&2
+    exit 1
+  fi
+done
+
 # Bloom 0.17.0. Os valores ainda sao PROVISORIOS -- derivacao fisica e nao
 # medicao -- e por isso o que se guarda aqui e a FORMA, e nao o numero exato:
 # o que nao pode acontecer e o modulo continuar ligado com um parametro que o
@@ -374,13 +383,11 @@ if grep -Eq '^threshold=(1(\.0+)?|[2-9])' "${cfg}"; then
 limiar e o modulo fica ativo sem produzir nada." >&2
   exit 1
 fi
-# A ressalva de que o modulo contraria a medicao. Ela e o registro de que as
-# cinco referencias do ATS foram medidas e NAO tem bloom -- bordas nitidas, sem
-# cauda no lado escuro. Sem ela, o proximo a ler o arquivo assume que estes
-# numeros perseguem o alvo medido, quando na verdade se afastam dele por
-# escolha.
-if ! grep -Fq 'ESTE MODULO E LICENCA ARTISTICA, E NAO O ALVO MEDIDO' "${cfg}"; then
-  echo "A ressalva do bloom sumiu do cfg. Ela registra que as referencias \
+# A ressalva de que o modulo contraria a medicao saiu do cfg na 0.23.1, com os
+# demais comentarios, e fica na linha de log do modulo: as referencias foram
+# medidas e nao tem bloom.
+if ! grep -Fq 'licenca artistica; so o limiar e medido' "${dxgi_strings}"; then
+  echo "A ressalva do bloom sumiu do log. Ela registra que as referencias \
 foram medidas e nao tem bloom; sem ela alguem vai subir intensity achando que \
 esta se aproximando do alvo, quando esta se afastando." >&2
   exit 1
@@ -794,6 +801,9 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/src/config/grade_fields.cpp" \
   "${project_dir}/src/config/photorealism_profile.cpp" \
   "${project_dir}/src/config/profile_layer.cpp" \
+  "${project_dir}/src/config/profile_logging.cpp" \
+  "${project_dir}/src/config/profile_pending.cpp" \
+  "${project_dir}/src/config/profile_reference.cpp" \
   "${project_dir}/src/config/limits.cpp" \
   "${project_dir}/src/config/logging.cpp" \
   -o "${config_load_test}"
@@ -805,16 +815,20 @@ photorealism_profile_test="/tmp/photorealism-profile-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
   -I"${project_dir}/tests/support" -I"${project_dir}/src" \
   "${project_dir}/tests/photorealism_profile_test.cpp" \
+  "${project_dir}/src/config/profile_switch.cpp" \
   "${project_dir}/src/config/loader.cpp" \
   "${project_dir}/src/config/defaults.cpp" \
   "${project_dir}/src/config/section_table.cpp" \
   "${project_dir}/src/config/grade_fields.cpp" \
   "${project_dir}/src/config/photorealism_profile.cpp" \
   "${project_dir}/src/config/profile_layer.cpp" \
+  "${project_dir}/src/config/profile_logging.cpp" \
+  "${project_dir}/src/config/profile_pending.cpp" \
+  "${project_dir}/src/config/profile_reference.cpp" \
   "${project_dir}/src/config/limits.cpp" \
   "${project_dir}/src/config/logging.cpp" \
   -o "${photorealism_profile_test}"
-"${photorealism_profile_test}"
+PHOTOREALISM_PROJECT_DIR="${project_dir}" "${photorealism_profile_test}"
 
 # 0.19.13. A suavizacao nao pode depender da taxa de quadros. GetTickCount64
 # tem resolucao de ~15,6 ms: acima de 64 fps muitos quadros chegam com
@@ -882,7 +896,7 @@ effective_profile="$(awk -F= '
 # que importa. Uma guarda que explica uma regressao sutil so serve se for ela
 # a falar. Nesta ordem o hash continua pegando tudo que as guardas nao
 # cobrem, e so isso.
-expected_cfg_sha256="f25fcd07eb3cdbc3dd9bcc2bd960f279356cd0ab6ee4540d62f280e385edc81d"
+expected_cfg_sha256="60487267b13dfc21e1fa84f6dcab3fe56ede571a3cb70e8b79d768459be8f1b7"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
@@ -1236,6 +1250,9 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/src/config/grade_fields.cpp" \
   "${project_dir}/src/config/photorealism_profile.cpp" \
   "${project_dir}/src/config/profile_layer.cpp" \
+  "${project_dir}/src/config/profile_logging.cpp" \
+  "${project_dir}/src/config/profile_pending.cpp" \
+  "${project_dir}/src/config/profile_reference.cpp" \
   "${project_dir}/src/config/limits.cpp" \
   "${project_dir}/src/config/logging.cpp" \
   -o "${menu_roundtrip_test}"
@@ -1551,9 +1568,52 @@ if ! grep -Fq 'settings.condition_color_locked' \
   exit 1
 fi
 if ! awk '/^void Menu::ensure_baseline/,/^}/' "${project_dir}/src/overlay/overlay.cpp" |
-  grep -Fq 'settings_->photorealism_profile_enabled'; then
-  echo "A referencia do menu deixou de seguir o botao do perfil: o delta gravado \
-sai contra a composicao errada." >&2
+  grep -Fq 'carry_profile_choice(&stack, settings_);' ||
+  ! awk '/^void carry_profile_choice/,/^}/' "${project_dir}/src/config/profile_switch.cpp" |
+  grep -Fq 'live->photorealism_profile_enabled' ||
+  ! awk '/^void carry_profile_choice/,/^}/' "${project_dir}/src/config/profile_switch.cpp" |
+  grep -Fq 'live->profile_tonemap_set'; then
+  echo "A referencia do menu deixou de seguir o botao ou o conjunto do perfil: o \
+delta gravado sai contra a composicao errada." >&2
+  exit 1
+fi
+# 0.23.1. A exposicao noturna do conjunto so existe se o peso de noite chegar ao
+# desenho: a adaptacao por condicao mede a noite mesmo com a cor travada pelo
+# perfil, e a exposicao enviada ao shader soma esse peso.
+if ! grep -Fq 'night_weight_ = weights.night;' \
+  "${project_dir}/src/postprocess/condition_adapter.cpp" ||
+  ! grep -Fq 'input.night_weight = condition_.night_weight();' \
+  "${project_dir}/src/postprocess/postprocessor.cpp" ||
+  ! grep -Fq 'night_adjusted_exposure(settings, input.night_weight)' \
+  "${project_dir}/src/postprocess/frame_constants.cpp"; then
+  echo "A exposicao noturna do perfil deixou de chegar ao shader." >&2
+  exit 1
+fi
+adapter_body="$(awk '/^void ConditionAdapter::update/,/^}/' \
+  "${project_dir}/src/postprocess/condition_adapter.cpp")"
+night_line="$({ grep -n 'night_weight_ = weights.night;' <<<"${adapter_body}" || true; } | head -1 | cut -d: -f1)"
+lock_line="$({ grep -n 'settings.condition_color_locked' <<<"${adapter_body}" || true; } | head -1 | cut -d: -f1)"
+if [[ -z "${night_line}" || -z "${lock_line}" || "${night_line}" -gt "${lock_line}" ]]; then
+  echo "A trava de cor do perfil voltou a pular a deteccao da noite: a exposicao \
+noturna do conjunto nunca aplica com o perfil ligado." >&2
+  exit 1
+fi
+for profile_message in \
+  'Perfil photorealism 0.23.0 sem efeito (%s):%s.' \
+  'exposicao_noturna=%+.2fEV' \
+  'Menu trocou o grade: perfil photorealism %s conjunto=%.0f'; do
+  if ! grep -Fq "${profile_message}" "${dxgi_strings}"; then
+    echo "Linha do perfil sumiu do log: ${profile_message}" >&2
+    exit 1
+  fi
+done
+selection_body="$(awk '/^void Menu::step_selection/,/^}/' \
+  "${project_dir}/src/overlay/page_view.cpp")"
+inert_line="$({ grep -n 'if (binding.inert) {' <<<"${selection_body}" || true; } | head -1 | cut -d: -f1)"
+reset_line="$({ grep -n 'reset_binding(binding);' <<<"${selection_body}" || true; } | head -1 | cut -d: -f1)"
+if [[ -z "${inert_line}" || -z "${reset_line}" || "${inert_line}" -gt "${reset_line}" ]]; then
+  echo "Enter voltou a reiniciar linha cinza do menu: o valor mostrado deixa de \
+ser o do cfg ate a proxima recomposicao." >&2
   exit 1
 fi
 third_party_hits="$(grep -rli 'snowy' "${project_dir}/src" "${project_dir}/shaders" \
@@ -1879,6 +1939,7 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/src/config/grade_fields.cpp" \
   "${project_dir}/src/config/photorealism_profile.cpp" \
   "${project_dir}/src/config/profile_layer.cpp" \
+  "${project_dir}/src/config/profile_pending.cpp" \
   -o "${menu_save_test}"
 "${menu_save_test}"
 
@@ -1971,6 +2032,7 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/src/config/grade_fields.cpp" \
   "${project_dir}/src/config/photorealism_profile.cpp" \
   "${project_dir}/src/config/profile_layer.cpp" \
+  "${project_dir}/src/config/profile_pending.cpp" \
   -o "${overlay_bindings_test}"
 "${overlay_bindings_test}"
 

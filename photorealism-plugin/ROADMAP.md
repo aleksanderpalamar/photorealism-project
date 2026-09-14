@@ -529,14 +529,19 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   da revisao do PR #5, reproduzidos antes de corrigidos;
 - **0.23.0 (entregue)** perfil de tom do photorealism-plugin: o grade pode sair
   de um perfil com os valores de um cfg de referencia do usuario, conjunto 4,
-  no lugar das camadas medidas, que ficam intactas; aba Perfil no menu. Falta
-  rodar no jogo;
-- **0.23.1** FXAA do cfg de referencia, na imagem final e, com o FSR ligado,
+  no lugar das camadas medidas, que ficam intactas; aba Perfil no menu. Rodou
+  no jogo e foi aprovado pelo usuario;
+- **0.23.1 (entregue)** os cinco conjuntos de tom escolhiveis no menu, exposicao
+  noturna pelo peso de noite da adaptacao por condicao, as demais chaves do cfg
+  de referencia lidas e mostradas em cinza, e o cfg sem comentarios. Falta rodar
+  no jogo;
+- **0.23.2** FXAA do cfg de referencia, na imagem final e, com o FSR ligado,
   sobre o quadro interno antes do EASU;
 - **0.24.0** descoberta do G-buffer e do HDR do jogo, sem mudar a imagem:
   registro de todos os alvos de cada passe e captura unica para analise. Decide
   quais efeitos entre passes sao viaveis -- saturacao de albedo, iluminacao de
-  interior, espelhos, normais da estrada, SSS, motion blur -- e em que ordem.
+  interior, espelhos, normais da estrada, SSS, motion blur, e a pre-exposicao,
+  o pre-contraste e o contraste dinamico dos conjuntos de tom -- e em que ordem.
   Vegetacao e chuva so com troca de shader, sob nova decisao do usuario. A Fase 2
   do FSR (medicao e otimizacao dentro do D3D11) fica depois desses efeitos;
 - **0.25.0** raios de sol. E o efeito que as referencias realmente

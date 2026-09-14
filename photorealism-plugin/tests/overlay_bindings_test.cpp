@@ -6,6 +6,7 @@
 #include "../src/overlay/bindings/upscale_bindings.cpp"
 #include "../src/overlay/grade_keys.cpp"
 
+#include "config/profile_pending.hpp"
 #include "config/section_table.hpp"
 
 #include <cassert>
@@ -85,11 +86,11 @@ void grade_bindings_and_grade_keys_agree() {
 void module_bindings_are_never_marked_as_colour() {
     const SettingBinding* tables[] = {
         kRenderBindings, kConditionBindings, kObserverBindings,
-        kUpscaleBindings};
+        kUpscaleBindings, kProfileBindings};
     const std::size_t counts[] = {
         kRenderBindingCount, kConditionBindingCount, kObserverBindingCount,
-        kUpscaleBindingCount};
-    for (std::size_t table = 0; table < 4; ++table) {
+        kUpscaleBindingCount, kProfileBindingCount};
+    for (std::size_t table = 0; table < 5; ++table) {
         for (std::size_t index = 0; index < counts[table]; ++index) {
             assert(!tables[table][index].grade);
         }
@@ -111,6 +112,43 @@ void the_inert_bloom_controls_are_marked() {
     assert(inert == 2);
 }
 
+std::size_t greyed_rows_for(float Settings::*member) {
+    std::size_t rows = 0;
+    for (std::size_t index = 0; index < kProfileBindingCount; ++index) {
+        const SettingBinding& binding = kProfileBindings[index];
+        rows += binding.number == member && binding.inert ? 1 : 0;
+    }
+    return rows;
+}
+
+void every_pending_profile_key_has_one_greyed_row() {
+    for (std::size_t index = 0; index < kPendingProfileKeyCount; ++index) {
+        assert(greyed_rows_for(kPendingProfileKeys[index].member) == 1);
+        assert(pending_reason_text(kPendingProfileKeys[index].reason) != nullptr);
+    }
+    std::size_t pending_labels = 0;
+    for (std::size_t index = 0; index < kProfileBindingCount; ++index) {
+        const char* label = kProfileBindings[index].label;
+        pending_labels += label[std::strlen(label) - 1] == '*' ? 1 : 0;
+    }
+    assert(pending_labels == kPendingProfileKeyCount + 3);
+}
+
+void the_tonemap_set_is_chosen_on_the_menu_and_saved_in_the_profile() {
+    const SettingBinding& set = kProfileBindings[1];
+    assert(set.number == &Settings::profile_tonemap_set);
+    assert(!set.inert && set.decimals == 0);
+    assert(set.minimum == 1.0f && set.maximum == 5.0f);
+    assert(binding_switches_profile(set));
+    assert(binding_switches_profile(kProfileBindings[0]));
+    assert(!binding_switches_profile(kProfileBindings[2]));
+    const char* section = nullptr;
+    const char* key = nullptr;
+    assert(locate_number(set.number, &section, &key));
+    assert(std::strcmp(section, "profile.photorealism.0.23.0") == 0);
+    assert(std::strcmp(key, "tonemap_set") == 0);
+}
+
 }
 
 int main() {
@@ -121,6 +159,8 @@ int main() {
     module_bindings_are_never_marked_as_colour();
     the_observer_group_asks_for_a_reconfiguration();
     the_inert_bloom_controls_are_marked();
+    every_pending_profile_key_has_one_greyed_row();
+    the_tonemap_set_is_chosen_on_the_menu_and_saved_in_the_profile();
     std::printf("overlay_bindings_test ok\n");
     return 0;
 }

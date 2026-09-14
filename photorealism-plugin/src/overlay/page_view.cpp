@@ -99,11 +99,11 @@ void Menu::step_selection(const SettingPage& page, const Rect& body) {
         apply_change(binding);
         return;
     }
-    if (wants_toggle) {
-        reset_binding(binding);
+    if (binding.inert) {
         return;
     }
-    if (binding.inert) {
+    if (wants_toggle) {
+        reset_binding(binding);
         return;
     }
 

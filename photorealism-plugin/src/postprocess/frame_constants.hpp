@@ -21,6 +21,7 @@ struct FrameConstantsInput {
     bool output_needs_srgb_encode;
     float temperature;
     float tint;
+    float night_weight;
 };
 
 void upload_frame_constants(

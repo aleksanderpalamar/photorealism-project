@@ -157,6 +157,30 @@ void with_the_profile_on_the_menu_value_also_comes_back() {
     assert(near(after.exposure, on_screen));
 }
 
+void the_tonemap_set_chosen_on_the_menu_comes_back() {
+    std::string seed = kSeed;
+    seed.replace(seed.find("enabled=false"), 13, "enabled=true\ntonemap_set=4");
+    write_cfg(seed);
+    Settings before = {};
+    assert(load_settings(&before));
+    assert(before.profile_active_set == 4.0f);
+    assert(near(before.exposure, -0.06f));
+
+    std::string text = read_cfg();
+    assert(config_writer::set_value(
+        &text, "profile.photorealism.0.23.0", "tonemap_set", "2"));
+    write_cfg(text);
+
+    Settings after = {};
+    assert(load_settings(&after));
+    assert(after.profile_tonemap_set == 2.0f);
+    assert(after.profile_active_set == 2.0f);
+    assert(near(after.exposure, 0.25f));
+    assert(near(after.whites, -0.13f));
+    assert(read_cfg().find("[base.0.1.2]\nenabled=true\nexposure=0.20\n") !=
+           std::string::npos);
+}
+
 void a_zeroed_user_layer_changes_nothing() {
     write_cfg(kSeed);
     Settings before = {};
@@ -182,6 +206,7 @@ int main() {
     what_the_menu_saves_is_what_the_loader_gives_back();
     saving_never_touches_the_measured_layers();
     with_the_profile_on_the_menu_value_also_comes_back();
+    the_tonemap_set_chosen_on_the_menu_comes_back();
     a_zeroed_user_layer_changes_nothing();
     std::remove(kTempPath);
     std::printf("menu_roundtrip_test ok\n");

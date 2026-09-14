@@ -2,6 +2,7 @@
 
 #include "../config/config.hpp"
 #include "../config/limits.hpp"
+#include "../config/profile_switch.hpp"
 #include "../runtime.hpp"
 #include "font_bitmap.hpp"
 #include "input.hpp"
@@ -100,9 +101,7 @@ void Menu::ensure_baseline() {
     CalibrationStack stack = {};
     load_stack(&stack);
     on_disk_ = compose(stack);
-    stack.modules.photorealism_profile_enabled =
-        settings_ != nullptr ? settings_->photorealism_profile_enabled
-                             : stack.modules.photorealism_profile_enabled;
+    carry_profile_choice(&stack, settings_);
     baseline_ = measured_baseline(stack);
     defaults_ = default_settings();
     baseline_loaded_ = true;

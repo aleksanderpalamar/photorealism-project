@@ -12,6 +12,7 @@ struct Limit {
 };
 
 constexpr Limit kLimits[] = {
+    {&Settings::profile_tonemap_set, 1.0f, 5.0f},
     {&Settings::temperature, 3000.0f, 9000.0f},
     {&Settings::exposure, -2.0f, 2.0f},
     {&Settings::contrast, 0.5f, 1.5f},

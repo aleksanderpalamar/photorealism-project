@@ -1,6 +1,7 @@
 #include "defaults.hpp"
 
 #include "../scene/condition_model.hpp"
+#include "profile_pending.hpp"
 
 namespace photorealism {
 namespace {
@@ -100,6 +101,8 @@ CalibrationStack reference_stack() {
     stack.user_0_20 = user_delta_0_20();
     stack.profile = reference_profile();
     stack.modules.photorealism_profile_enabled = true;
+    stack.modules.profile_tonemap_set = static_cast<float>(kReferenceTonemapSet);
+    apply_pending_references(&stack.modules);
 
     stack.modules.depth_near_plane = 0.1f;
     stack.modules.depth_preview_distance = 50.0f;

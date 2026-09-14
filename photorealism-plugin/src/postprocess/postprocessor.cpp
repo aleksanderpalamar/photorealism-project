@@ -74,13 +74,16 @@ public:
     }
 
     void apply_profile_switch() {
-        switch_grade_profile(&settings_);
+        if (!switch_grade_profile(&settings_)) {
+            return;
+        }
         apply_scene_observer_settings();
         overlay::menu().bind(&settings_, this);
         log_message(
-            "Menu trocou o grade: perfil photorealism %s; valores recompostos "
-            "do cfg em disco, sem recompilar shader.",
-            settings_.photorealism_profile_enabled ? "ligado" : "desligado");
+            "Menu trocou o grade: perfil photorealism %s conjunto=%.0f; valores "
+            "recompostos do cfg em disco, sem recompilar shader.",
+            settings_.photorealism_profile_enabled ? "ligado" : "desligado",
+            static_cast<double>(settings_.profile_active_set));
     }
 
     struct FrameTargets {
@@ -510,6 +513,7 @@ public:
         input.output_needs_srgb_encode = targets.output_needs_srgb_encode;
         input.temperature = condition_.temperature();
         input.tint = condition_.tint();
+        input.night_weight = condition_.night_weight();
         upload_frame_constants(context_, pipeline_, settings_, input);
         FramePassScene scene = {};
         scene.context = context_;

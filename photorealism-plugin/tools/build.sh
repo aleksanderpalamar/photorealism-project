@@ -91,6 +91,9 @@ common_flags=(
   "${project_dir}/src/config/grade_fields.cpp" \
   "${project_dir}/src/config/photorealism_profile.cpp" \
   "${project_dir}/src/config/profile_layer.cpp" \
+  "${project_dir}/src/config/profile_logging.cpp" \
+  "${project_dir}/src/config/profile_pending.cpp" \
+  "${project_dir}/src/config/profile_reference.cpp" \
   "${project_dir}/src/config/profile_switch.cpp" \
   "${project_dir}/src/config/limits.cpp" \
   "${project_dir}/src/config/logging.cpp" \

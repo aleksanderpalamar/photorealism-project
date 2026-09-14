@@ -1,5 +1,54 @@
 # Changelog
 
+## Pacote 0.23.1 - 2026-09-14
+
+**Os cinco conjuntos de tom escolhiveis e as demais chaves do cfg de
+referencia.** Detalhes em `references/perfil-photorealism-0.23.1.md`.
+
+### O que muda
+
+- os cinco conjuntos de tom do cfg de referencia estao no cfg, com os valores
+  copiados como estao; o pacote continua saindo no conjunto 4;
+- aba **Perfil** do Ctrl+P com o slider "Conjunto de tom" (1 a 5): trocar o
+  conjunto recompoe o grade na hora, a partir do cfg em disco, e o Salvar grava
+  `tonemap_set` na secao do perfil. A referencia do menu segue o conjunto, para o
+  delta da camada do usuario bater com a tela;
+- exposicao noturna aplicada: `exposure + night_exposure * peso_de_noite`, com o
+  peso de noite da adaptacao por condicao. A adaptacao passou a medir a cena
+  tambem com a cor travada pelo perfil, sem mexer em temperatura e matiz. So o
+  conjunto 1 usa (+2 EV);
+- as outras 26 chaves do cfg de referencia entram na secao do perfil com os
+  valores dele (`lighting_interior=0.17`, `use_sss=1`, `fxaa=1`, `taa=4`,
+  `hide_show_key=520`, ...). Sao lidas, mostradas em cinza no menu com `*` e
+  listadas no log com o motivo de ainda nao terem efeito; o menu nunca as grava.
+  Pre-exposicao, pre-contraste e contraste dinamico do conjunto tambem aparecem
+  em cinza, pendentes do HDR do jogo;
+- Enter numa linha cinza do menu nao reinicia mais o valor;
+- o cfg empacotado nao tem mais comentarios. Nenhum valor mudou; a
+  justificativa de cada numero segue neste CHANGELOG, em `references/` e no cfg
+  da 0.23.0 no historico do git.
+
+### O que e suposicao
+
+Que a exposicao noturna do cfg de referencia seja um acrescimo em EV que cresce
+com a noite. As chaves sem efeito foram copiadas sem interpretar.
+
+### Verificacao
+
+`photorealism_profile_test` ganhou os cinco conjuntos contra a referencia, o cfg
+empacotado contra o default interno (conjuntos, `tonemap_set` e as 26 chaves),
+arredondamento e limite do conjunto, grade e exposicao noturna seguindo o
+conjunto escolhido, chaves pendentes sem tocar no grade e a recomposicao so
+quando a escolha muda. `menu_roundtrip_test` grava o conjunto e rele;
+`overlay_bindings_test` exige uma linha cinza por chave pendente e o slider do
+conjunto gravando na secao do perfil. Guardas novas, quebradas de proposito numa
+copia: peso de noite antes da trava de cor, exposicao noturna no shader,
+referencia do menu com o conjunto, cinco conjuntos no cfg, Enter em linha cinza,
+linhas novas do log. A guarda que lia a ressalva do bloom no cfg passou a le-la
+no log do modulo.
+
+**Ainda nao rodou no jogo.**
+
 ## Pacote 0.23.0 - 2026-09-14
 
 **Perfil de tom do photorealism-plugin.** O grade pode sair de um perfil com os

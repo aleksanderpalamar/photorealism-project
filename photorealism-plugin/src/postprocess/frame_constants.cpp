@@ -1,5 +1,6 @@
 #include "frame_constants.hpp"
 
+#include "../config/profile_layer.hpp"
 #include "shader_constants.hpp"
 
 #include <cmath>
@@ -34,7 +35,7 @@ void upload_visual_constants(
         1.0f / static_cast<float>(input.description.Width);
     constants.texel_size[1] =
         1.0f / static_cast<float>(input.description.Height);
-    constants.exposure = settings.exposure;
+    constants.exposure = night_adjusted_exposure(settings, input.night_weight);
     constants.temperature = input.temperature;
     constants.contrast = settings.contrast;
     constants.saturation = settings.saturation;

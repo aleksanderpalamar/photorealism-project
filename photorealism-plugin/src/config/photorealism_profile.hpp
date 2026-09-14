@@ -3,6 +3,7 @@
 namespace photorealism {
 
 constexpr unsigned kProfileTonemapSets = 5;
+constexpr unsigned kReferenceTonemapSet = 4;
 
 struct PhotorealismTonemap {
     float temperature = 6500.0f;
@@ -21,7 +22,6 @@ struct PhotorealismTonemap {
 };
 
 struct PhotorealismProfile {
-    unsigned tonemap_set = 1;
     PhotorealismTonemap sets[kProfileTonemapSets];
     float sharpness = 0.0f;
     float sharpen_edges = 0.0f;
@@ -30,7 +30,9 @@ struct PhotorealismProfile {
 
 bool apply_profile_key(
     PhotorealismProfile* profile, const char* key, const char* value);
-const PhotorealismTonemap& active_tonemap(const PhotorealismProfile& profile);
+unsigned tonemap_set_number(float chosen);
+const PhotorealismTonemap& active_tonemap(
+    const PhotorealismProfile& profile, float chosen);
 bool uses_pending_controls(const PhotorealismTonemap& tonemap);
 PhotorealismProfile reference_profile();
 
