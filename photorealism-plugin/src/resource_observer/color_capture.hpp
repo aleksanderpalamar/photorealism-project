@@ -17,6 +17,7 @@ class ColorCapture {
   private:
     bool ensure(ID3D11DeviceContext* context, const D3D11_TEXTURE2D_DESC& source);
 
+    ID3D11DeviceContext* owner_ = nullptr;
     ID3D11Texture2D* copy_ = nullptr;
     ID3D11ShaderResourceView* view_ = nullptr;
     UINT width_ = 0;

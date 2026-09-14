@@ -6,6 +6,7 @@
 #include "../native_aa/config_text.hpp"
 #include "../native_aa/game_target.hpp"
 #include "render_scale.hpp"
+#include "scale_axes.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -17,7 +18,6 @@ namespace fsr {
 namespace {
 
 constexpr const char* kFsrSection = "module.fsr.0.21.0";
-constexpr const char* kScaleKeys[] = {"r_scale_x", "r_scale_y"};
 constexpr const wchar_t* kTemporary = L"config.photorealism-fsr.tmp";
 constexpr const wchar_t* kSavedScale = L"config.photorealism-fsr-scale.saved";
 
@@ -46,24 +46,19 @@ bool sibling_of(const wchar_t* config_path, const wchar_t* name, wchar_t* out) {
     return paths::append_path(out, MAX_PATH, name);
 }
 
-std::string read_saved_scale(const wchar_t* config_path) {
+ScaleAxes read_saved_scale(const wchar_t* config_path) {
     wchar_t saved_path[MAX_PATH] = {};
     if (!sibling_of(config_path, kSavedScale, saved_path)) {
-        return std::string();
+        return ScaleAxes{};
     }
     std::string saved;
     if (!config_io::read_file(saved_path, &saved)) {
-        return std::string();
+        return ScaleAxes{};
     }
-    while (!saved.empty() &&
-           (saved.back() == '\n' || saved.back() == '\r' ||
-            saved.back() == ' ')) {
-        saved.pop_back();
-    }
-    return saved;
+    return parse_saved_scale(saved);
 }
 
-void remember_scale(const wchar_t* config_path, const std::string& value) {
+void remember_scale(const wchar_t* config_path, const ScaleAxes& value) {
     wchar_t saved_path[MAX_PATH] = {};
     if (!sibling_of(config_path, kSavedScale, saved_path)) {
         return;
@@ -72,7 +67,7 @@ void remember_scale(const wchar_t* config_path, const std::string& value) {
     if (config_io::read_file(saved_path, &existing)) {
         return;
     }
-    config_io::write_atomic(saved_path, kTemporary, value);
+    config_io::write_atomic(saved_path, kTemporary, format_saved_scale(value));
 }
 
 void forget_scale(const wchar_t* config_path) {
@@ -94,24 +89,6 @@ float desired_scale(const std::string& plugin_config) {
         return 1.0f;
     }
     return clamp_scale(static_cast<float>(std::atof(scale.c_str())));
-}
-
-bool rewrite_scale(
-    std::string* contents, const std::string& printed, std::string* before) {
-    bool changed = false;
-    for (const char* key : kScaleKeys) {
-        const std::string current = aa_config::config_value(*contents, key);
-        if (before->empty()) {
-            *before = current;
-        }
-        if (current == "ausente" || current == printed) {
-            continue;
-        }
-        changed =
-            aa_config::set_config_value(contents, key, printed.c_str()) ||
-            changed;
-    }
-    return changed;
 }
 
 }
@@ -140,8 +117,8 @@ void apply_render_scale_to_game(HMODULE proxy_module) {
     }
 
     const bool enabled = fsr_is_enabled(plugin_config);
-    const std::string saved = read_saved_scale(target.config_path);
-    if (!enabled && saved.empty()) {
+    const ScaleAxes saved = read_saved_scale(target.config_path);
+    if (!enabled && axes_empty(saved)) {
         native_aa::log_config(
             proxy_module,
             "FSR escala: desligado e nada emprestado -- o Scaling das opcoes "
@@ -150,8 +127,8 @@ void apply_render_scale_to_game(HMODULE proxy_module) {
         return;
     }
 
-    std::string before;
-    std::string wanted = saved;
+    const ScaleAxes before = read_game_scale(game_config);
+    ScaleAxes wanted = saved;
     if (enabled) {
         char printed[32] = {};
         std::snprintf(
@@ -159,14 +136,15 @@ void apply_render_scale_to_game(HMODULE proxy_module) {
             sizeof(printed),
             "%.6f",
             static_cast<double>(desired_scale(plugin_config)));
-        wanted = printed;
+        wanted = ScaleAxes{printed, printed};
     }
 
-    if (!rewrite_scale(&game_config, wanted, &before)) {
+    if (!write_game_scale(&game_config, wanted)) {
         native_aa::log_config(
             proxy_module,
-            "FSR escala: r_scale ja em %s, nenhuma alteracao no %s.",
-            wanted.c_str(),
+            "FSR escala: r_scale_x/y ja em %s/%s, nenhuma alteracao no %s.",
+            wanted.x.c_str(),
+            wanted.y.c_str(),
             target.name);
         if (!enabled) {
             forget_scale(target.config_path);
@@ -184,9 +162,11 @@ void apply_render_scale_to_game(HMODULE proxy_module) {
     }
     native_aa::log_config(
         proxy_module,
-        "FSR escala: r_scale_x/y de %s para %s no %s (%s). Gravacao %s.",
-        before.c_str(),
-        wanted.c_str(),
+        "FSR escala: r_scale_x/y de %s/%s para %s/%s no %s (%s). Gravacao %s.",
+        before.x.c_str(),
+        before.y.c_str(),
+        wanted.x.c_str(),
+        wanted.y.c_str(),
         target.name,
         enabled ? "emprestado pelo FSR, guardado para devolver"
                 : "devolvido ao valor que era seu",

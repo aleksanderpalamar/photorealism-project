@@ -11,7 +11,7 @@ bool ColorCapture::ensure(
     ID3D11DeviceContext* context, const D3D11_TEXTURE2D_DESC& source) {
     const UINT family = scene_formats::resolve_typeless(
         static_cast<unsigned>(source.Format));
-    if (copy_ != nullptr && width_ == source.Width &&
+    if (copy_ != nullptr && owner_ == context && width_ == source.Width &&
         height_ == source.Height && family_ == family) {
         return true;
     }
@@ -54,6 +54,7 @@ bool ColorCapture::ensure(
         return false;
     }
 
+    owner_ = context;
     width_ = source.Width;
     height_ = source.Height;
     family_ = family;
@@ -83,6 +84,7 @@ bool ColorCapture::copy_from(
 void ColorCapture::release() {
     safe_release(view_);
     safe_release(copy_);
+    owner_ = nullptr;
     width_ = 0;
     height_ = 0;
     family_ = 0;

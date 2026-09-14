@@ -1466,9 +1466,44 @@ Scaling do usuario sem guardar nem devolver o valor que era dele." >&2
     exit 1
   fi
 done
-if ! grep -Fq 'if (!enabled && saved.empty())' <<<"${game_scale_body}"; then
+if ! grep -Fq 'if (!enabled && axes_empty(saved))' <<<"${game_scale_body}"; then
   echo "O plugin voltou a mexer no r_scale com o FSR desligado e nada \
 emprestado: isso apaga o Scaling que o usuario escolheu." >&2
+  exit 1
+fi
+
+# O r_scale do ETS2 tem dois eixos, e os presets do menu grafico usam valores
+# diferentes em cada um: o de 75% grava x=0.75 e y=1. Ate a 0.22.7 o plugin
+# guardava so o x e devolvia esse valor aos dois, e 75% voltava como 56%.
+for scale_axis_call in 'read_game_scale(game_config)' \
+  'ScaleAxes wanted = saved;' \
+  'write_game_scale(&game_config, wanted)' \
+  'remember_scale(target.config_path, before)'; do
+  if ! grep -Fq "${scale_axis_call}" <<<"${game_scale_body}"; then
+    echo "A escala deixou de guardar e devolver os dois eixos separados: falta \
+${scale_axis_call}" >&2
+    exit 1
+  fi
+done
+if grep -Fq 'kScaleKeys' "${project_dir}/src/fsr/game_scale.cpp"; then
+  echo "A escala voltou a percorrer os eixos com um valor unico." >&2
+  exit 1
+fi
+
+# Troca de dispositivo D3D11 com o FSR ligado: a copia do quadro interno era
+# reaproveitada por tamanho e formato, e o proximo quadro copiava uma textura
+# do dispositivo novo para dentro de um recurso do antigo. Reproduzido na GPU:
+# com a 0.22.7 a copia continuava no dispositivo antigo.
+adopt_body="$(awk '/^    bool adopt_device\(/,/^    }/' \
+  "${project_dir}/src/postprocess/postprocessor.cpp")"
+for device_swap_call in 'fsr::upscaler().release();' 'reset_color_discovery();'; do
+  if ! grep -Fq "${device_swap_call}" <<<"${adopt_body}"; then
+    echo "A troca de dispositivo deixou de reiniciar o FSR: falta ${device_swap_call}" >&2
+    exit 1
+  fi
+done
+if ! grep -Fq 'owner_ == context' "${project_dir}/src/resource_observer/color_capture.cpp"; then
+  echo "A copia do quadro interno voltou a ignorar a qual contexto pertence." >&2
   exit 1
 fi
 
@@ -1513,8 +1548,8 @@ for fsr_default in 'render_scale=0.8660=fsr_render_scale = 0.8660f' 'grain=0.30=
   fi
 done
 
-for game_scale_key in 'r_scale_x' 'r_scale_y'; do
-  if ! grep -Fq "${game_scale_key}" "${project_dir}/src/fsr/game_scale.cpp"; then
+for game_scale_key in '"r_scale_x"' '"r_scale_y"'; do
+  if ! grep -Fq "${game_scale_key}" "${project_dir}/src/fsr/scale_axes.hpp"; then
     echo "A escala interna do jogo perdeu ${game_scale_key}: sem escrever \
 r_scale no config do ETS2, o jogo desenha em resolucao cheia e nao ha ganho." >&2
     exit 1
@@ -1753,6 +1788,12 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/tests/fsr_easu_constants_test.cpp" \
   -o "${fsr_easu_constants_test}"
 "${fsr_easu_constants_test}"
+
+fsr_scale_axes_test="/tmp/photorealism-fsr-scale-axes-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/fsr_scale_axes_test.cpp" \
+  -o "${fsr_scale_axes_test}"
+"${fsr_scale_axes_test}"
 
 fsr_rcas_constants_test="/tmp/photorealism-fsr-rcas-constants-test"
 g++ -std=c++20 -Wall -Wextra -Werror \

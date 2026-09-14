@@ -524,6 +524,9 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
 - **0.22.7 (entregue)** granulacao LFGA padrao em 0.30, escolhida pelo usuario
   no jogo. Falta o numero da Fase 1, tempo de GPU nativo contra tempo com
   upscale;
+- **0.22.8 (entregue)** a escala do jogo e guardada e devolvida por eixo, e a
+  captura do FSR se reinicia na troca de dispositivo D3D11 -- os dois defeitos
+  da revisao do PR #5, reproduzidos antes de corrigidos;
 - **0.23.0** raios de sol. E o efeito que as referencias realmente
   mostram, e que a medicao do bloom revelou: estriados radiais saindo do sol
   atras da linha de arvores, projetados no teto escuro da cabine. Sao

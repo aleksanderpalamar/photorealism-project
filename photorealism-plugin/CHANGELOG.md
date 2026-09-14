@@ -1,5 +1,38 @@
 # Changelog
 
+## Pacote 0.22.8 - 2026-09-13
+
+**Dois defeitos apontados pela revisao automatica do PR #5.** Os dois foram
+reproduzidos antes de corrigidos.
+
+### A escala do jogo voltava errada quando os eixos eram diferentes
+
+O ETS2 guarda a escala em `r_scale_x` e `r_scale_y`, e os presets do menu
+grafico usam valores diferentes em cada eixo: o de 75% grava `x=0.75` e `y=1`
+(visto no `config.cfg` do usuario na 0.22.4). Ao ligar o FSR, o plugin guardava
+so o `r_scale_x`; ao desligar, devolvia esse valor aos dois eixos. Reproduzido
+com a logica antiga: `x=0.75 y=1` voltava como `x=0.75 y=0.75` -- 56% no lugar
+de 75%, a configuracao grafica do jogador alterada pelo plugin.
+
+Agora os dois eixos sao lidos, guardados e devolvidos separados
+(`scale_axes.hpp`, testado no host). O arquivo `config.photorealism-fsr-scale.saved`
+passa a ter duas linhas; o de uma linha, das versoes anteriores, continua valendo
+para os dois eixos. Um eixo que o jogo nunca escreveu nunca e inventado.
+
+### A copia do quadro interno sobrevivia a troca de dispositivo D3D11
+
+A copia era reaproveitada por tamanho e formato. Se o jogo recriasse o
+dispositivo D3D11 com o FSR ligado, o resto do plugin se reiniciava, mas a
+captura do FSR nao: o proximo quadro copiava uma textura do dispositivo novo
+para dentro de um recurso do antigo e ligava esse recurso no contexto novo --
+proibido no D3D11, indefinido no DXVK. Reproduzido na GPU, no DXVK do usuario,
+com dois dispositivos reais: com a logica antiga a copia continuava no
+dispositivo antigo e `copy_from` dizia que tinha copiado.
+
+Agora a troca de dispositivo libera o FSR e reinicia a captura de cor, como o
+depth ja fazia, e a copia so e reaproveitada no mesmo contexto. Nenhuma sessao
+do usuario registrou troca de dispositivo; o defeito nao estava aparecendo.
+
 ## Pacote 0.22.7 - 2026-09-13
 
 **A granulacao LFGA passa a vir em 0.30.** Escolha do usuario no jogo com a

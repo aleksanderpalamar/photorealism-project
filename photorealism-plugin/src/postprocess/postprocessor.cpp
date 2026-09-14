@@ -178,6 +178,8 @@ public:
         reset_device();
         if (replacing_device) {
             restart_depth_discovery_for_device_change();
+            fsr::upscaler().release();
+            reset_color_discovery();
         }
         active_swap_chain_ = swap_chain;
         device_ = frame_device;
