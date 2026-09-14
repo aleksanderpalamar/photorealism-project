@@ -88,13 +88,11 @@ common_flags=(
   "${project_dir}/src/config/path_utils.cpp" \
   "${project_dir}/src/config/defaults.cpp" \
   "${project_dir}/src/config/section_table.cpp" \
-  "${project_dir}/src/config/grade_fields.cpp" \
   "${project_dir}/src/config/photorealism_profile.cpp" \
-  "${project_dir}/src/config/profile_layer.cpp" \
+  "${project_dir}/src/config/profile_fields.cpp" \
   "${project_dir}/src/config/profile_logging.cpp" \
-  "${project_dir}/src/config/profile_pending.cpp" \
   "${project_dir}/src/config/profile_reference.cpp" \
-  "${project_dir}/src/config/profile_switch.cpp" \
+  "${project_dir}/src/config/profile_state.cpp" \
   "${project_dir}/src/config/limits.cpp" \
   "${project_dir}/src/config/logging.cpp" \
   "${project_dir}/src/resource_observer/discovery_control.cpp" \
@@ -116,16 +114,14 @@ common_flags=(
   "${project_dir}/src/overlay/layout.cpp" \
   "${project_dir}/src/overlay/panel.cpp" \
   "${project_dir}/src/overlay/page_view.cpp" \
+  "${project_dir}/src/overlay/page_rows.cpp" \
+  "${project_dir}/src/overlay/page_keys.cpp" \
   "${project_dir}/src/overlay/persistence.cpp" \
-  "${project_dir}/src/overlay/grade_keys.cpp" \
   "${project_dir}/src/overlay/widgets/button.cpp" \
   "${project_dir}/src/overlay/widgets/slider.cpp" \
-  "${project_dir}/src/overlay/bindings/grade_bindings.cpp" \
-  "${project_dir}/src/overlay/bindings/render_bindings.cpp" \
-  "${project_dir}/src/overlay/bindings/condition_bindings.cpp" \
-  "${project_dir}/src/overlay/bindings/upscale_bindings.cpp" \
-  "${project_dir}/src/overlay/bindings/profile_bindings.cpp" \
-  "${project_dir}/src/overlay/bindings/pages.cpp" \
+  "${project_dir}/src/overlay/widgets/choice.cpp" \
+  "${project_dir}/src/overlay/bindings/binding_values.cpp" \
+  "${project_dir}/src/overlay/bindings/menu_pages.cpp" \
   "${project_dir}/src/overlay/font.cpp" \
   "${project_dir}/src/overlay/font_bitmap.cpp" \
   "${project_dir}/src/overlay/text.cpp" \

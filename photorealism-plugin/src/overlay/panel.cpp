@@ -1,5 +1,6 @@
 #include "layout.hpp"
 #include "overlay.hpp"
+#include "page_metrics.hpp"
 #include "persistence.hpp"
 #include "text.hpp"
 #include "theme.hpp"
@@ -12,15 +13,22 @@ namespace overlay {
 namespace {
 
 constexpr float kCloseSize = 22.0f;
-constexpr float kTabHeight = 28.0f;
 constexpr float kHeaderHeight = 26.0f;
 constexpr float kFooterRows = 2.0f;
 
 }
 
 MenuFrame Menu::frame_for(float width, float height) const {
+    const float footer_height =
+        kFooterRows * theme::kRowHeight + theme::kRowGap + theme::kPadding;
+    const float chrome_height = theme::kTitleBarHeight + theme::kPadding +
+                                kHeaderHeight + theme::kRowGap +
+                                theme::kRowGap * 2.0f + footer_height;
+    const float content =
+        content_height_of(setting_pages()[page_]) + theme::kPadding;
     const float available = height - theme::kPadding * 4.0f;
-    const float panel_height = available < 760.0f ? available : 760.0f;
+    const float wanted = chrome_height + content;
+    const float panel_height = wanted < available ? wanted : available;
 
     MenuFrame frame = {};
     frame.panel.width = theme::kPanelWidth;
@@ -28,22 +36,22 @@ MenuFrame Menu::frame_for(float width, float height) const {
     frame.panel.x = (width - frame.panel.width) * 0.5f;
     frame.panel.y = (height - frame.panel.height) * 0.5f;
 
-    const float footer_height =
-        kFooterRows * theme::kRowHeight + theme::kRowGap + theme::kPadding;
-    const float body_top = frame.panel.y + theme::kTitleBarHeight +
-                           theme::kPadding + kTabHeight + theme::kRowGap +
-                           kHeaderHeight + theme::kRowGap;
-
-    frame.body.x = frame.panel.x + theme::kPadding;
-    frame.body.y = body_top;
-    frame.body.width = frame.panel.width - theme::kPadding * 2.0f;
-    frame.body.height =
-        frame.panel.y + frame.panel.height - footer_height - body_top;
-
-    frame.footer.x = frame.body.x;
-    frame.footer.y = frame.panel.y + frame.panel.height - footer_height;
-    frame.footer.width = frame.body.width;
-    frame.footer.height = footer_height;
+    const float inner_x = frame.panel.x + theme::kPadding;
+    const float inner_width = frame.panel.width - theme::kPadding * 2.0f;
+    frame.header = {
+        inner_x,
+        frame.panel.y + theme::kTitleBarHeight + theme::kPadding,
+        inner_width,
+        kHeaderHeight};
+    frame.body.x = inner_x;
+    frame.body.y = frame.header.y + kHeaderHeight + theme::kRowGap + 2.0f;
+    frame.body.width = inner_width;
+    frame.footer = {
+        inner_x,
+        frame.panel.y + frame.panel.height - footer_height,
+        inner_width,
+        footer_height};
+    frame.body.height = frame.footer.y - theme::kRowGap * 2.0f - frame.body.y;
     return frame;
 }
 
@@ -93,44 +101,9 @@ void Menu::draw_chrome(UiContext& ui, const MenuFrame& frame) {
         }
     }
 
-    const float tabs_top =
-        panel.y + theme::kTitleBarHeight + theme::kPadding;
-    const std::size_t count = setting_page_count();
-    const float gap = theme::kRowGap;
-    const float tab_width =
-        (frame.body.width - gap * static_cast<float>(count - 1)) /
-        static_cast<float>(count);
-    for (std::size_t index = 0; index < count; ++index) {
-        const Rect tab = {
-            frame.body.x + (tab_width + gap) * static_cast<float>(index),
-            tabs_top,
-            tab_width,
-            kTabHeight};
-        tab_header(ui, tab, setting_pages()[index].tab, index == page_);
-        if (ui.pointer.pressed && rect_contains(tab, ui.pointer.x, ui.pointer.y)) {
-            page_ = index;
-            scroll_ = 0.0f;
-        }
-    }
-
-    const Rect header = {
-        frame.body.x,
-        tabs_top + kTabHeight + gap,
-        frame.body.width,
-        kHeaderHeight};
-    draw_text(
-        *ui.list,
-        *ui.font,
-        header.x,
-        header.y + (header.height - ui.font->line_height()) * 0.5f,
-        setting_pages()[page_].title,
+    draw_text_centered(
+        *ui.list, *ui.font, frame.header, setting_pages()[page_].title,
         theme::kText);
-    draw_text_right(
-        *ui.list,
-        *ui.font,
-        header,
-        "setas ajustam  enter reinicia  tab troca de aba",
-        theme::kTextDim);
 }
 
 void Menu::draw_footer(UiContext& ui, const MenuFrame& frame) {
@@ -148,9 +121,8 @@ void Menu::draw_footer(UiContext& ui, const MenuFrame& frame) {
     const Rect discard = {
         first.x + half + theme::kRowGap, first.y, half, first.height};
     if (button(ui, save, "Salvar no cfg", true)) {
-        ensure_baseline();
-        const SaveReport report =
-            save_settings(*settings_, baseline_, on_disk_);
+        ensure_on_disk();
+        const SaveReport report = save_settings(*settings_, on_disk_);
         if (report.written) {
             on_disk_ = *settings_;
         }

@@ -1,9 +1,12 @@
 #pragma once
 
+#include <cstddef>
+
 namespace photorealism {
 
 constexpr unsigned kProfileTonemapSets = 5;
-constexpr unsigned kReferenceTonemapSet = 4;
+constexpr unsigned kLightingMethods = 4;
+constexpr float kReferenceLightingMethod = 3.0f;
 
 struct PhotorealismTonemap {
     float temperature = 6500.0f;
@@ -21,19 +24,19 @@ struct PhotorealismTonemap {
     float night_exposure = 0.0f;
 };
 
-struct PhotorealismProfile {
-    PhotorealismTonemap sets[kProfileTonemapSets];
-    float sharpness = 0.0f;
-    float sharpen_edges = 0.0f;
-    float ssao_intensity = 1.0f;
+struct TonemapField {
+    const char* name;
+    float PhotorealismTonemap::*member;
+    int decimals;
 };
 
-bool apply_profile_key(
-    PhotorealismProfile* profile, const char* key, const char* value);
-unsigned tonemap_set_number(float chosen);
-const PhotorealismTonemap& active_tonemap(
-    const PhotorealismProfile& profile, float chosen);
+extern const TonemapField kTonemapFields[];
+extern const std::size_t kTonemapFieldCount;
+
+bool apply_tonemap_key(
+    PhotorealismTonemap* sets, const char* key, const char* value);
+unsigned active_set_index(float lighting_method);
 bool uses_pending_controls(const PhotorealismTonemap& tonemap);
-PhotorealismProfile reference_profile();
+void reference_tonemap_sets(PhotorealismTonemap* sets);
 
 }

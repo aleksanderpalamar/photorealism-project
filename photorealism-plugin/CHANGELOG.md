@@ -1,5 +1,70 @@
 # Changelog
 
+## Pacote 0.23.2 - 2026-09-14
+
+**O perfil faz todo o trabalho, e o menu segue as telas de referencia.** A 0.23.1
+foi reprovada no jogo: trocar o perfil arrastando slider e as chaves ainda sem
+efeito esmaecidas. Detalhes em `references/perfil-photorealism-0.23.2.md`.
+
+### O que muda na imagem
+
+- o grade vem so de `[profile.photorealism.0.23.0]`. Sairam do cfg e do codigo as
+  camadas medidas (`base.0.1.2`, `module.visual.0.2.0`,
+  `module.rain_overcast.0.3.0`), a camada do usuario (`module.user.0.20.0`) e a
+  adaptacao de cor por condicao (`module.condition_adaptation.0.19.0`). Piso de
+  preto, joelho de altas luzes, matiz e vinheta ficam neutros, como o perfil ja
+  fazia na 0.23.0;
+- o conjunto de tom segue `lighting_method`: A usa o conjunto 1, B o 2, C o 3 e D
+  o 4. O pacote sai em D, o mesmo conjunto 4 aprovado na 0.23.0. O conjunto 5
+  continua lido e nenhuma iluminacao o usa;
+- `taa` liga e desliga o resolve temporal do plugin: 0 desliga; 1 e 2 ligam; 3 a 6
+  sao DLAA/DLSS, sem suporte, e ligam o resolve do plugin no lugar. O pacote traz
+  `taa=4`, copiado do cfg de referencia;
+- as secoes `depth.0.6.4`, `module.ssao.0.7.0`, `module.ssao_refinement.0.8.0`,
+  `module.ssao_interior.0.9.0` e `module.temporal.0.10.0` sairam do cfg. SSAO e
+  resolve temporal continuam rodando com os mesmos valores, agora internos; o SSAO
+  so se ajusta por `ssao_intensity` do perfil;
+- a deteccao de noite continua, interna, e so pesa a exposicao noturna do
+  conjunto.
+
+### O que muda no menu
+
+- sem abas: pagina inicial com iluminacao e qualidade em listas suspensas e botoes
+  para Anti-aliasing / Motion blur, Renderizacao / Iluminacao, Cores / Tom,
+  Objetos (Superficie, Estradas, Vegetacao) e Upscale FSR, cada pagina com
+  Voltar;
+- escolha entre opcoes e lista suspensa, chave 0/1 e botao ligado/desligado,
+  slider so para faixa continua, sliders inteiros andam de 1 em 1; nada esmaecido;
+- Cores / Tom edita o conjunto da iluminacao escolhida, e o Salvar grava
+  `tonemap_<controle>_<n>` desse conjunto;
+- Restaurar padroes devolve o perfil inteiro aos valores do cfg de referencia;
+- sairam as abas Render, Clima e Cena. Observador de cena e bloom continuam no
+  cfg; FSR ganhou pagina propria;
+- teclado: setas movem e ajustam, Enter abre, liga ou reinicia, Tab volta.
+
+### Guardas que mudaram
+
+Sairam as que fixavam as camadas medidas no cfg (secoes, `black_lift`, `tint`,
+`blacks`, perfil cumulativo somado por awk), a da ordem da camada do usuario, a da
+trava de cor da adaptacao e as de valor de SSAO/temporal/depth no cfg. Entraram:
+secoes aposentadas nao podem voltar ao cfg, valores internos de SSAO e temporal
+fixados em `defaults.cpp`, a cor nao pode voltar a vir da adaptacao, e a cor do
+menu tem que ir e voltar do conjunto da iluminacao ativa.
+
+### Verificacao
+
+Testes reescritos: `config_load_test` (cfg empacotado igual ao default interno em
+todas as chaves do perfil, secoes aposentadas ignoradas, limites),
+`photorealism_profile_test` (iluminacao escolhe o conjunto, perfil como unica
+fonte, edicao presa ao proprio conjunto, restaurar padroes),
+`menu_roundtrip_test` (Salvar do menu de verdade e releitura),
+`menu_save_test` e `overlay_bindings_test` (toda pagina alcancavel e com Voltar,
+nenhum slider escolhendo entre opcoes, listas andando uma opcao por vez). O menu
+foi rasterizado fora do jogo, pagina por pagina e com as listas abertas, e
+conferido nas imagens.
+
+**Ainda nao rodou no jogo.**
+
 ## Pacote 0.23.1 - 2026-09-14
 
 **Os cinco conjuntos de tom escolhiveis e as demais chaves do cfg de

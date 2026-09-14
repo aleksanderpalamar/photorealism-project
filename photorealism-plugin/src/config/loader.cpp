@@ -2,10 +2,9 @@
 
 #include "../runtime.hpp"
 #include "defaults.hpp"
-#include "grade_fields.hpp"
 #include "limits.hpp"
 #include "logging.hpp"
-#include "profile_layer.hpp"
+#include "profile_state.hpp"
 #include "section_table.hpp"
 #include "text_utils.hpp"
 
@@ -16,35 +15,6 @@
 
 namespace photorealism {
 namespace {
-
-void compose_measured(const CalibrationStack& stack, Settings* settings) {
-    if (stack.base.enabled) {
-        copy_base_layer(settings, stack.base);
-    }
-    add_delta_layer(settings, stack.visual_0_2);
-    add_delta_layer(settings, stack.rain_overcast_0_3);
-}
-
-void compose_profile(const CalibrationStack& stack, Settings* settings) {
-    copy_base_layer(
-        settings, profile_base_layer(stack.profile, settings->profile_tonemap_set));
-    apply_profile_outputs(settings, stack.profile);
-}
-
-Settings compose_layers(const CalibrationStack& stack) {
-    Settings settings = stack.modules;
-    reset_profile_outputs(&settings);
-
-    if (settings.photorealism_profile_enabled) {
-        compose_profile(stack, &settings);
-    } else {
-        compose_measured(stack, &settings);
-    }
-    add_delta_layer(&settings, stack.user_0_20);
-
-    apply_limits(&settings);
-    return settings;
-}
 
 bool read_section_header(char* content, const SectionSpec** section) {
     if (*content != '[') {
@@ -75,7 +45,7 @@ bool is_ignorable(const char* content) {
     return *content == '\0' || *content == '#' || *content == ';';
 }
 
-void read_stack_from_file(FILE* file, CalibrationStack* stack) {
+void read_settings_from_file(FILE* file, Settings* settings) {
     const SectionSpec* section = nullptr;
     char line[512] = {};
     while (std::fgets(line, sizeof(line), file) != nullptr) {
@@ -91,52 +61,55 @@ void read_stack_from_file(FILE* file, CalibrationStack* stack) {
         if (!split_key_value(content, &key, &value)) {
             continue;
         }
-        apply_setting(stack, section, key, value);
+        apply_setting(settings, section, key, value);
     }
 }
+
+}
+
+void finish_settings(Settings* settings) {
+    apply_active_tonemap(settings);
+    derive_profile_controls(settings);
+    apply_limits(settings);
 }
 
 Settings default_settings() {
-    return compose_layers(reference_stack());
+    Settings settings = reference_settings();
+    finish_settings(&settings);
+    return settings;
 }
 
-Settings compose(const CalibrationStack& stack) {
-    return compose_layers(stack);
+Settings default_settings_with_lighting(float lighting_method) {
+    Settings settings = reference_settings();
+    settings.profile_lighting_method = lighting_method;
+    finish_settings(&settings);
+    return settings;
 }
 
-bool load_stack(CalibrationStack* stack) {
-    if (stack == nullptr) {
+bool read_settings(Settings* settings) {
+    if (settings == nullptr) {
         return false;
     }
-    *stack = reference_stack();
+    *settings = reference_settings();
     FILE* file = _wfopen(config_path(), L"rb");
-    if (file == nullptr) {
-        return false;
+    if (file != nullptr) {
+        read_settings_from_file(file, settings);
+        std::fclose(file);
     }
-    read_stack_from_file(file, stack);
-    std::fclose(file);
-    return true;
+    finish_settings(settings);
+    return file != nullptr;
 }
 
 bool load_settings(Settings* settings) {
     if (settings == nullptr) {
         return false;
     }
-
-    CalibrationStack stack = reference_stack();
-    FILE* file = _wfopen(config_path(), L"rb");
-    if (file == nullptr) {
-        *settings = compose_layers(stack);
-        log_message("Configuracao ausente; usando a pilha cumulativa interna.");
-        log_stack(stack, *settings);
-        return false;
+    const bool found = read_settings(settings);
+    if (!found) {
+        log_message("Configuracao ausente; usando os valores internos do perfil.");
     }
-
-    read_stack_from_file(file, &stack);
-    std::fclose(file);
-
-    *settings = compose_layers(stack);
-    log_stack(stack, *settings);
-    return true;
+    log_settings(*settings);
+    return found;
 }
+
 }

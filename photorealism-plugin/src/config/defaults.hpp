@@ -1,9 +1,10 @@
 #pragma once
 
-#include "calibration.hpp"
+#include "settings.hpp"
 
 namespace photorealism {
 
-CalibrationStack reference_stack();
+Settings reference_settings();
+void restore_profile_defaults(Settings* settings);
 
 }

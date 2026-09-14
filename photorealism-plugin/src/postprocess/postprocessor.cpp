@@ -1,7 +1,7 @@
 #include "postprocess.hpp"
 
 #include "../config/config.hpp"
-#include "../config/profile_switch.hpp"
+#include "../config/profile_state.hpp"
 #include "../fsr/upscaler.hpp"
 #include "../resource_observer/color_observation.hpp"
 #include "../hooks/present_target.hpp"
@@ -64,26 +64,24 @@ public:
     }
 
     void settings_changed(const overlay::SettingBinding& binding) override {
-        if (overlay::binding_switches_profile(binding)) {
-            apply_profile_switch();
+        if (overlay::binding_edits_tonemap(binding)) {
+            store_active_tonemap(&settings_);
         }
-        if (overlay::binding_touches_observer(binding)) {
-            apply_scene_observer_settings();
-        }
-        fsr::upscaler().configure(settings_);
+        refresh_derived_settings();
     }
 
-    void apply_profile_switch() {
-        if (!switch_grade_profile(&settings_)) {
-            return;
-        }
+    void settings_reloaded() override {
+        refresh_derived_settings();
         apply_scene_observer_settings();
-        overlay::menu().bind(&settings_, this);
-        log_message(
-            "Menu trocou o grade: perfil photorealism %s conjunto=%.0f; valores "
-            "recompostos do cfg em disco, sem recompilar shader.",
-            settings_.photorealism_profile_enabled ? "ligado" : "desligado",
-            static_cast<double>(settings_.profile_active_set));
+    }
+
+    void refresh_derived_settings() {
+        const bool temporal_before = settings_.temporal_enabled;
+        finish_settings(&settings_);
+        if (temporal_before != settings_.temporal_enabled) {
+            invalidate_temporal_history("menu trocou o anti-aliasing");
+        }
+        fsr::upscaler().configure(settings_);
     }
 
     struct FrameTargets {
@@ -511,8 +509,8 @@ public:
         input.scene_needs_srgb_decode =
             frame_resources_.scene_needs_srgb_decode();
         input.output_needs_srgb_encode = targets.output_needs_srgb_encode;
-        input.temperature = condition_.temperature();
-        input.tint = condition_.tint();
+        input.temperature = settings_.temperature;
+        input.tint = settings_.tint;
         input.night_weight = condition_.night_weight();
         upload_frame_constants(context_, pipeline_, settings_, input);
         FramePassScene scene = {};
@@ -797,7 +795,7 @@ private:
             settings_.scene_observer_log_seconds);
 
         condition_.reset_log();
-        if (!settings_.condition_adaptation_enabled) {
+        if (!settings_.scene_observer_enabled) {
             condition_.reset_state();
         }
     }

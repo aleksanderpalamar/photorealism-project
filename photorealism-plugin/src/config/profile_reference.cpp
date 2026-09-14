@@ -13,15 +13,10 @@ constexpr PhotorealismTonemap kReferenceSets[kProfileTonemapSets] = {
 
 }
 
-PhotorealismProfile reference_profile() {
-    PhotorealismProfile profile;
+void reference_tonemap_sets(PhotorealismTonemap* sets) {
     for (unsigned index = 0; index < kProfileTonemapSets; ++index) {
-        profile.sets[index] = kReferenceSets[index];
+        sets[index] = kReferenceSets[index];
     }
-    profile.sharpness = 6.0f;
-    profile.sharpen_edges = 4.0f;
-    profile.ssao_intensity = 1.5f;
-    return profile;
 }
 
 }

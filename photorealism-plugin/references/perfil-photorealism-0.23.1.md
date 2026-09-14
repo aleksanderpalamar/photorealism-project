@@ -1,6 +1,6 @@
 # Perfil de tom 0.23.1
 
-Estado: entregue. Ainda nao rodou no jogo. Continua `perfil-photorealism-0.23.0.md`.
+Estado: reprovada no jogo pelo usuario (perfil por slider, linhas esmaecidas). Substituida por `perfil-photorealism-0.23.2.md`.
 
 ## Conjuntos escolhiveis
 

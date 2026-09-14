@@ -19,17 +19,6 @@ ConditionThresholds thresholds_from(const Settings& settings) {
     return thresholds;
 }
 
-ConditionAnchors anchors_from(const Settings& settings) {
-    ConditionAnchors anchors = {};
-    anchors.sun_temperature = settings.condition_sun_temperature;
-    anchors.sun_tint = settings.condition_sun_tint;
-    anchors.rain_temperature = settings.condition_rain_temperature;
-    anchors.rain_tint = settings.condition_rain_tint;
-    anchors.night_temperature = settings.condition_night_temperature;
-    anchors.night_tint = settings.condition_night_tint;
-    return anchors;
-}
-
 }
 
 void ConditionAdapter::reset_log() {
@@ -52,13 +41,6 @@ float ConditionAdapter::elapsed_seconds(unsigned long long now) {
 
 void ConditionAdapter::update(
     const Settings& settings, const SceneFeatures& features) {
-    temperature_ = settings.temperature;
-    tint_ = settings.tint;
-    if (!settings.condition_adaptation_enabled) {
-        night_weight_ = 0.0f;
-        return;
-    }
-
     const ConditionThresholds thresholds = thresholds_from(settings);
     const unsigned long long now = GetTickCount64();
     if (!smoother_.update(
@@ -74,12 +56,6 @@ void ConditionAdapter::update(
         smoother_.saturation(),
         thresholds);
     night_weight_ = weights.night;
-    if (!settings.condition_color_locked) {
-        const ConditionGrade grade =
-            blend_condition_grade(weights, anchors_from(settings));
-        temperature_ = grade.temperature;
-        tint_ = grade.tint;
-    }
     log_when_due(settings, weights, now);
 }
 
@@ -98,18 +74,15 @@ void ConditionAdapter::log_when_due(
     log_message(
         "Condicao 0.19.0: sol=%.3f chuva=%.3f noite=%.3f "
         "(mediana=%.1f saturacao=%.3f suavizadas) -> "
-        "temperature=%.0fK tint=%.3f%s exposicao_noturna=%+.2fEV.",
+        "exposicao_noturna=%+.2fEV.",
         static_cast<double>(weights.sun),
         static_cast<double>(weights.rain),
         static_cast<double>(weights.night),
         static_cast<double>(smoother_.median()),
         static_cast<double>(smoother_.saturation()),
-        static_cast<double>(temperature_),
-        static_cast<double>(tint_),
-        settings.condition_color_locked ? " (cor do perfil)" : "",
         static_cast<double>(settings.profile_night_exposure * night_weight_));
     last_log_ms_ = now;
     logged_once_ = true;
 }
 
-}  // namespace photorealism
+}

@@ -1,6 +1,6 @@
 #include "frame_constants.hpp"
 
-#include "../config/profile_layer.hpp"
+#include "../config/profile_state.hpp"
 #include "shader_constants.hpp"
 
 #include <cmath>

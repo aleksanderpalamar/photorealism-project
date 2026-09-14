@@ -1,6 +1,5 @@
 #pragma once
 
-#include "../config/calibration.hpp"
 #include "../config/settings.hpp"
 
 namespace photorealism {
@@ -11,12 +10,7 @@ struct SaveReport {
     int changed = 0;
 };
 
-Settings measured_baseline(const CalibrationStack& stack);
-
-SaveReport save_settings(
-    const Settings& settings,
-    const Settings& baseline,
-    const Settings& on_disk);
+SaveReport save_settings(const Settings& settings, const Settings& on_disk);
 
 }
 }

@@ -533,9 +533,15 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   no jogo e foi aprovado pelo usuario;
 - **0.23.1 (entregue)** os cinco conjuntos de tom escolhiveis no menu, exposicao
   noturna pelo peso de noite da adaptacao por condicao, as demais chaves do cfg
-  de referencia lidas e mostradas em cinza, e o cfg sem comentarios. Falta rodar
-  no jogo;
-- **0.23.2** FXAA do cfg de referencia, na imagem final e, com o FSR ligado,
+  de referencia lidas e mostradas em cinza, e o cfg sem comentarios. Reprovada
+  no jogo pelo usuario: perfil trocado por slider e linhas esmaecidas;
+- **0.23.2 (entregue)** o perfil e a unica fonte da imagem: saem do cfg as camadas
+  de cor medidas, a camada do usuario, a adaptacao de cor por condicao e as
+  secoes de SSAO, resolve temporal e depth. Menu refeito em paginas no molde das
+  telas de referencia do usuario: listas suspensas para iluminacao, qualidade,
+  anti-aliasing e SSAO, botoes para chaves 0/1, sliders so para faixas. Falta
+  rodar no jogo;
+- **0.23.3** FXAA do cfg de referencia, na imagem final e, com o FSR ligado,
   sobre o quadro interno antes do EASU;
 - **0.24.0** descoberta do G-buffer e do HDR do jogo, sem mudar a imagem:
   registro de todos os alvos de cada passe e captura unica para analise. Decide

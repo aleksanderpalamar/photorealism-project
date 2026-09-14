@@ -50,22 +50,17 @@ void format_value(
                   binding.decimals, static_cast<double>(value));
 }
 
-void draw_track(
-    UiContext& ui, const Rect& track, float ratio, bool inert) {
+void draw_track(UiContext& ui, const Rect& track, float ratio) {
     ui.list->push_rect(track, theme::kTrack, theme::kTrackHeightRadius);
     const Rect filled = {track.x, track.y, track.width * ratio, track.height};
-    ui.list->push_rect(
-        filled,
-        inert ? theme::kThumb : theme::kAccent,
-        theme::kTrackHeightRadius);
+    ui.list->push_rect(filled, theme::kAccent, theme::kTrackHeightRadius);
 
     const Rect thumb = {
         track.x + track.width * ratio - kThumbWidth * 0.5f,
         track.y - 5.0f,
         kThumbWidth,
         track.height + 10.0f};
-    ui.list->push_rect(
-        thumb, inert ? theme::kTextDim : theme::kThumb, theme::kControlRadius);
+    ui.list->push_rect(thumb, theme::kThumb, theme::kControlRadius);
 }
 
 }
@@ -76,7 +71,7 @@ RowResult slider_row(
     const SettingBinding& binding,
     float* value) {
     RowResult result;
-    const Color label_color = binding.inert ? theme::kTextDim : theme::kText;
+    const Color label_color = theme::kText;
     const float text_top = area.y + (area.height - ui.font->line_height()) * 0.5f;
 
     const Rect label_area = take_left(area, area.width * kLabelFraction);
@@ -107,11 +102,7 @@ RowResult slider_row(
         area.y + (area.height - kTrackHeight) * 0.5f,
         value_area.x - theme::kRowGap - track_start,
         kTrackHeight};
-    draw_track(ui, track, ratio_of(binding, *value), binding.inert);
-
-    if (binding.inert) {
-        return result;
-    }
+    draw_track(ui, track, ratio_of(binding, *value));
 
     const Rect grab = {
         track.x, area.y, track.width, area.height};

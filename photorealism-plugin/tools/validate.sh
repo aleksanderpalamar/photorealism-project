@@ -243,8 +243,7 @@ for scene_observer_message in \
   'Cena 0.18.0: ceu_R/B=%.3f mediana=%.1f faixa_p90-p10=%.1f' \
   'Perfil efetivo (cor): tint=%.3f' \
   'Balanco de branco 0.18.2: bruto=%.4f/%.4f/%.4f luma_bruta=%.6f' \
-  'Modulo adaptacao por condicao 0.19.0' \
-  'Ancoras 0.19.0: sol=%.0fK/%.3f chuva=%.0fK/%.3f noite=%.0fK/%.3f' \
+  'Detector de noite 0.19.0: tau=%.0fs' \
   'Condicao 0.19.0: sol=%.3f chuva=%.3f noite=%.3f'; do
   if ! grep -Fq "${scene_observer_message}" "${dxgi_strings}"; then
     echo "Observador de cena 0.18.0 incompleto: ${scene_observer_message}" >&2
@@ -262,99 +261,45 @@ for telemetry_message in \
 done
 
 cfg="${project_dir}/config/photorealism-plugin.cfg"
+# 0.23.2: o cfg so tem as secoes que o perfil comanda. SSAO, resolve temporal,
+# depth e o detector de noite rodam com valores internos, e as camadas de cor
+# medidas sairam: o grade vem inteiro do perfil.
 for section in \
-  '[base.0.1.2]' \
-  '[module.visual.0.2.0]' \
-  '[module.rain_overcast.0.3.0]' \
-  '[depth.0.6.4]' \
-  '[module.ssao.0.7.0]' \
-  '[module.ssao_refinement.0.8.0]' \
-  '[module.ssao_interior.0.9.0]' \
-  '[module.temporal.0.10.0]'; do
-  grep -Fqx "${section}" "${cfg}"
-done
-grep -Fqx 'near_plane=0.1' "${cfg}"
-grep -Fqx 'preview_distance=50.0' "${cfg}"
-grep -Fqx 'vertical_fov=60.0' "${cfg}"
-grep -Fqx 'radius=0.8' "${cfg}"
-grep -Fqx 'intensity=0.28' "${cfg}"
-grep -Fqx 'bias=0.04' "${cfg}"
-grep -Fqx 'fade_start=30.0' "${cfg}"
-grep -Fqx 'fade_end=70.0' "${cfg}"
-grep -Fqx 'edge_rejection=1.5' "${cfg}"
-grep -Fqx 'highlight_start=0.55' "${cfg}"
-grep -Fqx 'highlight_end=0.95' "${cfg}"
-grep -Fqx 'highlight_ao_floor=0.35' "${cfg}"
-grep -Fqx 'near_start=2.0' "${cfg}"
-grep -Fqx 'near_end=8.0' "${cfg}"
-grep -Fqx 'radius=0.45' "${cfg}"
-grep -Fqx 'intensity=0.20' "${cfg}"
-grep -Fqx 'bias=0.05' "${cfg}"
-grep -Fqx 'edge_rejection=1.75' "${cfg}"
-grep -Fqx 'history_weight=0.65' "${cfg}"
-grep -Fqx 'depth_rejection=0.02' "${cfg}"
-grep -Fqx 'color_rejection=0.08' "${cfg}"
-
-# As guardas da curva de tom vivem AQUI, junto dos outros pinos do cfg, e nao
-# no meio das chaves de outro modulo. Na 0.14.0 elas foram colocadas logo
-# depois de max_indirect_luma, que era chave do RTGI -- e sairam junto com ele
-# na 0.16.0, silenciosamente. Guarda misturada com modulo alheio morre com o
-# modulo alheio.
-# A curva de tom da 0.14.0. black_lift e o piso do preto: em zero o shader
-# volta ao saturate() sem toe da 0.13.3, que esmaga a sombra em 0 e transforma
-# o painel em massa preta. As quatro referencias do ATS medidas para esta
-# versao tem o 1% mais escuro entre 8 e 11 de 255, e 0.0027 em linear cai
-# exatamente ali depois do encode sRGB.
-for lift_channel in black_lift_r black_lift_g black_lift_b; do
-  if grep -Eq "^${lift_channel}=0(\.0+)?$" "${cfg}"; then
-    echo "${lift_channel} voltou a zero: a sombra volta a ser esmagada em 0 e \
-o visual medido nas referencias (p1 entre 8 e 11) fica inalcancavel." >&2
+  '[plugin]' \
+  '[profile.photorealism.0.23.0]' \
+  '[module.fsr.0.21.0]' \
+  '[native_aa.0.12.2]' \
+  '[module.bloom.0.17.0]' \
+  '[module.scene_observer.0.18.0]'; do
+  if ! grep -Fqx "${section}" "${cfg}"; then
+    echo "Secao sumiu do cfg: ${section}" >&2
     exit 1
   fi
 done
-# 0.17.1: o piso tem cor. R abaixo de G nas cinco referencias -- se os tres
-# voltarem a ser iguais o piso e acromatico de novo, que foi o que as capturas
-# da 0.17.0 mostraram (8/8/8 e 9/9/9, R/G e B/G exatamente 1,000).
-lift_r="$(grep -E '^black_lift_r=' "${cfg}" | head -1 | cut -d= -f2 || true)"
-lift_g="$(grep -E '^black_lift_g=' "${cfg}" | head -1 | cut -d= -f2 || true)"
-if [[ -z "${lift_r}" || -z "${lift_g}" ]] ||
-  ! awk -v r="${lift_r}" -v g="${lift_g}" 'BEGIN { exit !(r + 0 < g + 0) }'; then
-  echo "black_lift_r nao esta abaixo de black_lift_g: o piso volta a ser \
-cinza, e o alvo medido tem R entre 29% e 64% de G nas cinco referencias." >&2
-  exit 1
-fi
-for tone_pin in 'black_lift_r=0.001017' 'black_lift_g=0.001982' \
-  'black_lift_b=0.001888' 'highlight_rolloff=0.35'; do
-  if ! grep -Fqx "${tone_pin}" "${cfg}"; then
-    echo "Curva de tom fora do valor aprovado: ${tone_pin}. A calibracao da \
-0.14.0 foi medida contra as referencias; mudar sem medir de novo a perde." >&2
+for retired_section in \
+  '[base.0.1.2]' '[module.visual.0.2.0]' '[module.rain_overcast.0.3.0]' \
+  '[module.user.0.20.0]' '[depth.0.6.4]' '[module.ssao.0.7.0]' \
+  '[module.ssao_refinement.0.8.0]' '[module.ssao_interior.0.9.0]' \
+  '[module.temporal.0.10.0]' '[module.condition_adaptation.0.19.0]'; do
+  if grep -Fqx "${retired_section}" "${cfg}"; then
+    echo "Secao aposentada na 0.23.2 voltou ao cfg: ${retired_section}. Ela nao \
+e mais lida e parece mandar na imagem." >&2
     exit 1
   fi
 done
-# tint e o eixo verde-magenta. Em zero sobra so temperature, que troca R contra
-# B e nunca toca em G -- e as quatro referencias tem G como canal mais alto.
-if grep -Eq '^tint=0(\.0+)?$' "${cfg}"; then
-  echo "tint voltou a zero: sem o eixo verde-magenta nenhum ajuste de \
-temperature alcanca o balanco medido nas referencias." >&2
-  exit 1
-fi
-if ! grep -Fqx 'tint=0.35' "${cfg}"; then
-  echo "tint fora do valor aprovado (0.35)." >&2
-  exit 1
-fi
-# blacks somado das tres camadas era -0.06 e empurrava os pretos para baixo,
-# contra o alvo. A base leva 0.05 para a soma dar zero.
-if ! grep -Fqx 'blacks=0.05' "${cfg}"; then
-  echo "blacks da base saiu de 0.05: somado aos dois deltas ele volta a ser \
-negativo e empurra os pretos para baixo, contra o piso de black_lift." >&2
-  exit 1
-fi
+for ssao_pin in 'settings->ssao_radius = 0.8f;' 'settings->ssao_intensity = 0.28f;' \
+  'settings->ssao_interior_intensity = 0.20f;' 'settings.temporal_history_weight = 0.65f;'; do
+  if ! grep -Fq "${ssao_pin}" "${project_dir}/src/config/defaults.cpp"; then
+    echo "Valor interno aprovado do SSAO/temporal mudou: ${ssao_pin}" >&2
+    exit 1
+  fi
+done
 
-# 0.23.1: os cinco conjuntos de tom sao escolhiveis no menu.
+# 0.23.1: os cinco conjuntos de tom estao no cfg.
 for profile_set in 1 2 3 4 5; do
   if ! grep -Eq "^tonemap_exposure_${profile_set}=" "${cfg}"; then
-    echo "O conjunto de tom ${profile_set} sumiu do cfg: escolher esse conjunto \
-no menu cai nos neutros internos sem aviso." >&2
+    echo "O conjunto de tom ${profile_set} sumiu do cfg: a iluminacao que usa \
+esse conjunto cai nos neutros internos sem aviso." >&2
     exit 1
   fi
 done
@@ -476,21 +421,6 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   -o "${native_aa_config_test}"
 "${native_aa_config_test}"
 
-# Os defaults internos de config.cpp valem quando o cfg some, e tone_curve_test
-# nao consegue ve-los: aquele arquivo e Windows-only e nao linka no Linux. A
-# igualdade entre as duas copias fica por conta destas guardas.
-for tone_default in \
-  'layer.black_lift_r = 0.001017f;' \
-  'layer.black_lift_g = 0.001982f;' \
-  'layer.black_lift_b = 0.001888f;' \
-  'layer.highlight_rolloff = 0.35f;' \
-  'layer.tint = 0.35f;'; do
-  if ! grep -Fq "${tone_default}" "${project_dir}/src/config/defaults.cpp"; then
-    echo "Default interno da curva de tom 0.14.0 divergiu do cfg: \
-${tone_default}" >&2
-    exit 1
-  fi
-done
 # A curva em si. Sem o lift o shader volta ao saturate() sem toe da 0.13.3.
 for tone_marker in \
   'float3 apply_black_lift(float3 color, float3 lift)' \
@@ -737,19 +667,16 @@ if ! grep -Fq 'condition_.update(settings_, scene_observer_.latest());' \
   echo "A adaptacao por condicao nao e mais chamada no ponto pre-grade." >&2
   exit 1
 fi
-if ! grep -Fq 'constants.temperature = input.temperature;' \
-  "${project_dir}/src/postprocess/frame_constants.cpp" ||
-   ! grep -Fq 'input.temperature = condition_.temperature();' \
-  "${project_dir}/src/postprocess/postprocessor.cpp"; then
-  echo "O cbuffer voltou a receber a temperatura estatica: a adaptacao \
-calcularia e ninguem usaria." >&2
-  exit 1
-fi
-if ! grep -Fq 'constants.tint = input.tint;' \
-  "${project_dir}/src/postprocess/frame_constants.cpp" ||
-   ! grep -Fq 'input.tint = condition_.tint();' \
-  "${project_dir}/src/postprocess/postprocessor.cpp"; then
-  echo "O cbuffer voltou a receber o tint estatico." >&2
+# 0.23.2: a cor vem do perfil. O detector so pesa a exposicao noturna; se
+# voltar a produzir temperatura ou matiz, briga com o conjunto de tom escolhido.
+if ! grep -Fq 'input.temperature = settings_.temperature;' \
+  "${project_dir}/src/postprocess/postprocessor.cpp" ||
+   ! grep -Fq 'input.tint = settings_.tint;' \
+  "${project_dir}/src/postprocess/postprocessor.cpp" ||
+   grep -Fq 'blend_condition_grade' \
+  "${project_dir}/src/postprocess/condition_adapter.cpp"; then
+  echo "A adaptacao por condicao voltou a mandar na cor: ela briga com o conjunto \
+de tom do perfil." >&2
   exit 1
 fi
 
@@ -772,9 +699,10 @@ if ! grep -Fq 'const SectionSpec kSections[]' "${project_dir}/src/config/section
   echo "config.cpp deixou de ser dirigido por tabela de secoes." >&2
   exit 1
 fi
-if ! grep -Fq 'constexpr GradeField kGradeFields[]' "${project_dir}/src/config/grade_fields.cpp"; then
-  echo "config.cpp deixou de ter a tabela unica de parametros de cor: parse e \
-composicao voltam a poder divergir." >&2
+if ! grep -Fq 'constexpr ToneLink kToneLinks[]' "${project_dir}/src/config/profile_state.cpp" ||
+  ! grep -Fq 'const TonemapField kTonemapFields[]' "${project_dir}/src/config/photorealism_profile.cpp"; then
+  echo "O perfil deixou de ter as tabelas unicas do conjunto de tom: leitura, \
+menu e gravacao voltam a poder divergir." >&2
   exit 1
 fi
 
@@ -798,12 +726,11 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/src/config/loader.cpp" \
   "${project_dir}/src/config/defaults.cpp" \
   "${project_dir}/src/config/section_table.cpp" \
-  "${project_dir}/src/config/grade_fields.cpp" \
   "${project_dir}/src/config/photorealism_profile.cpp" \
-  "${project_dir}/src/config/profile_layer.cpp" \
+  "${project_dir}/src/config/profile_fields.cpp" \
   "${project_dir}/src/config/profile_logging.cpp" \
-  "${project_dir}/src/config/profile_pending.cpp" \
   "${project_dir}/src/config/profile_reference.cpp" \
+  "${project_dir}/src/config/profile_state.cpp" \
   "${project_dir}/src/config/limits.cpp" \
   "${project_dir}/src/config/logging.cpp" \
   -o "${config_load_test}"
@@ -815,16 +742,14 @@ photorealism_profile_test="/tmp/photorealism-profile-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
   -I"${project_dir}/tests/support" -I"${project_dir}/src" \
   "${project_dir}/tests/photorealism_profile_test.cpp" \
-  "${project_dir}/src/config/profile_switch.cpp" \
   "${project_dir}/src/config/loader.cpp" \
   "${project_dir}/src/config/defaults.cpp" \
   "${project_dir}/src/config/section_table.cpp" \
-  "${project_dir}/src/config/grade_fields.cpp" \
   "${project_dir}/src/config/photorealism_profile.cpp" \
-  "${project_dir}/src/config/profile_layer.cpp" \
+  "${project_dir}/src/config/profile_fields.cpp" \
   "${project_dir}/src/config/profile_logging.cpp" \
-  "${project_dir}/src/config/profile_pending.cpp" \
   "${project_dir}/src/config/profile_reference.cpp" \
+  "${project_dir}/src/config/profile_state.cpp" \
   "${project_dir}/src/config/limits.cpp" \
   "${project_dir}/src/config/logging.cpp" \
   -o "${photorealism_profile_test}"
@@ -858,35 +783,7 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   -o "${scene_formats_test}"
 "${scene_formats_test}"
 
-effective_profile="$(awk -F= '
-  /^\[/ { section=$0; next }
-  /^[[:space:]]*(#|;|$)/ { next }
-  {
-    key=$1
-    value=$2
-    gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
-    gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
-    if (key == "enabled") next
-    if (section == "[base.0.1.2]") {
-      total[key]=value + 0
-    } else if (section == "[module.visual.0.2.0]" ||
-               section == "[module.rain_overcast.0.3.0]" ||
-               section == "[module.user.0.20.0]") {
-      sub(/_delta$/, "", key)
-      total[key]+=value + 0
-    }
-  }
-  END {
-    printf "%.1f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f", \
-      total["temperature"], total["exposure"], total["contrast"], \
-      total["saturation"], total["vibrance"], total["shadows"], \
-      total["highlights"], total["blacks"], total["whites"], \
-      total["local_contrast"], total["sharpness"], total["vignette"]
-    printf " %.6f %.6f %.6f %.3f %.3f", \
-      total["black_lift_r"], total["black_lift_g"], total["black_lift_b"], \
-      total["highlight_rolloff"], total["tint"]
-  }
-' "${cfg}")"
+
 
 # O hash fecha o cfg depois das guardas por chave, e nao antes.
 #
@@ -896,7 +793,7 @@ effective_profile="$(awk -F= '
 # que importa. Uma guarda que explica uma regressao sutil so serve se for ela
 # a falar. Nesta ordem o hash continua pegando tudo que as guardas nao
 # cobrem, e so isso.
-expected_cfg_sha256="60487267b13dfc21e1fa84f6dcab3fe56ede571a3cb70e8b79d768459be8f1b7"
+expected_cfg_sha256="7aecea3db59ca851a6d35bb3da2597dd5a879c65843ac611098b1d477f9912bd"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
@@ -915,13 +812,6 @@ fi
 # balanco de branco carregava +0,0411 EV escondidos e agora e normalizado em
 # luminancia; os +0,0411 EV vieram para a exposicao base, onde da para ler.
 # Exposicao e balanco sao multiplicacao em linear e comutam.
-expected_profile="6400.0 0.011 1.070 0.970 0.050 0.100 -0.180 0.000"
-expected_profile="${expected_profile} 0.080 0.240 0.200 0.030"
-expected_profile="${expected_profile} 0.001398 0.002480 0.002268 0.350 0.500"
-if [[ "${effective_profile}" != "${expected_profile}" ]]; then
-  echo "Perfil cumulativo divergiu da 0.3.0 aprovada: ${effective_profile}" >&2
-  exit 1
-fi
 
 if command -v glslangValidator >/dev/null 2>&1; then
   glslangValidator -D -S vert -e VSMain -V \
@@ -1140,15 +1030,6 @@ for vertex_slot_call in 'VSGetShaderResources' 'VSSetShaderResources'; do
   fi
 done
 
-# O menu nunca grava sobre a calibracao medida. As tres camadas abaixo sao
-# resultado de 541 amostras de jogo e so mudam por medicao nova.
-for measured_layer in 'base.0.1.2' 'module.visual.0.2.0' 'module.rain_overcast.0.3.0'; do
-  if grep -rFq "${measured_layer}" "${project_dir}/src/overlay"; then
-    echo "O menu citou a camada medida ${measured_layer}. Ele so pode escrever \
-na camada do usuario -- as medidas nao se ajustam por slider." >&2
-    exit 1
-  fi
-done
 
 # Aplicar um ajuste do menu nao pode passar por reload_configuration: ela
 # recompila sete entry points de shader dentro do Present e reinicia a
@@ -1247,12 +1128,11 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/src/config/loader.cpp" \
   "${project_dir}/src/config/defaults.cpp" \
   "${project_dir}/src/config/section_table.cpp" \
-  "${project_dir}/src/config/grade_fields.cpp" \
   "${project_dir}/src/config/photorealism_profile.cpp" \
-  "${project_dir}/src/config/profile_layer.cpp" \
+  "${project_dir}/src/config/profile_fields.cpp" \
   "${project_dir}/src/config/profile_logging.cpp" \
-  "${project_dir}/src/config/profile_pending.cpp" \
   "${project_dir}/src/config/profile_reference.cpp" \
+  "${project_dir}/src/config/profile_state.cpp" \
   "${project_dir}/src/config/limits.cpp" \
   "${project_dir}/src/config/logging.cpp" \
   -o "${menu_roundtrip_test}"
@@ -1545,11 +1425,8 @@ if ! grep -Fq 'owner_ == context' "${project_dir}/src/resource_observer/color_ca
   exit 1
 fi
 
-# Perfil de tom 0.23.0. O perfil troca a origem do grade, nunca o que esta
-# gravado: o multiplicador do SSAO entra so na hora de desenhar (gravado no
-# ajuste, cada Salvar multiplicaria de novo), a cor fica travada na adaptacao
-# por condicao sem desligar o modulo, e a referencia do menu segue o botao do
-# perfil -- senao o delta gravado sai contra a composicao errada.
+# Perfil de tom. O multiplicador do SSAO entra so na hora de desenhar, e a
+# exposicao noturna do conjunto so existe se o peso de noite chegar ao shader.
 if ! grep -Fq 'settings.ssao_intensity * settings.ssao_intensity_scale' \
   "${project_dir}/src/postprocess/frame_constants.cpp" ||
   ! grep -Fq 'settings.ssao_interior_intensity * settings.ssao_intensity_scale' \
@@ -1557,29 +1434,6 @@ if ! grep -Fq 'settings.ssao_intensity * settings.ssao_intensity_scale' \
   echo "O multiplicador de SSAO do perfil deixou de ser aplicado no desenho." >&2
   exit 1
 fi
-if grep -rn 'ssao_intensity_scale' "${project_dir}/src/config/section_table.cpp" >/dev/null; then
-  echo "O multiplicador de SSAO virou ajuste gravado: cada Salvar do menu \
-multiplica a intensidade de novo." >&2
-  exit 1
-fi
-if ! grep -Fq 'settings.condition_color_locked' \
-  "${project_dir}/src/postprocess/condition_adapter.cpp"; then
-  echo "A adaptacao por condicao voltou a mexer na cor com o perfil ligado." >&2
-  exit 1
-fi
-if ! awk '/^void Menu::ensure_baseline/,/^}/' "${project_dir}/src/overlay/overlay.cpp" |
-  grep -Fq 'carry_profile_choice(&stack, settings_);' ||
-  ! awk '/^void carry_profile_choice/,/^}/' "${project_dir}/src/config/profile_switch.cpp" |
-  grep -Fq 'live->photorealism_profile_enabled' ||
-  ! awk '/^void carry_profile_choice/,/^}/' "${project_dir}/src/config/profile_switch.cpp" |
-  grep -Fq 'live->profile_tonemap_set'; then
-  echo "A referencia do menu deixou de seguir o botao ou o conjunto do perfil: o \
-delta gravado sai contra a composicao errada." >&2
-  exit 1
-fi
-# 0.23.1. A exposicao noturna do conjunto so existe se o peso de noite chegar ao
-# desenho: a adaptacao por condicao mede a noite mesmo com a cor travada pelo
-# perfil, e a exposicao enviada ao shader soma esse peso.
 if ! grep -Fq 'night_weight_ = weights.night;' \
   "${project_dir}/src/postprocess/condition_adapter.cpp" ||
   ! grep -Fq 'input.night_weight = condition_.night_weight();' \
@@ -1589,33 +1443,25 @@ if ! grep -Fq 'night_weight_ = weights.night;' \
   echo "A exposicao noturna do perfil deixou de chegar ao shader." >&2
   exit 1
 fi
-adapter_body="$(awk '/^void ConditionAdapter::update/,/^}/' \
-  "${project_dir}/src/postprocess/condition_adapter.cpp")"
-night_line="$({ grep -n 'night_weight_ = weights.night;' <<<"${adapter_body}" || true; } | head -1 | cut -d: -f1)"
-lock_line="$({ grep -n 'settings.condition_color_locked' <<<"${adapter_body}" || true; } | head -1 | cut -d: -f1)"
-if [[ -z "${night_line}" || -z "${lock_line}" || "${night_line}" -gt "${lock_line}" ]]; then
-  echo "A trava de cor do perfil voltou a pular a deteccao da noite: a exposicao \
-noturna do conjunto nunca aplica com o perfil ligado." >&2
+# 0.23.2: editar a cor no menu muda o conjunto da iluminacao escolhida, e trocar
+# a iluminacao carrega o conjunto dela. Sem as duas pontas, o Salvar grava um
+# conjunto e a tela mostra outro.
+if ! grep -Fq 'store_active_tonemap(&settings_);' \
+  "${project_dir}/src/postprocess/postprocessor.cpp" ||
+  ! awk '/^void finish_settings/,/^}/' "${project_dir}/src/config/loader.cpp" |
+  grep -Fq 'apply_active_tonemap(settings);'; then
+  echo "A cor do menu deixou de ir e voltar do conjunto da iluminacao ativa." >&2
   exit 1
 fi
 for profile_message in \
   'Perfil photorealism 0.23.0 sem efeito (%s):%s.' \
   'exposicao_noturna=%+.2fEV' \
-  'Menu trocou o grade: perfil photorealism %s conjunto=%.0f'; do
+  'Perfil photorealism 0.23.0: iluminacao %c (conjunto de tom %u)'; do
   if ! grep -Fq "${profile_message}" "${dxgi_strings}"; then
     echo "Linha do perfil sumiu do log: ${profile_message}" >&2
     exit 1
   fi
 done
-selection_body="$(awk '/^void Menu::step_selection/,/^}/' \
-  "${project_dir}/src/overlay/page_view.cpp")"
-inert_line="$({ grep -n 'if (binding.inert) {' <<<"${selection_body}" || true; } | head -1 | cut -d: -f1)"
-reset_line="$({ grep -n 'reset_binding(binding);' <<<"${selection_body}" || true; } | head -1 | cut -d: -f1)"
-if [[ -z "${inert_line}" || -z "${reset_line}" || "${inert_line}" -gt "${reset_line}" ]]; then
-  echo "Enter voltou a reiniciar linha cinza do menu: o valor mostrado deixa de \
-ser o do cfg ate a proxima recomposicao." >&2
-  exit 1
-fi
 third_party_hits="$(grep -rli 'snowy' "${project_dir}/src" "${project_dir}/shaders" \
   "${project_dir}/config" "${project_dir}/tests" "${project_dir}/tools/build.sh" \
   "${project_dir}/tools/package.sh" 2>/dev/null || true)"
@@ -1631,7 +1477,7 @@ fi
 cfg_fsr_enabled="$(awk '/^\[module\.fsr\./,/^$/' \
   "${project_dir}/config/photorealism-plugin.cfg" | grep -E '^enabled=' |
   cut -d= -f2)"
-code_fsr_enabled="$(grep -oE 'stack\.modules\.fsr_enabled = (true|false)' \
+code_fsr_enabled="$(grep -oE 'settings\.fsr_enabled = (true|false)' \
   "${project_dir}/src/config/defaults.cpp" | awk '{print $3}' | tr -d ';')"
 if [[ "${cfg_fsr_enabled}" != "${code_fsr_enabled}" ]]; then
   echo "O cfg empacotado diz FSR=${cfg_fsr_enabled} e o default interno diz \
@@ -1645,7 +1491,7 @@ fi
 cfg_fsr_sharpness="$(awk '/^\[module\.fsr\./,/^$/' \
   "${project_dir}/config/photorealism-plugin.cfg" | grep -E '^sharpness=' |
   cut -d= -f2)"
-code_fsr_sharpness="$(grep -oE 'stack\.modules\.fsr_sharpness = [0-9.]+f' \
+code_fsr_sharpness="$(grep -oE 'settings\.fsr_sharpness = [0-9.]+f' \
   "${project_dir}/src/config/defaults.cpp" | awk '{print $3}' | tr -d 'f')"
 if [[ "${cfg_fsr_sharpness}" != "0.60" || "${code_fsr_sharpness}" != "0.60" ]]; then
   echo "A nitidez padrao do RCAS diverge: cfg=${cfg_fsr_sharpness} \
@@ -1657,7 +1503,7 @@ fi
 # granulacao LFGA 0.30, escolhida no jogo. Mesma regra: cfg e codigo dizem o mesmo.
 for fsr_default in 'render_scale=0.8660=fsr_render_scale = 0.8660f' 'grain=0.30=fsr_grain = 0.30f'; do
   cfg_line="${fsr_default%%=fsr_*}"
-  code_line="stack.modules.fsr_${fsr_default##*=fsr_}"
+  code_line="settings.fsr_${fsr_default##*=fsr_}"
   if ! awk '/^\[module\.fsr\./,/^$/' "${project_dir}/config/photorealism-plugin.cfg" |
     grep -Fxq "${cfg_line}" ||
     ! grep -Fq "${code_line};" "${project_dir}/src/config/defaults.cpp"; then
@@ -1936,10 +1782,8 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   -I"${project_dir}/tests/support" -I"${project_dir}/src" \
   "${project_dir}/tests/menu_save_test.cpp" \
   "${project_dir}/src/config/section_table.cpp" \
-  "${project_dir}/src/config/grade_fields.cpp" \
   "${project_dir}/src/config/photorealism_profile.cpp" \
-  "${project_dir}/src/config/profile_layer.cpp" \
-  "${project_dir}/src/config/profile_pending.cpp" \
+  "${project_dir}/src/config/profile_fields.cpp" \
   -o "${menu_save_test}"
 "${menu_save_test}"
 
@@ -2004,7 +1848,7 @@ fi
 # inutilizavel. A navegacao por teclado nao depende de DirectInput, de entrada
 # bruta nem de posicao de cursor.
 for keyboard_path in 'kKeyUp' 'kKeyDown' 'kKeyLeft' 'kKeyRight' 'kKeyEnter' 'kKeyTab'; do
-  if ! grep -rFqw "${keyboard_path}" "${project_dir}/src/overlay/page_view.cpp" \
+  if ! grep -rFqw "${keyboard_path}" "${project_dir}/src/overlay/page_keys.cpp" \
     "${project_dir}/src/overlay/overlay.cpp"; then
     echo "A navegacao por teclado do menu perdeu ${keyboard_path}: sem ela, \
 qualquer defeito no caminho do mouse deixa o menu inutilizavel." >&2
@@ -2028,11 +1872,16 @@ overlay_bindings_test="/tmp/photorealism-overlay-bindings-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
   -I"${project_dir}/tests/support" -I"${project_dir}/src" \
   "${project_dir}/tests/overlay_bindings_test.cpp" \
+  "${project_dir}/src/config/loader.cpp" \
+  "${project_dir}/src/config/defaults.cpp" \
   "${project_dir}/src/config/section_table.cpp" \
-  "${project_dir}/src/config/grade_fields.cpp" \
   "${project_dir}/src/config/photorealism_profile.cpp" \
-  "${project_dir}/src/config/profile_layer.cpp" \
-  "${project_dir}/src/config/profile_pending.cpp" \
+  "${project_dir}/src/config/profile_fields.cpp" \
+  "${project_dir}/src/config/profile_logging.cpp" \
+  "${project_dir}/src/config/profile_reference.cpp" \
+  "${project_dir}/src/config/profile_state.cpp" \
+  "${project_dir}/src/config/limits.cpp" \
+  "${project_dir}/src/config/logging.cpp" \
   -o "${overlay_bindings_test}"
 "${overlay_bindings_test}"
 
@@ -2044,25 +1893,11 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   -o "${config_writer_test}"
 "${config_writer_test}"
 
-# A camada do usuario tem que ser a ULTIMA soma: o menu grava a diferenca entre
-# o que o usuario escolheu e o que as medidas dizem, e essa conta so fecha se
-# nada vier depois dela.
-compose_body="$(awk '/^Settings compose_layers/,/^}/' "${project_dir}/src/config/loader.cpp")"
-choice_line="$({ grep -n 'compose_measured(stack, &settings);' <<<"${compose_body}" || true; } | head -1 | cut -d: -f1)"
-user_line="$({ grep -n 'add_delta_layer(&settings, stack.user_0_20);' <<<"${compose_body}" || true; } | head -1 | cut -d: -f1)"
-limits_line="$({ grep -n 'apply_limits(&settings);' <<<"${compose_body}" || true; } | head -1 | cut -d: -f1)"
-if [[ -z "${choice_line}" || -z "${user_line}" || -z "${limits_line}" ]] ||
-  (( user_line < choice_line || limits_line < user_line )); then
-  echo "A camada do usuario deixou de ser somada por ultimo em compose_layers: \
-o delta que o menu grava para de reproduzir o valor que estava na tela." >&2
-  exit 1
-fi
-
 # O menu precisa ter controles. Um menu vazio compila, passa no validate e nao
 # serve para nada -- foi o que a 0.20.0 entregou na primeira tentativa.
-menu_controls="$(grep -c 'BindingKind::' "${project_dir}"/src/overlay/bindings/*_bindings.cpp |
-  awk -F: '{ total += $2 } END { print total+0 }')"
-if [[ "${menu_controls}" -lt 50 ]]; then
+menu_controls="$(grep -cE '(toggle|slider|tone_slider|choice)\(' \
+  "${project_dir}/src/overlay/bindings/menu_pages.cpp")"
+if [[ "${menu_controls}" -lt 30 ]]; then
   echo "O menu tem so ${menu_controls} controles declarados. Ele existe para \
 ajustar o plugin no jogo; uma janela sem opcoes nao entrega isso." >&2
   exit 1

@@ -1,10 +1,13 @@
 #pragma once
 
+#include "module_field.hpp"
 #include "settings.hpp"
 
 #include <cstddef>
 
 namespace photorealism {
+
+constexpr const char kProfileSection[] = "profile.photorealism.0.23.0";
 
 enum class PendingReason {
     GBuffer,
@@ -19,18 +22,18 @@ enum class PendingReason {
 
 constexpr std::size_t kPendingReasonCount = 8;
 
-struct PendingProfileKey {
-    const char* key;
+struct PendingControl {
     float Settings::*member;
-    float reference;
     PendingReason reason;
 };
 
-extern const PendingProfileKey kPendingProfileKeys[];
-extern const std::size_t kPendingProfileKeyCount;
+constexpr std::size_t kProfileFieldCount = 29;
+
+extern const ModuleField kProfileFields[kProfileFieldCount];
+extern const PendingControl kPendingControls[];
+extern const std::size_t kPendingControlCount;
 
 const char* pending_reason_text(PendingReason reason);
-bool apply_pending_key(Settings* modules, const char* key, const char* value);
-void apply_pending_references(Settings* modules);
+const char* profile_key_for(float Settings::*member);
 
 }

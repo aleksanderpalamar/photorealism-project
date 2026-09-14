@@ -1,170 +1,122 @@
 #include "defaults.hpp"
 
 #include "../scene/condition_model.hpp"
-#include "profile_pending.hpp"
+#include "profile_fields.hpp"
 
 namespace photorealism {
 namespace {
 
-CalibrationLayer reference_base() {
-    CalibrationLayer layer = {};
-    layer.enabled = true;
-    layer.temperature = 6500.0f;
-
-    layer.exposure = -0.0488697f;
-    layer.contrast = 0.98f;
-    layer.saturation = 0.95f;
-    layer.vibrance = -0.05f;
-    layer.shadows = 0.04f;
-    layer.highlights = -0.05f;
-
-    layer.blacks = 0.05f;
-    layer.whites = 0.03f;
-    layer.local_contrast = 0.12f;
-    layer.sharpness = 0.18f;
-    layer.vignette = 0.04f;
-
-    layer.black_lift_r = 0.001017f;
-    layer.black_lift_g = 0.001982f;
-    layer.black_lift_b = 0.001888f;
-    layer.highlight_rolloff = 0.35f;
-    layer.tint = 0.35f;
-    return layer;
+void reference_profile_keys(Settings* settings) {
+    settings->profile_lighting_method = kReferenceLightingMethod;
+    settings->profile_global_quality = 0.0f;
+    settings->profile_taa = 4.0f;
+    settings->profile_taa_level = 1.0f;
+    settings->profile_dlss_preset = 2.0f;
+    settings->profile_fxaa = 1.0f;
+    settings->profile_sharpness = 6.0f;
+    settings->profile_sharpen_edges = 4.0f;
+    settings->profile_use_motion_blur = 1.0f;
+    settings->profile_motion_blur_intensity = 10.0f;
+    settings->profile_ssao_intensity = 1.5f;
+    settings->profile_use_half_res_ssao = 0.0f;
+    settings->profile_ssao_preset = 0.0f;
+    settings->profile_ssao_detail_quality = 0.0f;
+    settings->profile_lighting_interior = 0.17f;
+    settings->profile_use_interior_lighting = 1.0f;
+    settings->profile_use_default_mirrors = 0.0f;
+    settings->profile_use_default_rain = 0.0f;
+    settings->profile_use_sss = 1.0f;
+    settings->profile_surface_albedo_saturation = 1.07f;
+    settings->profile_roads_normal_intensity = 3.0f;
+    settings->profile_roads_default_normals = 1.0f;
+    settings->profile_vegetation_leaves_thickness = 0.0f;
+    settings->profile_vegetation_grass_thickness = 1.0f;
+    settings->profile_color_preset = 0.0f;
+    settings->profile_color_preset_extra_brightness = 0.0f;
+    settings->profile_tonemap_operator = 0.0f;
+    settings->profile_tonemap_operator_a = 7.0f;
+    settings->profile_hide_show_key = 520.0f;
 }
 
-CalibrationLayer visual_delta_0_2() {
-    CalibrationLayer layer = {};
-    layer.enabled = true;
-    layer.temperature = -100.0f;
-    layer.exposure = 0.05f;
-    layer.contrast = 0.08f;
-    layer.saturation = 0.03f;
-    layer.vibrance = 0.09f;
-    layer.shadows = 0.04f;
-    layer.highlights = -0.09f;
-    layer.blacks = -0.04f;
-    layer.whites = 0.01f;
-    layer.local_contrast = 0.06f;
-    layer.sharpness = 0.04f;
-    layer.vignette = -0.005f;
+void reference_ambient_occlusion(Settings* settings) {
+    settings->ssao_enabled = true;
+    settings->ssao_radius = 0.8f;
+    settings->ssao_intensity = 0.28f;
+    settings->ssao_bias = 0.04f;
+    settings->ssao_fade_start = 30.0f;
+    settings->ssao_fade_end = 70.0f;
+    settings->ssao_edge_rejection = 1.5f;
 
-    layer.black_lift_r = 0.0f;
-    layer.black_lift_g = 0.0f;
-    layer.black_lift_b = 0.0f;
-    layer.highlight_rolloff = 0.0f;
-    layer.tint = 0.0f;
-    return layer;
+    settings->ssao_refinement_enabled = true;
+    settings->ssao_highlight_start = 0.55f;
+    settings->ssao_highlight_end = 0.95f;
+    settings->ssao_highlight_ao_floor = 0.35f;
+
+    settings->ssao_interior_enabled = true;
+    settings->ssao_interior_near_start = 2.0f;
+    settings->ssao_interior_near_end = 8.0f;
+    settings->ssao_interior_radius = 0.45f;
+    settings->ssao_interior_intensity = 0.20f;
+    settings->ssao_interior_bias = 0.05f;
+    settings->ssao_interior_edge_rejection = 1.75f;
 }
 
-CalibrationLayer rain_overcast_delta_0_3() {
-    CalibrationLayer layer = {};
-    layer.enabled = true;
-    layer.temperature = 0.0f;
-    layer.exposure = 0.01f;
-    layer.contrast = 0.01f;
-    layer.saturation = -0.01f;
-    layer.vibrance = 0.01f;
-    layer.shadows = 0.02f;
-    layer.highlights = -0.04f;
-    layer.blacks = -0.01f;
-    layer.whites = 0.04f;
-    layer.local_contrast = 0.06f;
-    layer.sharpness = -0.02f;
-    layer.vignette = -0.005f;
-
-    layer.black_lift_r = 0.000381f;
-    layer.black_lift_g = 0.000498f;
-    layer.black_lift_b = 0.000380f;
-    layer.highlight_rolloff = 0.0f;
-
-    layer.tint = 0.15f;
-    return layer;
-}
-
-CalibrationLayer user_delta_0_20() {
-    CalibrationLayer layer = {};
-    layer.enabled = true;
-    return layer;
-}
-
-}
-
-CalibrationStack reference_stack() {
+void reference_night_detector(Settings* settings) {
     const ConditionThresholds thresholds = default_condition_thresholds();
-    const ConditionAnchors anchors = default_condition_anchors();
-
-    CalibrationStack stack = {};
-    stack.modules.enabled = true;
-    stack.base = reference_base();
-    stack.visual_0_2 = visual_delta_0_2();
-    stack.rain_overcast_0_3 = rain_overcast_delta_0_3();
-    stack.user_0_20 = user_delta_0_20();
-    stack.profile = reference_profile();
-    stack.modules.photorealism_profile_enabled = true;
-    stack.modules.profile_tonemap_set = static_cast<float>(kReferenceTonemapSet);
-    apply_pending_references(&stack.modules);
-
-    stack.modules.depth_near_plane = 0.1f;
-    stack.modules.depth_preview_distance = 50.0f;
-    stack.modules.depth_vertical_fov = 60.0f;
-
-    stack.modules.ssao_enabled = true;
-    stack.modules.ssao_radius = 0.8f;
-    stack.modules.ssao_intensity = 0.28f;
-    stack.modules.ssao_bias = 0.04f;
-    stack.modules.ssao_fade_start = 30.0f;
-    stack.modules.ssao_fade_end = 70.0f;
-    stack.modules.ssao_edge_rejection = 1.5f;
-
-    stack.modules.ssao_refinement_enabled = true;
-    stack.modules.ssao_highlight_start = 0.55f;
-    stack.modules.ssao_highlight_end = 0.95f;
-    stack.modules.ssao_highlight_ao_floor = 0.35f;
-
-    stack.modules.ssao_interior_enabled = true;
-    stack.modules.ssao_interior_near_start = 2.0f;
-    stack.modules.ssao_interior_near_end = 8.0f;
-    stack.modules.ssao_interior_radius = 0.45f;
-    stack.modules.ssao_interior_intensity = 0.20f;
-    stack.modules.ssao_interior_bias = 0.05f;
-    stack.modules.ssao_interior_edge_rejection = 1.75f;
-
-    stack.modules.temporal_enabled = true;
-    stack.modules.temporal_history_weight = 0.65f;
-    stack.modules.temporal_depth_rejection = 0.02f;
-    stack.modules.temporal_color_rejection = 0.08f;
-
-    stack.modules.bloom_enabled = true;
-    stack.modules.bloom_threshold = 0.85f;
-    stack.modules.bloom_knee = 0.06f;
-    stack.modules.bloom_intensity = 0.02f;
-    stack.modules.bloom_radius = 0.03f;
-
-    stack.modules.fsr_enabled = false;
-    stack.modules.fsr_render_scale = 0.8660f;
-    stack.modules.fsr_sharpness = 0.60f;
-    stack.modules.fsr_grain = 0.30f;
-
-    stack.modules.scene_observer_enabled = true;
-    stack.modules.scene_observer_interval_frames = 30.0f;
-    stack.modules.scene_observer_log_seconds = 30.0f;
-
-    stack.modules.condition_adaptation_enabled = true;
-    stack.modules.condition_time_constant_seconds = 180.0f;
-    stack.modules.condition_log_seconds = 30.0f;
-    stack.modules.condition_daylight_median_low = thresholds.daylight_median_low;
-    stack.modules.condition_daylight_median_high = thresholds.daylight_median_high;
-    stack.modules.condition_overcast_saturation_low =
-        thresholds.overcast_saturation_low;
-    stack.modules.condition_overcast_saturation_high =
+    settings->condition_time_constant_seconds = 180.0f;
+    settings->condition_log_seconds = 30.0f;
+    settings->condition_daylight_median_low = thresholds.daylight_median_low;
+    settings->condition_daylight_median_high = thresholds.daylight_median_high;
+    settings->condition_overcast_saturation_low = thresholds.overcast_saturation_low;
+    settings->condition_overcast_saturation_high =
         thresholds.overcast_saturation_high;
-    stack.modules.condition_minimum_dynamic_range = thresholds.minimum_dynamic_range;
-    stack.modules.condition_sun_temperature = anchors.sun_temperature;
-    stack.modules.condition_sun_tint = anchors.sun_tint;
-    stack.modules.condition_rain_temperature = anchors.rain_temperature;
-    stack.modules.condition_rain_tint = anchors.rain_tint;
-    stack.modules.condition_night_temperature = anchors.night_temperature;
-    stack.modules.condition_night_tint = anchors.night_tint;
-    return stack;
+    settings->condition_minimum_dynamic_range = thresholds.minimum_dynamic_range;
 }
+
+}
+
+Settings reference_settings() {
+    Settings settings = {};
+    settings.enabled = true;
+    reference_tonemap_sets(settings.tonemap_sets);
+    reference_profile_keys(&settings);
+
+    settings.depth_near_plane = 0.1f;
+    settings.depth_preview_distance = 50.0f;
+    settings.depth_vertical_fov = 60.0f;
+    reference_ambient_occlusion(&settings);
+
+    settings.temporal_history_weight = 0.65f;
+    settings.temporal_depth_rejection = 0.02f;
+    settings.temporal_color_rejection = 0.08f;
+
+    settings.bloom_enabled = true;
+    settings.bloom_threshold = 0.85f;
+    settings.bloom_knee = 0.06f;
+    settings.bloom_intensity = 0.02f;
+    settings.bloom_radius = 0.03f;
+
+    settings.fsr_enabled = false;
+    settings.fsr_render_scale = 0.8660f;
+    settings.fsr_sharpness = 0.60f;
+    settings.fsr_grain = 0.30f;
+
+    settings.scene_observer_enabled = true;
+    settings.scene_observer_interval_frames = 30.0f;
+    settings.scene_observer_log_seconds = 30.0f;
+    reference_night_detector(&settings);
+    return settings;
+}
+
+void restore_profile_defaults(Settings* settings) {
+    const Settings reference = reference_settings();
+    for (unsigned index = 0; index < kProfileTonemapSets; ++index) {
+        settings->tonemap_sets[index] = reference.tonemap_sets[index];
+    }
+    for (std::size_t index = 0; index < kProfileFieldCount; ++index) {
+        const ModuleField& field = kProfileFields[index];
+        settings->*(field.member) = reference.*(field.member);
+    }
+}
+
 }

@@ -3,20 +3,51 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 
 namespace photorealism {
 wchar_t g_config_path[4096] = {};
 const wchar_t* config_path() { return g_config_path; }
 void log_message(const char*, ...) {}
+
+namespace config_io {
+bool read_file(const wchar_t* path, std::string* contents) {
+    FILE* file = _wfopen(path, L"rb");
+    if (file == nullptr) {
+        return false;
+    }
+    char buffer[4096];
+    std::size_t read = 0;
+    contents->clear();
+    while ((read = std::fread(buffer, 1, sizeof(buffer), file)) > 0) {
+        contents->append(buffer, read);
+    }
+    std::fclose(file);
+    return true;
+}
+bool write_atomic(const wchar_t* path, const wchar_t*, const std::string& contents) {
+    char narrow[4096] = {};
+    ::wcstombs(narrow, path, sizeof(narrow) - 1);
+    FILE* file = std::fopen(narrow, "wb");
+    if (file == nullptr) {
+        return false;
+    }
+    std::fwrite(contents.data(), 1, contents.size(), file);
+    std::fclose(file);
+    return true;
+}
+}
 }
 
 #include "../src/config/writer.cpp"
-#include "../src/overlay/grade_keys.cpp"
+#include "../src/overlay/bindings/binding_values.cpp"
+#include "../src/overlay/bindings/menu_pages.cpp"
+#include "../src/overlay/persistence.cpp"
 #include "config/config.hpp"
+#include "config/profile_state.hpp"
 
 #include <cassert>
 #include <cmath>
-#include <string>
 
 using namespace photorealism;
 using namespace photorealism::overlay;
@@ -26,26 +57,18 @@ namespace {
 const char* kTempPath = "/tmp/photorealism-menu-roundtrip.cfg";
 
 const char* kSeed =
+    "[plugin]\n"
+    "enabled=true\n"
+    "\n"
     "[profile.photorealism.0.23.0]\n"
+    "# linha escrita a mao pelo usuario\n"
+    "lighting_method=3\n"
+    "use_sss=1\n"
+    "tonemap_exposure_4=-0.06\n"
+    "\n"
+    "[module.fsr.0.21.0]\n"
     "enabled=false\n"
-    "\n"
-    "[base.0.1.2]\n"
-    "enabled=true\n"
-    "exposure=0.20\n"
-    "saturation=1.00\n"
-    "\n"
-    "[module.visual.0.2.0]\n"
-    "enabled=true\n"
-    "exposure_delta=0.05\n"
-    "\n"
-    "[module.rain_overcast.0.3.0]\n"
-    "enabled=true\n"
-    "# esta linha guarda a razao medida do numero abaixo\n"
-    "exposure_delta=0.02\n"
-    "\n"
-    "[module.ssao.0.7.0]\n"
-    "enabled=true\n"
-    "radius=0.8\n";
+    "sharpness=0.60\n";
 
 void write_cfg(const std::string& text) {
     FILE* file = std::fopen(kTempPath, "wb");
@@ -56,15 +79,8 @@ void write_cfg(const std::string& text) {
 }
 
 std::string read_cfg() {
-    FILE* file = std::fopen(kTempPath, "rb");
-    assert(file != nullptr);
     std::string text;
-    char buffer[4096];
-    std::size_t read = 0;
-    while ((read = std::fread(buffer, 1, sizeof(buffer), file)) > 0) {
-        text.append(buffer, read);
-    }
-    std::fclose(file);
+    assert(config_io::read_file(photorealism::g_config_path, &text));
     return text;
 }
 
@@ -72,142 +88,66 @@ bool near(float value, float target) {
     return std::fabs(value - target) < 0.0005f;
 }
 
-void the_measured_layers_still_sum_without_a_user_layer() {
-    write_cfg(kSeed);
+Settings loaded() {
     Settings settings = {};
     assert(load_settings(&settings));
-    assert(near(settings.exposure, 0.27f));
+    return settings;
 }
 
-void what_the_menu_saves_is_what_the_loader_gives_back() {
+void a_colour_edit_comes_back_in_its_own_set() {
     write_cfg(kSeed);
-    Settings before = {};
-    assert(load_settings(&before));
+    const Settings on_disk = loaded();
+    Settings live = on_disk;
+    live.exposure = 0.37f;
+    store_active_tonemap(&live);
+    finish_settings(&live);
 
-    const float on_screen = 0.55f;
-    const float delta = on_screen - before.exposure;
-    char printed[32] = {};
-    std::snprintf(printed, sizeof(printed), "%.6f", static_cast<double>(delta));
-
-    std::string text = read_cfg();
-    assert(config_writer::set_value(
-        &text, kUserSection, grade_key_for(&Settings::exposure), printed));
-    write_cfg(text);
-
-    Settings after = {};
-    assert(load_settings(&after));
-    assert(near(after.exposure, on_screen));
+    assert(save_settings(live, on_disk).written);
+    const Settings after = loaded();
+    assert(near(after.exposure, 0.37f));
+    assert(near(after.tonemap_sets[0].exposure, -0.09f));
+    assert(read_cfg().find("tonemap_exposure_4=0.37\n") != std::string::npos);
 }
 
-void saving_never_touches_the_measured_layers() {
+void the_lighting_method_chosen_on_the_menu_comes_back() {
     write_cfg(kSeed);
-    Settings before = {};
-    assert(load_settings(&before));
+    const Settings on_disk = loaded();
+    Settings live = on_disk;
+    live.profile_lighting_method = 1.0f;
+    finish_settings(&live);
+    assert(near(live.exposure, 0.25f));
 
-    const float wanted = before.saturation + 0.25f;
-    char printed[32] = {};
-    std::snprintf(
-        printed,
-        sizeof(printed),
-        "%.6f",
-        static_cast<double>(wanted - before.saturation));
-
-    std::string text = read_cfg();
-    assert(config_writer::set_value(
-        &text, kUserSection, "saturation_delta", printed));
-    assert(config_writer::set_value(
-        &text, "module.ssao.0.7.0", "radius", "1.40"));
-    write_cfg(text);
-
-    const std::string result = read_cfg();
-    assert(result.find("[base.0.1.2]\nenabled=true\nexposure=0.20\n") !=
-           std::string::npos);
-    assert(result.find("exposure_delta=0.05") != std::string::npos);
-    assert(result.find("exposure_delta=0.02") != std::string::npos);
-    assert(result.find("# esta linha guarda a razao medida do numero abaixo") !=
-           std::string::npos);
-
-    Settings after = {};
-    assert(load_settings(&after));
-    assert(near(after.saturation, wanted));
-    assert(near(after.ssao_radius, 1.4f));
-    assert(near(after.exposure, before.exposure));
-}
-
-void with_the_profile_on_the_menu_value_also_comes_back() {
-    std::string seed = kSeed;
-    seed.replace(seed.find("enabled=false"), 13, "enabled=true");
-    write_cfg(seed);
-    Settings before = {};
-    assert(load_settings(&before));
-    assert(before.photorealism_profile_enabled);
-
-    const float on_screen = 0.31f;
-    char printed[32] = {};
-    std::snprintf(
-        printed, sizeof(printed), "%.6f",
-        static_cast<double>(on_screen - before.exposure));
-    std::string text = read_cfg();
-    assert(config_writer::set_value(
-        &text, kUserSection, grade_key_for(&Settings::exposure), printed));
-    write_cfg(text);
-
-    Settings after = {};
-    assert(load_settings(&after));
-    assert(near(after.exposure, on_screen));
-}
-
-void the_tonemap_set_chosen_on_the_menu_comes_back() {
-    std::string seed = kSeed;
-    seed.replace(seed.find("enabled=false"), 13, "enabled=true\ntonemap_set=4");
-    write_cfg(seed);
-    Settings before = {};
-    assert(load_settings(&before));
-    assert(before.profile_active_set == 4.0f);
-    assert(near(before.exposure, -0.06f));
-
-    std::string text = read_cfg();
-    assert(config_writer::set_value(
-        &text, "profile.photorealism.0.23.0", "tonemap_set", "2"));
-    write_cfg(text);
-
-    Settings after = {};
-    assert(load_settings(&after));
-    assert(after.profile_tonemap_set == 2.0f);
-    assert(after.profile_active_set == 2.0f);
+    const SaveReport report = save_settings(live, on_disk);
+    assert(report.written && report.changed == 1);
+    const Settings after = loaded();
+    assert(after.profile_lighting_method == 1.0f);
     assert(near(after.exposure, 0.25f));
     assert(near(after.whites, -0.13f));
-    assert(read_cfg().find("[base.0.1.2]\nenabled=true\nexposure=0.20\n") !=
-           std::string::npos);
 }
 
-void a_zeroed_user_layer_changes_nothing() {
+void a_switch_and_a_module_come_back() {
     write_cfg(kSeed);
-    Settings before = {};
-    assert(load_settings(&before));
+    const Settings on_disk = loaded();
+    Settings live = on_disk;
+    live.profile_use_sss = 0.0f;
+    live.profile_taa = 0.0f;
+    live.fsr_sharpness = 0.35f;
+    finish_settings(&live);
 
-    std::string text = read_cfg();
-    for (std::size_t index = 0; index < kGradeKeyCount; ++index) {
-        assert(config_writer::set_value(
-            &text, kUserSection, kGradeKeys[index].key, "0.000000"));
-    }
-    write_cfg(text);
-
-    Settings after = {};
-    assert(load_settings(&after));
-    assert(near(after.exposure, before.exposure));
-    assert(near(after.saturation, before.saturation));
+    assert(save_settings(live, on_disk).changed == 3);
+    const Settings after = loaded();
+    assert(after.profile_use_sss == 0.0f);
+    assert(!after.temporal_enabled);
+    assert(near(after.fsr_sharpness, 0.35f));
+    assert(read_cfg().find("# linha escrita a mao pelo usuario\n") != std::string::npos);
 }
 
 }
 
 int main() {
-    the_measured_layers_still_sum_without_a_user_layer();
-    what_the_menu_saves_is_what_the_loader_gives_back();
-    saving_never_touches_the_measured_layers();
-    with_the_profile_on_the_menu_value_also_comes_back();
-    the_tonemap_set_chosen_on_the_menu_comes_back();
-    a_zeroed_user_layer_changes_nothing();
+    a_colour_edit_comes_back_in_its_own_set();
+    the_lighting_method_chosen_on_the_menu_comes_back();
+    a_switch_and_a_module_come_back();
     std::remove(kTempPath);
     std::printf("menu_roundtrip_test ok\n");
     return 0;
