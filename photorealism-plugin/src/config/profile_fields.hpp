@@ -15,12 +15,10 @@ enum class PendingReason {
     MotionVectors,
     MirrorTarget,
     ShaderSwap,
-    Fxaa,
-    AlreadyMet,
     NoEquivalent,
 };
 
-constexpr std::size_t kPendingReasonCount = 8;
+constexpr std::size_t kPendingReasonCount = 6;
 
 struct PendingControl {
     float Settings::*member;

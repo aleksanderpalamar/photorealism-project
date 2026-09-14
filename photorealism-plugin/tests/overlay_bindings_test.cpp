@@ -169,6 +169,20 @@ void a_zero_or_one_key_is_a_switch() {
     assert(settings.profile_fxaa == 0.0f && !binding_flag(fxaa, settings));
 }
 
+void dlaa_and_dlss_cannot_be_chosen() {
+    const SettingBinding& aa = setting_pages()[kPageAntiAliasing].rows[0].first;
+    assert(aa.number == &Settings::profile_taa);
+    assert(choice_count(aa) == 7);
+    assert(choice_selectable(aa, 2));
+    assert(!choice_selectable(aa, 3));
+    assert(!choice_selectable(aa, 6));
+    assert(stepped_binding_value(aa, 2.0f, 1) == 2.0f);
+    assert(stepped_binding_value(aa, 1.0f, 1) == 2.0f);
+    assert(cycled_binding_value(aa, 2.0f) == 0.0f);
+    const SettingBinding& lighting = setting_pages()[kPageMain].rows[0].first;
+    assert(choice_selectable(lighting, 3));
+}
+
 void integer_sliders_snap_to_whole_numbers() {
     const SettingBinding& sharpness = setting_pages()[kPageAntiAliasing].rows[2].first;
     assert(sharpness.number == &Settings::profile_sharpness);
@@ -187,6 +201,7 @@ int main() {
     no_slider_chooses_between_options();
     a_dropdown_moves_one_option_at_a_time();
     a_zero_or_one_key_is_a_switch();
+    dlaa_and_dlss_cannot_be_chosen();
     integer_sliders_snap_to_whole_numbers();
     std::printf("overlay_bindings_test ok\n");
     return 0;

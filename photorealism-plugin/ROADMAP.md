@@ -539,18 +539,24 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   de cor medidas, a camada do usuario, a adaptacao de cor por condicao e as
   secoes de SSAO, resolve temporal e depth. Menu refeito em paginas no molde das
   telas de referencia do usuario: listas suspensas para iluminacao, qualidade,
-  anti-aliasing e SSAO, botoes para chaves 0/1, sliders so para faixas. Falta
-  rodar no jogo;
-- **0.23.3** FXAA do cfg de referencia, na imagem final e, com o FSR ligado,
-  sobre o quadro interno antes do EASU;
-- **0.24.0** descoberta do G-buffer e do HDR do jogo, sem mudar a imagem:
-  registro de todos os alvos de cada passe e captura unica para analise. Decide
-  quais efeitos entre passes sao viaveis -- saturacao de albedo, iluminacao de
-  interior, espelhos, normais da estrada, SSS, motion blur, e a pre-exposicao,
-  o pre-contraste e o contraste dinamico dos conjuntos de tom -- e em que ordem.
-  Vegetacao e chuva so com troca de shader, sob nova decisao do usuario. A Fase 2
-  do FSR (medicao e otimizacao dentro do D3D11) fica depois desses efeitos;
-- **0.25.0** raios de sol. E o efeito que as referencias realmente
+  anti-aliasing e SSAO, botoes para chaves 0/1, sliders so para faixas. Rodou no
+  jogo: iluminacao, cores (menos quatro controles) e FSR funcionam; o resto das
+  opcoes nao mudava a imagem;
+- **0.23.3 (entregue)** as opcoes que o pos-processo alcanca passam a mudar a
+  imagem: brancos como ponto de branco, qualidade, lista de anti-aliasing com
+  Temporal nitido e DLAA/DLSS esmaecidos, FXAA, SSAO com forca, preset, detalhe
+  e meia resolucao, e luz de interior pelo depth. Falta rodar no jogo;
+- **0.24.0** captura do quadro para analise, sem mudar a imagem: botao no menu,
+  todos os alvos de cada passe gravados e `tools/gbuffer_report.py` identificando
+  albedo, normal, material, velocidade, HDR antes do tom e alvo do espelho;
+- **0.24.1 em diante** um efeito entre passes por pacote: pre-exposicao,
+  pre-contraste e contraste dinamico no HDR antes do tom; saturacao do albedo;
+  espelhos do jogo; motion blur pelo buffer de velocidade; SSS; normais da
+  estrada. O que a captura mostrar que nao da entre passes vai para a 0.25.x;
+- **0.25.x** shaders do jogo alterados em memoria, a partir dos arquivos do
+  proprio usuario: espessura de folhas e grama, chuva do jogo e, se preciso,
+  normais da estrada. A Fase 2 do FSR fica depois disso;
+- **0.26.0** raios de sol. E o efeito que as referencias realmente
   mostram, e que a medicao do bloom revelou: estriados radiais saindo do sol
   atras da linha de arvores, projetados no teto escuro da cabine. Sao
   **direcionais**, e nenhuma piramide gaussiana produz aquilo. Reaproveita o
@@ -559,7 +565,7 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   descobrir a posicao do sol na tela sem dados do motor no `Present`.
   **Desceu de prioridade na 0.18.0**: cor errada em toda condicao pesa mais
   que um efeito ausente;
-- **0.26.0 (condicional)** upgrade de bind flag via hook de `CreateTexture2D`,
+- **0.27.0 (condicional)** upgrade de bind flag via hook de `CreateTexture2D`,
   na tecnica do ReShade: promover o depth a typeless com
   `BIND_SHADER_RESOURCE`, sintetizando o descritor no `CreateDepthStencilView`.
   So entra se o `CopyResource` de um depth `DEPTH_STENCIL`-only falhar sob

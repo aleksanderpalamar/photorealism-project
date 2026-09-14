@@ -1,6 +1,7 @@
 #include "logging.hpp"
 
 #include "../runtime.hpp"
+#include "effect_logging.hpp"
 #include "profile_logging.hpp"
 #include "text_utils.hpp"
 
@@ -109,6 +110,9 @@ void log_modules(const Settings& settings) {
 
 void log_settings(const Settings& settings) {
     log_profile(settings);
+    char effects[512] = {};
+    format_effect_settings(settings, effects, sizeof(effects));
+    log_message("%s", effects);
     log_effective_profile(settings);
     log_white_balance(settings);
     log_modules(settings);

@@ -55,7 +55,7 @@ void derive_profile_controls(Settings* settings) {
     settings->local_contrast =
         settings->profile_sharpen_edges / kProfileSliderScale;
     settings->ssao_intensity_scale = settings->profile_ssao_intensity;
-    settings->temporal_enabled = settings->profile_taa != 0.0f;
+    settings->temporal_enabled = settings->profile_taa >= 0.5f;
 }
 
 float night_adjusted_exposure(const Settings& settings, float night_weight) {

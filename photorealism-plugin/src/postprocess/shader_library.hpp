@@ -16,7 +16,6 @@ class ShaderLibrary {
     ID3D11VertexShader* vertex() const { return vertex_shader_; }
     ID3D11PixelShader* visual() const { return pixel_shader_; }
     ID3D11PixelShader* depth_preview() const { return depth_preview_shader_; }
-    ID3D11PixelShader* ssao() const { return ssao_shader_; }
     ID3D11PixelShader* temporal() const { return temporal_shader_; }
     ID3D11PixelShader* bloom_bright() const { return bloom_bright_shader_; }
     ID3D11PixelShader* bloom_downsample() const {
@@ -31,7 +30,6 @@ class ShaderLibrary {
         ID3DBlob* vertex;
         ID3DBlob* pixel;
         ID3DBlob* depth_preview;
-        ID3DBlob* ssao;
         ID3DBlob* temporal;
         ID3DBlob* bloom[kBloomPassCount];
     };
@@ -40,7 +38,6 @@ class ShaderLibrary {
         ID3D11VertexShader* vertex;
         ID3D11PixelShader* pixel;
         ID3D11PixelShader* depth_preview;
-        ID3D11PixelShader* ssao;
         ID3D11PixelShader* temporal;
         ID3D11PixelShader* bloom[kBloomPassCount];
     };
@@ -67,7 +64,6 @@ class ShaderLibrary {
     ID3D11VertexShader* vertex_shader_ = nullptr;
     ID3D11PixelShader* pixel_shader_ = nullptr;
     ID3D11PixelShader* depth_preview_shader_ = nullptr;
-    ID3D11PixelShader* ssao_shader_ = nullptr;
     ID3D11PixelShader* temporal_shader_ = nullptr;
     ID3D11PixelShader* bloom_bright_shader_ = nullptr;
     ID3D11PixelShader* bloom_downsample_shader_ = nullptr;

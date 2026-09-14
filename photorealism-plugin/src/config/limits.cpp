@@ -14,7 +14,7 @@ struct Limit {
 constexpr Limit kLimits[] = {
     {&Settings::profile_lighting_method, 0.0f, 3.0f},
     {&Settings::profile_global_quality, 0.0f, 2.0f},
-    {&Settings::profile_taa, 0.0f, 6.0f},
+    {&Settings::profile_taa, 0.0f, 2.0f},
     {&Settings::profile_ssao_preset, 0.0f, 2.0f},
     {&Settings::profile_ssao_detail_quality, 0.0f, 2.0f},
     {&Settings::profile_sharpness, 0.0f, 10.0f},

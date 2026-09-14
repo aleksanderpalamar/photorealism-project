@@ -76,6 +76,13 @@ common_flags=(
   "${project_dir}/src/postprocess/frame_constants.cpp" \
   "${project_dir}/src/postprocess/frame_log.cpp" \
   "${project_dir}/src/postprocess/frame_passes.cpp" \
+  "${project_dir}/src/postprocess/effect_chain.cpp" \
+  "${project_dir}/src/postprocess/effect_draws.cpp" \
+  "${project_dir}/src/postprocess/effect_runner.cpp" \
+  "${project_dir}/src/postprocess/effect_shaders.cpp" \
+  "${project_dir}/src/postprocess/effect_constants_upload.cpp" \
+  "${project_dir}/src/postprocess/occlusion_target.cpp" \
+  "${project_dir}/src/postprocess/effect_log.cpp" \
   "${project_dir}/src/steam/capture_pipeline.cpp" \
   "${project_dir}/src/steam/integration.cpp" \
   "${project_dir}/src/steam/capture_gate.cpp" \
@@ -93,6 +100,8 @@ common_flags=(
   "${project_dir}/src/config/profile_logging.cpp" \
   "${project_dir}/src/config/profile_reference.cpp" \
   "${project_dir}/src/config/profile_state.cpp" \
+  "${project_dir}/src/config/effect_quality.cpp" \
+  "${project_dir}/src/config/effect_logging.cpp" \
   "${project_dir}/src/config/limits.cpp" \
   "${project_dir}/src/config/logging.cpp" \
   "${project_dir}/src/resource_observer/discovery_control.cpp" \

@@ -1,5 +1,54 @@
 # Changelog
 
+## Pacote 0.23.3 - 2026-09-14
+
+**As opcoes do menu que o pos-processo alcanca passam a mudar a imagem.** Na
+0.23.2 so iluminacao, cores (menos quatro controles) e FSR mudavam algo no
+jogo. Detalhes em `references/efeitos-0.23.3.md`.
+
+### O que muda
+
+- **Brancos**: virou ponto de branco nos claros, e nao mais soma de no maximo 6
+  codigos. Medido na GPU: -0.13 leva 250 a 243 e 230 a 225; +0.13 leva 230 a 236;
+- **Qualidade alta/media/baixa**: SSAO com 16/12/8 amostras (baixa tambem em meia
+  resolucao) e bloom com ate 5/4/3 niveis;
+- **Anti-aliasing**: Desligado desliga o resolve temporal; Temporal liga; Temporal
+  nitido liga o resolve e uma nitidez RCAS 0.90 depois dele, fora do historico.
+  DLAA e DLSS aparecem esmaecidos e nao podem ser escolhidos. O `taa=4` do cfg de
+  referencia vale como Temporal nitido;
+- **FXAA**: passe proprio antes do grade. Medido: 91 pixels de borda suavizados
+  numa diagonal de teste, nenhum pixel longe da borda alterado;
+- **SSAO**: `ssao_intensity` virou a forca da oclusao (ganho 2.2 sobre a base),
+  e o slider agora aparece: visibilidade minima 0.69 em 1.0, 0.54 em 1.5 e 0.00 em
+  4.0 no canto de teste. Preset suave/medio/forte muda raio, vies e curva;
+  detalhe alto/medio/baixo muda as amostras; "SSAO em baixa resolucao" calcula a
+  oclusao em meia resolucao e compoe com upsample bilateral pelo depth;
+- **Luz de interior**: clareia so o que esta perto da camera (1.5 a 4 m, a cabine),
+  proporcional a luminancia externa. Medido: 128 vai a 139 com a forca 0.17 e a
+  222 com 2.0; fora da cabine e ceu ficam iguais;
+- o log ganha a linha `Efeitos 0.23.3` na leitura do cfg e a cada mudanca no menu.
+
+### O que nao mudou
+
+Exposicao noturna ja funcionava e so age a noite: a sessao testada era de dia
+(`Condicao 0.19.0: noite=0.000`). Pre-exposicao, pre-contraste, motion blur,
+espelhos, SSS, albedo e normais da estrada dependem da captura da 0.24.0; folhas,
+grama e chuva, dos shaders do jogo na 0.25.x.
+
+### Verificacao
+
+- **GPU** (Wine + DXVK, com o `d3dcompiler_47.dll` do ETS2): os cinco shaders
+  novos compilam e os numeros acima sao dessas medicoes;
+- **testes novos**: `effect_quality_test`, `effect_chain_test` (ordem dos passes, a
+  nitidez fora do historico), `white_point_test` (espelho do shader), DLAA/DLSS
+  nao selecionaveis no `overlay_bindings_test`, `taa=4` valendo 2 no
+  `config_load_test`;
+- **guardas**: pinos dos shaders novos, ordem da cadeia, historico do resolve,
+  DLAA/DLSS nao selecionaveis, shaders de efeito no pacote, ponto de branco;
+- menu rasterizado fora do jogo com a lista de anti-aliasing aberta.
+
+**Ainda nao rodou no jogo.**
+
 ## Pacote 0.23.2 - 2026-09-14
 
 **O perfil faz todo o trabalho, e o menu segue as telas de referencia.** A 0.23.1

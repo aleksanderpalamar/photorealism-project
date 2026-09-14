@@ -37,17 +37,10 @@ constexpr ModuleField kProfileFields[kProfileFieldCount] = {
 static_assert(kProfileFields[kProfileFieldCount - 1].key != nullptr);
 
 const PendingControl kPendingControls[] = {
-    {&Settings::profile_global_quality, PendingReason::NoEquivalent},
     {&Settings::profile_taa_level, PendingReason::NoEquivalent},
     {&Settings::profile_dlss_preset, PendingReason::NoEquivalent},
-    {&Settings::profile_fxaa, PendingReason::Fxaa},
     {&Settings::profile_use_motion_blur, PendingReason::MotionVectors},
     {&Settings::profile_motion_blur_intensity, PendingReason::MotionVectors},
-    {&Settings::profile_use_half_res_ssao, PendingReason::AlreadyMet},
-    {&Settings::profile_ssao_preset, PendingReason::NoEquivalent},
-    {&Settings::profile_ssao_detail_quality, PendingReason::NoEquivalent},
-    {&Settings::profile_lighting_interior, PendingReason::GameHdr},
-    {&Settings::profile_use_interior_lighting, PendingReason::GameHdr},
     {&Settings::profile_use_default_mirrors, PendingReason::MirrorTarget},
     {&Settings::profile_use_default_rain, PendingReason::ShaderSwap},
     {&Settings::profile_use_sss, PendingReason::GBuffer},
@@ -73,8 +66,6 @@ const char* pending_reason_text(PendingReason reason) {
         "pendente: vetores de movimento",
         "pendente: alvo do espelho",
         "exige troca de shader",
-        "pendente: FXAA",
-        "o SSAO do plugin roda sempre em resolucao cheia",
         "sem equivalente no plugin",
     };
     return kTexts[static_cast<std::size_t>(reason)];

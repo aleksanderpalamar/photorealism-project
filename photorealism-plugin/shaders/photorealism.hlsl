@@ -110,6 +110,13 @@ float3 apply_black_lift(float3 color, float3 lift)
     return floor_value + (1.0 - floor_value) * color;
 }
 
+float3 apply_white_point(float3 color, float whites, float luma)
+{
+    float mask = smoothstep(0.30, 1.0, luma);
+    float white_point = clamp(1.0 - 0.5 * whites, 0.25, 4.0);
+    return color / lerp(1.0, white_point, mask);
+}
+
 float3 apply_tonal_controls(float3 color)
 {
     color = max(color * exp2(Exposure), 0.0);
@@ -121,9 +128,8 @@ float3 apply_tonal_controls(float3 color)
     color *= exp2(Shadows * shadow_mask + Highlights * highlight_mask);
 
     float black_mask = 1.0 - smoothstep(0.0, 0.16, initial_luma);
-    float white_mask = smoothstep(0.55, 1.0, initial_luma);
     color += Blacks * black_mask * 0.06;
-    color += Whites * white_mask * 0.06;
+    color = apply_white_point(color, Whites, initial_luma);
 
     const float pivot = 0.18;
     color = pivot * pow(max(color, 1e-6) / pivot, Contrast);

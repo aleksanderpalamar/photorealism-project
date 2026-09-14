@@ -44,7 +44,6 @@ void ShaderLibrary::release_compiled_shaders(ShaderLibrary::CompiledShaders* sha
     safe_release(shaders->vertex);
     safe_release(shaders->pixel);
     safe_release(shaders->depth_preview);
-    safe_release(shaders->ssao);
     safe_release(shaders->temporal);
     for (UINT index = 0; index < kBloomPassCount; ++index) {
         safe_release(shaders->bloom[index]);
@@ -76,7 +75,6 @@ void ShaderLibrary::create_optional_shaders(
     ShaderLibrary::CompiledShaders* shaders) {
     shaders->depth_preview =
         create_optional_pixel_shader(device, blobs.depth_preview, "de preview depth");
-    shaders->ssao = create_optional_pixel_shader(device, blobs.ssao, "SSAO");
     shaders->temporal =
         create_optional_pixel_shader(device, blobs.temporal, "temporal");
     for (UINT index = 0; index < kBloomPassCount; ++index) {
@@ -116,7 +114,6 @@ void ShaderLibrary::adopt_compiled_shaders(ShaderLibrary::CompiledShaders* shade
     vertex_shader_ = shaders->vertex;
     pixel_shader_ = shaders->pixel;
     adopt_optional_shader(&depth_preview_shader_, shaders->depth_preview);
-    adopt_optional_shader(&ssao_shader_, shaders->ssao);
     adopt_optional_shader(&temporal_shader_, shaders->temporal);
     adopt_bloom_shaders(shaders);
 }
@@ -155,9 +152,8 @@ bool ShaderLibrary::compile(ID3D11Device* device) {
 void ShaderLibrary::log_state() const {
     log_message(
         "Shaders Photorealism compilados: visual=ok depth_preview=%s "
-        "ssao_0.9.1=%s temporal_0.10.0=%s bloom_0.17.0=%s.",
+        "temporal_0.10.0=%s bloom_0.17.0=%s.",
         depth_preview_shader_ != nullptr ? "ok" : "indisponivel",
-        ssao_shader_ != nullptr ? "ok" : "indisponivel",
         temporal_shader_ != nullptr ? "ok" : "indisponivel",
         bloom_bright_shader_ != nullptr ? "ok" : "indisponivel");
 }
@@ -166,7 +162,6 @@ void ShaderLibrary::release() {
     safe_release(vertex_shader_);
     safe_release(pixel_shader_);
     safe_release(depth_preview_shader_);
-    safe_release(ssao_shader_);
     safe_release(temporal_shader_);
     safe_release(bloom_bright_shader_);
     safe_release(bloom_downsample_shader_);

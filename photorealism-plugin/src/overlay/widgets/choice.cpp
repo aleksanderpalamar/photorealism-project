@@ -93,17 +93,19 @@ int choice_popup(
             popup.y + static_cast<float>(index) * theme::kRowHeight,
             popup.width,
             theme::kRowHeight};
-        const bool hovered = rect_contains(option, ui.pointer.x, ui.pointer.y);
+        const bool selectable = choice_selectable(binding, index);
+        const bool hovered =
+            selectable && rect_contains(option, ui.pointer.x, ui.pointer.y);
         const bool selected = index == current;
-        const bool highlighted = hovered || selected;
-        if (highlighted) {
+        if (hovered || selected) {
             ui.list->push_rect(
                 option, selected ? theme::kAccent : theme::kControlHover,
                 theme::kControlRadius);
         }
         draw_text(
             *ui.list, *ui.font, option.x + theme::kPadding * 0.5f,
-            text_top(ui, option), binding.choices[index], theme::kText);
+            text_top(ui, option), binding.choices[index],
+            selectable ? theme::kText : theme::kTextDim);
         picked = ui.pointer.pressed && hovered ? static_cast<int>(index) : picked;
     }
     return picked;

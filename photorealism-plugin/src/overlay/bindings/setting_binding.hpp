@@ -23,6 +23,7 @@ struct SettingBinding {
     int decimals = 0;
     bool tonemap = false;
     const char* const* choices = nullptr;
+    float selectable_maximum = 0.0f;
 };
 
 enum class RowKind {
@@ -74,6 +75,7 @@ float cycled_binding_value(const SettingBinding& binding, float current);
 float quantized_binding_value(const SettingBinding& binding, float value);
 std::size_t choice_count(const SettingBinding& binding);
 std::size_t choice_index(const SettingBinding& binding, float value);
+bool choice_selectable(const SettingBinding& binding, std::size_t index);
 bool binding_edits_tonemap(const SettingBinding& binding);
 bool row_is_selectable(const MenuRow& row);
 

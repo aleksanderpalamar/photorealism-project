@@ -219,8 +219,9 @@ for observer_message in \
   'Modulo SSAO refinement 0.8.0' \
   'Modulo SSAO interior 0.9.0' \
   'Modulo temporal 0.10.0' \
-  'SSAO 0.9.1 ativo' \
-  'ssao_0.9.1' \
+  'SSAO 0.23.3 ativo' \
+  'ssao_oclusao=%s' \
+  'Efeitos 0.23.3: qualidade=%s aa=%s fxaa=%s' \
   'Resolve temporal 0.10.0 ativo' \
   'Historico temporal 0.10.0 inicializado' \
   'temporal_0.10.0'; do
@@ -373,11 +374,35 @@ if [[ "${actual_depth_preview_shader_sha256}" != "${expected_depth_preview_shade
   exit 1
 fi
 
-ssao_shader="${project_dir}/shaders/ssao.hlsl"
-expected_ssao_shader_sha256="8528e57b3dba89f3b905a5c0338d905e13f1514c78e766dd3e160af991134192"
-actual_ssao_shader_sha256="$(sha256sum "${ssao_shader}" | awk '{print $1}')"
-if [[ "${actual_ssao_shader_sha256}" != "${expected_ssao_shader_sha256}" ]]; then
-  echo "Shader SSAO aprovado foi alterado: ${actual_ssao_shader_sha256}" >&2
+ssao_occlusion_shader="${project_dir}/shaders/ssao_occlusion.hlsl"
+expected_ssao_occlusion_sha256="d0465b1f61b16baa2b55142459f4707d7a6843c6f66d08b5ac59082e68e75b9b"
+actual_ssao_occlusion_sha256="$(sha256sum "${ssao_occlusion_shader}" | awk '{print $1}')"
+if [[ "${actual_ssao_occlusion_sha256}" != "${expected_ssao_occlusion_sha256}" ]]; then
+  echo "Shader de oclusao SSAO aprovado foi alterado: ${actual_ssao_occlusion_sha256}" >&2
+  exit 1
+fi
+
+ssao_compose_shader="${project_dir}/shaders/ssao_compose.hlsl"
+expected_ssao_compose_sha256="802d887b66a0d17bbcc7df8ea2f70ac3df1d45d0952243dcee20626aff397adf"
+actual_ssao_compose_sha256="$(sha256sum "${ssao_compose_shader}" | awk '{print $1}')"
+if [[ "${actual_ssao_compose_sha256}" != "${expected_ssao_compose_sha256}" ]]; then
+  echo "Shader de composicao SSAO aprovado foi alterado: ${actual_ssao_compose_sha256}" >&2
+  exit 1
+fi
+
+fxaa_shader="${project_dir}/shaders/fxaa.hlsl"
+expected_fxaa_sha256="7d6303378b6cea7ac2a70df531b41995f55ca855d7ea87adfd906d8d7e219c89"
+actual_fxaa_sha256="$(sha256sum "${fxaa_shader}" | awk '{print $1}')"
+if [[ "${actual_fxaa_sha256}" != "${expected_fxaa_sha256}" ]]; then
+  echo "Shader de FXAA aprovado foi alterado: ${actual_fxaa_sha256}" >&2
+  exit 1
+fi
+
+interior_light_shader="${project_dir}/shaders/interior_light.hlsl"
+expected_interior_light_sha256="1480847462adb8f90b252a1ce5315a7d1a33c338a9882bc08e8367fbaf19b829"
+actual_interior_light_sha256="$(sha256sum "${interior_light_shader}" | awk '{print $1}')"
+if [[ "${actual_interior_light_sha256}" != "${expected_interior_light_sha256}" ]]; then
+  echo "Shader de luz de interior aprovado foi alterado: ${actual_interior_light_sha256}" >&2
   exit 1
 fi
 
@@ -515,8 +540,22 @@ fi
 # razao que o do cfg: vindo antes, qualquer edicao do arquivo saia com
 # "Shader visual aprovado foi alterado" e as guardas nomeadas nunca falavam.
 # Uma guarda muda nao guarda coisa alguma.
+for white_point_line in \
+  'float mask = smoothstep(0.30, 1.0, luma);' \
+  'float white_point = clamp(1.0 - 0.5 * whites, 0.25, 4.0);' \
+  'return color / lerp(1.0, white_point, mask);'; do
+  if ! grep -Fq "${white_point_line}" "${project_dir}/shaders/photorealism.hlsl"; then
+    echo "Brancos saiu do ponto de branco que white_point_test espelha: ${white_point_line}" >&2
+    exit 1
+  fi
+done
+if ! grep -Fq 'std::clamp(1.0f - 0.5f * whites, 0.25f, 4.0f)' \
+  "${project_dir}/tests/white_point_test.cpp"; then
+  echo "white_point_test deixou de espelhar o ponto de branco do shader." >&2
+  exit 1
+fi
 visual_shader="${project_dir}/shaders/photorealism.hlsl"
-expected_visual_shader_sha256="cc221815e206ffe96c50613d7b8fda72831f23bcb4ee61063bc205df279b4e6a"
+expected_visual_shader_sha256="c0b52dcd277927f8d2183cdf90687e654c120e4c2297fdbce5e3e1159b8a2be3"
 actual_visual_shader_sha256="$(sha256sum "${visual_shader}" | awk '{print $1}')"
 if [[ "${actual_visual_shader_sha256}" != "${expected_visual_shader_sha256}" ]]; then
   echo "Shader visual aprovado foi alterado: ${actual_visual_shader_sha256}" >&2
@@ -731,6 +770,8 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/src/config/profile_logging.cpp" \
   "${project_dir}/src/config/profile_reference.cpp" \
   "${project_dir}/src/config/profile_state.cpp" \
+  "${project_dir}/src/config/effect_quality.cpp" \
+  "${project_dir}/src/config/effect_logging.cpp" \
   "${project_dir}/src/config/limits.cpp" \
   "${project_dir}/src/config/logging.cpp" \
   -o "${config_load_test}"
@@ -750,6 +791,8 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/src/config/profile_logging.cpp" \
   "${project_dir}/src/config/profile_reference.cpp" \
   "${project_dir}/src/config/profile_state.cpp" \
+  "${project_dir}/src/config/effect_quality.cpp" \
+  "${project_dir}/src/config/effect_logging.cpp" \
   "${project_dir}/src/config/limits.cpp" \
   "${project_dir}/src/config/logging.cpp" \
   -o "${photorealism_profile_test}"
@@ -823,9 +866,18 @@ if command -v glslangValidator >/dev/null 2>&1; then
   glslangValidator -D -S frag -e PSDepthPreview -V \
     "${project_dir}/shaders/depth-preview.hlsl" \
     -o /tmp/photorealism-plugin-depth-preview.spv >/dev/null
-  glslangValidator -D -S frag -e PSSSAO -V \
-    "${project_dir}/shaders/ssao.hlsl" \
-    -o /tmp/photorealism-plugin-ssao.spv >/dev/null
+  glslangValidator -D -S frag -e PSAmbientOcclusion -V \
+    "${project_dir}/shaders/ssao_occlusion.hlsl" \
+    -o /tmp/photorealism-plugin-ssao_occlusion.spv >/dev/null
+  glslangValidator -D -S frag -e PSComposeOcclusion -V \
+    "${project_dir}/shaders/ssao_compose.hlsl" \
+    -o /tmp/photorealism-plugin-ssao_compose.spv >/dev/null
+  glslangValidator -D -S frag -e PSFxaa -V \
+    "${project_dir}/shaders/fxaa.hlsl" \
+    -o /tmp/photorealism-plugin-fxaa.spv >/dev/null
+  glslangValidator -D -S frag -e PSInteriorLight -V \
+    "${project_dir}/shaders/interior_light.hlsl" \
+    -o /tmp/photorealism-plugin-interior_light.spv >/dev/null
   glslangValidator -D -S frag -e PSTemporal -V \
     "${project_dir}/shaders/temporal.hlsl" \
     -o /tmp/photorealism-plugin-temporal.spv >/dev/null
@@ -1133,6 +1185,8 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/src/config/profile_logging.cpp" \
   "${project_dir}/src/config/profile_reference.cpp" \
   "${project_dir}/src/config/profile_state.cpp" \
+  "${project_dir}/src/config/effect_quality.cpp" \
+  "${project_dir}/src/config/effect_logging.cpp" \
   "${project_dir}/src/config/limits.cpp" \
   "${project_dir}/src/config/logging.cpp" \
   -o "${menu_roundtrip_test}"
@@ -1427,13 +1481,51 @@ fi
 
 # Perfil de tom. O multiplicador do SSAO entra so na hora de desenhar, e a
 # exposicao noturna do conjunto so existe se o peso de noite chegar ao shader.
-if ! grep -Fq 'settings.ssao_intensity * settings.ssao_intensity_scale' \
-  "${project_dir}/src/postprocess/frame_constants.cpp" ||
-  ! grep -Fq 'settings.ssao_interior_intensity * settings.ssao_intensity_scale' \
-  "${project_dir}/src/postprocess/frame_constants.cpp"; then
-  echo "O multiplicador de SSAO do perfil deixou de ser aplicado no desenho." >&2
+if ! grep -Fq 'constants.intensity = settings.ssao_intensity * strength;' \
+  "${project_dir}/src/postprocess/effect_constants_upload.cpp" ||
+  ! grep -Fq 'constants.interior_intensity = settings.ssao_interior_intensity * strength;' \
+  "${project_dir}/src/postprocess/effect_constants_upload.cpp" ||
+  ! grep -Fq 'return settings.ssao_intensity_scale * kSsaoGain;' \
+  "${project_dir}/src/config/effect_quality.cpp"; then
+  echo "A intensidade de SSAO do perfil deixou de chegar ao desenho." >&2
   exit 1
 fi
+# 0.23.3: a nitidez do Temporal nitido vem DEPOIS do resolve temporal, e o
+# historico guarda o que o resolve escreveu. Com a nitidez antes, ou gravada no
+# historico, cada quadro afia o anterior de novo e as bordas estouram.
+chain_body="$(awk '/^EffectChain plan_effect_chain/,/^}/' \
+  "${project_dir}/src/postprocess/effect_chain.cpp")"
+temporal_append="$({ grep -n 'EffectPass::Temporal' <<<"${chain_body}" || true; } | head -1 | cut -d: -f1)"
+sharpen_append="$({ grep -n 'EffectPass::Sharpen' <<<"${chain_body}" || true; } | head -1 | cut -d: -f1)"
+fxaa_append="$({ grep -n 'EffectPass::Fxaa' <<<"${chain_body}" || true; } | head -1 | cut -d: -f1)"
+visual_append="$({ grep -n 'EffectPass::Visual' <<<"${chain_body}" || true; } | head -1 | cut -d: -f1)"
+if [[ -z "${temporal_append}" || -z "${sharpen_append}" || -z "${fxaa_append}" ||
+  -z "${visual_append}" ]] || (( sharpen_append < temporal_append || fxaa_append > visual_append )); then
+  echo "A ordem da cadeia de efeitos mudou: FXAA tem que vir antes do grade e a \
+nitidez depois do resolve temporal." >&2
+  exit 1
+fi
+if ! grep -Fq 'scene.temporal->store(io.target_texture, scene.depth->texture());' \
+  "${project_dir}/src/postprocess/effect_draws.cpp"; then
+  echo "O historico temporal deixou de guardar a saida do proprio resolve." >&2
+  exit 1
+fi
+# DLAA e DLSS nao rodam em placa AMD: na lista eles aparecem esmaecidos e nao
+# podem ser escolhidos, como no plugin de referencia na maquina do usuario.
+if ! grep -Fq 'limited_choice("", &Settings::profile_taa, 6.0f, 2.0f, kAntiAliasingChoices)' \
+  "${project_dir}/src/overlay/bindings/menu_pages.cpp" ||
+  ! grep -Fq '{&Settings::profile_taa, 0.0f, 2.0f},' "${project_dir}/src/config/limits.cpp"; then
+  echo "DLAA/DLSS voltaram a ser selecionaveis: escolher um deles nao faz nada." >&2
+  exit 1
+fi
+for effect_shader in fxaa.hlsl ssao_occlusion.hlsl ssao_compose.hlsl interior_light.hlsl; do
+  if ! grep -Fq "L\"${effect_shader}\"" "${project_dir}/src/postprocess/effect_shaders.cpp" ||
+    ! grep -Fq "shaders/${effect_shader}" "${project_dir}/tools/package.sh"; then
+    echo "Shader de efeito fora do codigo ou do pacote: ${effect_shader}. O plugin \
+compila um arquivo que o pacote nao leva e o efeito some sem aviso." >&2
+    exit 1
+  fi
+done
 if ! grep -Fq 'night_weight_ = weights.night;' \
   "${project_dir}/src/postprocess/condition_adapter.cpp" ||
   ! grep -Fq 'input.night_weight = condition_.night_weight();' \
@@ -1880,6 +1972,8 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/src/config/profile_logging.cpp" \
   "${project_dir}/src/config/profile_reference.cpp" \
   "${project_dir}/src/config/profile_state.cpp" \
+  "${project_dir}/src/config/effect_quality.cpp" \
+  "${project_dir}/src/config/effect_logging.cpp" \
   "${project_dir}/src/config/limits.cpp" \
   "${project_dir}/src/config/logging.cpp" \
   -o "${overlay_bindings_test}"
@@ -1902,6 +1996,28 @@ if [[ "${menu_controls}" -lt 30 ]]; then
 ajustar o plugin no jogo; uma janela sem opcoes nao entrega isso." >&2
   exit 1
 fi
+
+# 0.23.3: qualidade, detalhe e preset do SSAO, anti-aliasing e interruptores dos
+# efeitos; a ordem da cadeia de passes; e o ponto de branco espelhado do shader.
+effect_quality_test="/tmp/photorealism-effect-quality-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/effect_quality_test.cpp" \
+  "${project_dir}/src/config/effect_quality.cpp" \
+  -o "${effect_quality_test}"
+"${effect_quality_test}"
+
+effect_chain_test="/tmp/photorealism-effect-chain-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/effect_chain_test.cpp" \
+  "${project_dir}/src/postprocess/effect_chain.cpp" \
+  -o "${effect_chain_test}"
+"${effect_chain_test}"
+
+white_point_test="/tmp/photorealism-white-point-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/white_point_test.cpp" \
+  -o "${white_point_test}"
+"${white_point_test}"
 
 overlay_draw_list_test="/tmp/photorealism-overlay-draw-list-test"
 g++ -std=c++20 -Wall -Wextra -Werror \

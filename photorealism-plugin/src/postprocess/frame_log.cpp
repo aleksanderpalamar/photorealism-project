@@ -1,5 +1,6 @@
 #include "frame_log.hpp"
 
+#include "../config/effect_quality.hpp"
 #include "../runtime.hpp"
 
 namespace photorealism {
@@ -81,17 +82,17 @@ void log_ssao_state(
         state->ssao_wait_logged = false;
         if (state->ssao_active_logged_generation != input.depth_generation) {
             log_message(
-                "SSAO 0.9.1 ativo: source=%ux%u format=%u "
+                "SSAO 0.23.3 ativo: source=%ux%u format=%u "
                 "generation=%llu samples=%u radius=%.3f intensity=%.3f "
-                "escala_perfil=%.2f fade=%.1f-%.1f interior=%s.",
+                "forca_perfil=%.2f fade=%.1f-%.1f interior=%s.",
                 input.depth_description.Width,
                 input.depth_description.Height,
                 static_cast<unsigned>(input.depth_description.Format),
                 static_cast<unsigned long long>(input.depth_generation),
-                settings.ssao_refinement_enabled ? 16u : 8u,
+                ssao_quality(settings).samples,
                 settings.ssao_radius,
                 settings.ssao_intensity,
-                settings.ssao_intensity_scale,
+                ssao_strength(settings),
                 settings.ssao_fade_start,
                 settings.ssao_fade_end,
                 settings.ssao_interior_enabled ? "ativo" : "inativo");

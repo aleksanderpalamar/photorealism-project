@@ -16,7 +16,7 @@ constexpr const char* kAntiAliasingChoices[] = {
     "DLSS equilibrado (sem suporte)", "DLSS desempenho (sem suporte)"};
 
 constexpr const char* kSsaoPresetChoices[] = {
-    "SSAO suave", "SSAO opcao 2", "SSAO opcao 3"};
+    "SSAO suave", "SSAO medio", "SSAO forte"};
 constexpr const char* kSsaoDetailChoices[] = {
     "Detalhe alto", "Detalhe medio", "Detalhe baixo"};
 
@@ -35,7 +35,7 @@ constexpr MenuRow kMainRows[] = {
 };
 
 constexpr MenuRow kAntiAliasingRows[] = {
-    setting_row(choice("", &Settings::profile_taa, 6.0f, kAntiAliasingChoices)),
+    setting_row(limited_choice("", &Settings::profile_taa, 6.0f, 2.0f, kAntiAliasingChoices)),
     setting_row(toggle("FXAA", &Settings::profile_fxaa)),
     setting_row(slider("Nitidez", &Settings::profile_sharpness, 0.0f, 10.0f, 0)),
     setting_row(slider("Nitidez das bordas", &Settings::profile_sharpen_edges, 0.0f, 10.0f, 0)),

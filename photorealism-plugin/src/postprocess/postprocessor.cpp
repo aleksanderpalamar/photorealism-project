@@ -1,6 +1,7 @@
 #include "postprocess.hpp"
 
 #include "../config/config.hpp"
+#include "../config/effect_quality.hpp"
 #include "../config/profile_state.hpp"
 #include "../fsr/upscaler.hpp"
 #include "../resource_observer/color_observation.hpp"
@@ -20,11 +21,15 @@
 #include "bloom_pyramid.hpp"
 #include "depth_capture.hpp"
 #include "depth_liveness.hpp"
+#include "effect_chain.hpp"
+#include "effect_log.hpp"
+#include "effect_shaders.hpp"
 #include "format_utils.hpp"
 #include "frame_constants.hpp"
 #include "frame_log.hpp"
 #include "frame_passes.hpp"
 #include "frame_resources.hpp"
+#include "occlusion_target.hpp"
 #include "shader_library.hpp"
 #include "temporal_history.hpp"
 
@@ -82,6 +87,7 @@ public:
             invalidate_temporal_history("menu trocou o anti-aliasing");
         }
         fsr::upscaler().configure(settings_);
+        effect_log_.report(settings_);
     }
 
     struct FrameTargets {
@@ -105,6 +111,9 @@ public:
         bool ssao;
         bool temporal;
         bool bloom;
+        bool fxaa;
+        bool interior_light;
+        bool sharpen;
     };
 
     void track_active_swap_chain(IDXGISwapChain* swap_chain) {
@@ -308,6 +317,7 @@ public:
 
     bool depth_is_requested() const {
         return settings_.ssao_enabled || settings_.temporal_enabled ||
+               interior_light_strength(settings_) > 0.0f ||
                (depth_preview_mode_ != 0 && depth_preview_mode_ != 6);
     }
 
@@ -337,7 +347,7 @@ public:
                         depth.description,
                         depth.generation,
                         shaders_.depth_preview() != nullptr ||
-                            shaders_.ssao() != nullptr);
+                            effect_shaders_.available(EffectShader::Occlusion));
         if (depth.available) {
             depth_capture_.copy_from(candidate);
         }
@@ -346,27 +356,18 @@ public:
     }
 
     bool plan_temporal(
-        const D3D11_TEXTURE2D_DESC& description,
-        const DepthState& depth,
-        bool ssao_active) {
+        const D3D11_TEXTURE2D_DESC& description, const DepthState& depth) {
         const bool eligible =
             depth.available && depth_preview_mode_ == 0 &&
             settings_.temporal_enabled && shaders_.temporal() != nullptr &&
-            frame_resources_.visual_target() != nullptr && frame_resources_.visual_view() != nullptr;
-        if (!eligible) {
-            return false;
-        }
-        if (!temporal_.ensure(
-                description,
-                depth.description,
-                depth.generation,
-                shaders_.temporal() != nullptr,
-                depth_capture_.texture())) {
-            return false;
-        }
-        const bool spatial_missing =
-            frame_resources_.spatial_target() == nullptr || frame_resources_.spatial_view() == nullptr;
-        return !(ssao_active && spatial_missing);
+            frame_resources_.intermediates_ready();
+        return eligible &&
+               temporal_.ensure(
+                   description,
+                   depth.description,
+                   depth.generation,
+                   shaders_.temporal() != nullptr,
+                   depth_capture_.texture());
     }
 
     bool plan_bloom(
@@ -378,10 +379,23 @@ public:
         if (!eligible) {
             return false;
         }
-        return bloom_.ensure(
-            description,
-            BloomPyramid::levels_for_radius(
-                settings_.bloom_radius, description.Height));
+        const UINT by_radius = BloomPyramid::levels_for_radius(
+            settings_.bloom_radius, description.Height);
+        const UINT limit = bloom_level_limit(settings_);
+        return bloom_.ensure(description, by_radius < limit ? by_radius : limit);
+    }
+
+    bool ensure_occlusion_target(const D3D11_TEXTURE2D_DESC& description) {
+        const bool half = ssao_quality(settings_).half_resolution;
+        const UINT width = half ? (description.Width + 1) / 2 : description.Width;
+        const UINT height = half ? (description.Height + 1) / 2 : description.Height;
+        return occlusion_target_.ensure(width, height);
+    }
+
+    float exterior_luma() const {
+        constexpr float kFallbackLuma = 0.35f;
+        const SceneFeatures features = scene_observer_.latest();
+        return features.valid ? features.mean / 255.0f : kFallbackLuma;
     }
 
     FramePlan plan_frame(const D3D11_TEXTURE2D_DESC& description) {
@@ -391,14 +405,27 @@ public:
         plan.depth_preview =
             plan.depth.available && depth_preview_mode_ >= 1 &&
             depth_preview_mode_ <= 4 && shaders_.depth_preview() != nullptr;
-        plan.ssao_preview =
-            plan.depth.available && depth_preview_mode_ == 5 &&
-            shaders_.ssao() != nullptr;
-        plan.ssao =
-            plan.depth.available && depth_preview_mode_ == 0 &&
-            settings_.ssao_enabled && shaders_.ssao() != nullptr &&
-            frame_resources_.visual_target() != nullptr && frame_resources_.visual_view() != nullptr;
-        plan.temporal = plan_temporal(description, plan.depth, plan.ssao);
+        const bool occlusion_wanted =
+            settings_.ssao_enabled || depth_preview_mode_ == 5;
+        const bool occlusion_ready = occlusion_wanted && plan.depth.available &&
+                                     effect_shaders_.available(EffectShader::Occlusion) &&
+                                     effect_shaders_.available(EffectShader::Compose) &&
+                                     ensure_occlusion_target(description);
+        const bool chain_ready = depth_preview_mode_ == 0 &&
+                                 frame_resources_.intermediates_ready();
+        plan.ssao_preview = depth_preview_mode_ == 5 && occlusion_ready;
+        plan.ssao = chain_ready && settings_.ssao_enabled && occlusion_ready;
+        plan.temporal = plan_temporal(description, plan.depth);
+        plan.fxaa = chain_ready && fxaa_enabled(settings_) &&
+                    effect_shaders_.available(EffectShader::Fxaa);
+        plan.interior_light =
+            chain_ready && plan.depth.available &&
+            interior_light_strength(settings_) > 0.0f &&
+            effect_shaders_.available(EffectShader::InteriorLight);
+        plan.sharpen =
+            chain_ready &&
+            anti_aliasing_mode(settings_) == AntiAliasingMode::TemporalSharp &&
+            effect_shaders_.available(EffectShader::Sharpen);
 
         if (!plan.temporal && temporal_.valid()) {
             invalidate_temporal_history("depth ou passe temporal indisponivel");
@@ -496,14 +523,15 @@ public:
         log_input.temporal_active = plan.temporal;
         log_frame_plan(settings_, log_input, &log_state_);
         capture_scene_for_grade(plan, targets.back_buffer);
+        const EffectChain chain = plan_effect_chain(
+            {plan.fxaa, plan.interior_light, plan.ssao, plan.temporal,
+             plan.sharpen});
         FrameConstantsInput input = {};
         input.description = targets.description;
         input.depth_description = plan.depth.description;
         input.depth_preview_mode = depth_preview_mode_;
         input.depth_available = plan.depth.available;
-        input.ssao_active = plan.ssao;
         input.ssao_preview = plan.ssao_preview;
-        input.temporal_active = plan.temporal;
         input.temporal_history_valid = temporal_.valid();
         input.bloom_active = plan.bloom;
         input.scene_needs_srgb_decode =
@@ -512,11 +540,18 @@ public:
         input.temperature = settings_.temperature;
         input.tint = settings_.tint;
         input.night_weight = condition_.night_weight();
+        input.exterior_luma = exterior_luma();
+        input.occlusion_width = occlusion_target_.width();
+        input.occlusion_height = occlusion_target_.height();
+        input.chain = &chain;
         upload_frame_constants(context_, pipeline_, settings_, input);
         FramePassScene scene = {};
         scene.context = context_;
         scene.pipeline = &pipeline_;
         scene.shaders = &shaders_;
+        scene.effects = &effect_shaders_;
+        scene.occlusion = &occlusion_target_;
+        scene.chain = &chain;
         scene.resources = &frame_resources_;
         scene.depth = &depth_capture_;
         scene.temporal = &temporal_;
@@ -532,7 +567,6 @@ public:
         pass_plan.depth_preview = plan.depth_preview;
         pass_plan.ssao_preview = plan.ssao_preview;
         pass_plan.bloom_preview = plan.bloom_preview;
-        pass_plan.ssao = plan.ssao;
         pass_plan.temporal = plan.temporal;
         pass_plan.bloom = plan.bloom;
 
@@ -706,13 +740,11 @@ private:
             return false;
         }
         log_message(
-            "Recursos de frame criados: %ux%u format=%u "
-            "ssao_intermediate=%s temporal_spatial=%s.",
+            "Recursos de frame criados: %ux%u format=%u intermediarios=%s.",
             source.Width,
             source.Height,
             static_cast<unsigned>(source.Format),
-            frame_resources_.visual_target() != nullptr ? "ok" : "indisponivel",
-            frame_resources_.spatial_target() != nullptr ? "ok" : "indisponivel");
+            frame_resources_.intermediates_ready() ? "ok" : "indisponivel");
         return true;
     }
 
@@ -720,6 +752,7 @@ private:
         if (!shaders_.compile(device_)) {
             return false;
         }
+        effect_shaders_.compile(device_);
         invalidate_temporal_history("recompilacao de shader");
         shaders_.log_state();
         return true;
@@ -735,6 +768,7 @@ private:
             return false;
         }
         frame_resources_.attach(device_);
+        occlusion_target_.attach(device_);
         depth_capture_.attach(device_, context_);
         temporal_.attach(device_, context_);
         gpu_timer_.attach(device_, context_);
@@ -802,6 +836,7 @@ private:
 
     void release_frame_resources() {
         release_depth_capture_resources();
+        occlusion_target_.release();
         bloom_.release();
 
         scene_observer_.release();
@@ -825,6 +860,7 @@ private:
         release_frame_resources();
         gpu_timer_.release();
         shaders_.release();
+        effect_shaders_.release();
         pipeline_.release();
         bloom_.release_constant_buffer();
         safe_release(context_);
@@ -835,6 +871,9 @@ private:
     SceneObserver scene_observer_;
     GpuTimer gpu_timer_;
     ShaderLibrary shaders_;
+    EffectShaders effect_shaders_;
+    EffectLog effect_log_;
+    OcclusionTarget occlusion_target_;
     BloomPyramid bloom_;
     TemporalHistory temporal_;
     DepthCapture depth_capture_;

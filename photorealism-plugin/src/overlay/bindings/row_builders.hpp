@@ -51,6 +51,15 @@ constexpr SettingBinding choice(
     binding.number = number;
     binding.maximum = maximum;
     binding.choices = choices;
+    binding.selectable_maximum = maximum;
+    return binding;
+}
+
+constexpr SettingBinding limited_choice(
+    const char* label, float Settings::*number, float maximum,
+    float selectable_maximum, const char* const* choices) {
+    SettingBinding binding = choice(label, number, maximum, choices);
+    binding.selectable_maximum = selectable_maximum;
     return binding;
 }
 

@@ -16,16 +16,15 @@ void log_active_lighting(const Settings& settings) {
         "Perfil photorealism 0.23.0: iluminacao %c (conjunto de tom %u) "
         "temperatura=%.0f exposicao=%.3f contraste=%.3f saturacao=%.3f "
         "vibracao=%.3f sombras=%.3f altas_luzes=%.3f pretos=%.3f brancos=%.3f "
-        "exposicao_noturna=%+.2fEV nitidez=%.1f bordas=%.1f ssao=x%.2f "
-        "resolve_temporal=%s. Unica fonte do grade.",
+        "exposicao_noturna=%+.2fEV nitidez=%.1f bordas=%.1f. Unica fonte do "
+        "grade.",
         'A' + static_cast<char>(active_set_index(settings.profile_lighting_method)),
         active_set_index(settings.profile_lighting_method) + 1,
         tonemap.temperature, tonemap.exposure, tonemap.contrast,
         tonemap.saturation, tonemap.vibrance, tonemap.shadows,
         tonemap.highlights, tonemap.blacks, tonemap.whites,
         tonemap.night_exposure, settings.profile_sharpness,
-        settings.profile_sharpen_edges, settings.profile_ssao_intensity,
-        settings.temporal_enabled ? "ligado" : "desligado");
+        settings.profile_sharpen_edges);
 }
 
 void log_night_exposure(const Settings& settings) {
@@ -40,17 +39,6 @@ void log_night_exposure(const Settings& settings) {
               "efeito: o observador de cena precisa estar ligado para saber que "
               "e noite.",
         static_cast<double>(settings.profile_night_exposure));
-}
-
-void log_anti_aliasing(const Settings& settings) {
-    constexpr float kFirstUnsupported = 3.0f;
-    if (settings.profile_taa < kFirstUnsupported) {
-        return;
-    }
-    log_message(
-        "Perfil photorealism 0.23.0: taa=%.0f e DLAA/DLSS, sem suporte no "
-        "plugin; o resolve temporal do plugin fica ligado no lugar.",
-        static_cast<double>(settings.profile_taa));
 }
 
 void log_pending_tone_controls(const Settings& settings) {
@@ -101,7 +89,6 @@ void log_pending_keys(const Settings& settings) {
 void log_profile(const Settings& settings) {
     log_active_lighting(settings);
     log_night_exposure(settings);
-    log_anti_aliasing(settings);
     log_pending_tone_controls(settings);
     log_pending_keys(settings);
 }

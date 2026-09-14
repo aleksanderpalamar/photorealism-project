@@ -71,7 +71,6 @@ void ShaderLibrary::release_shader_blobs(ShaderLibrary::ShaderBlobs* blobs) {
     safe_release(blobs->vertex);
     safe_release(blobs->pixel);
     safe_release(blobs->depth_preview);
-    safe_release(blobs->ssao);
     safe_release(blobs->temporal);
     for (UINT index = 0; index < kBloomPassCount; ++index) {
         safe_release(blobs->bloom[index]);
@@ -97,8 +96,6 @@ bool ShaderLibrary::compile_shader_blobs(
         "PSDepthPreview",
         "ps_5_0",
         "depth preview");
-    blobs->ssao = compile_shader_blob(
-        compile_from_file, ssao_shader_path(), "PSSSAO", "ps_5_0", "SSAO");
     blobs->temporal = compile_shader_blob(
         compile_from_file,
         temporal_shader_path(),

@@ -109,10 +109,13 @@ void values_out_of_range_are_clamped() {
         "threshold=5.0\n"
         "[profile.photorealism.0.23.0]\n"
         "lighting_method=9\n"
+        "taa=4\n"
         "sharpness=40\n"
         "tonemap_exposure_4=7\n");
     assert(near(s.bloom_threshold, 0.98f, 1e-5f));
     assert(s.profile_lighting_method == 3.0f);
+    assert(s.profile_taa == 2.0f);
+    assert(s.temporal_enabled);
     assert(near(s.sharpness, 1.0f, 1e-6f));
     assert(near(s.exposure, 2.0f, 1e-6f));
 }

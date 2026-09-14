@@ -61,18 +61,30 @@ std::size_t choice_index(const SettingBinding& binding, float value) {
     return index > last ? last : index;
 }
 
+bool choice_selectable(const SettingBinding& binding, std::size_t index) {
+    const float value = binding.minimum + static_cast<float>(index);
+    return value <= binding.selectable_maximum + 0.5f;
+}
+
 float stepped_binding_value(
     const SettingBinding& binding, float current, int direction) {
-    const float step =
-        binding.kind == BindingKind::Choice
-            ? 1.0f
-            : (binding.maximum - binding.minimum) / kSliderKeyboardSteps;
+    if (binding.kind != BindingKind::Choice) {
+        const float step =
+            (binding.maximum - binding.minimum) / kSliderKeyboardSteps;
+        return quantized_binding_value(
+            binding, current + step * static_cast<float>(direction));
+    }
     const float base =
-        binding.kind == BindingKind::Choice
-            ? binding.minimum + static_cast<float>(choice_index(binding, current))
-            : current;
-    return quantized_binding_value(
-        binding, base + step * static_cast<float>(direction));
+        binding.minimum + static_cast<float>(choice_index(binding, current));
+    const float moved = base + static_cast<float>(direction);
+    const float highest = binding.selectable_maximum;
+    return moved > highest ? highest : quantized_binding_value(binding, moved);
+}
+
+float cycled_binding_value(const SettingBinding& binding, float current) {
+    const float next =
+        binding.minimum + static_cast<float>(choice_index(binding, current) + 1);
+    return next > binding.selectable_maximum + 0.5f ? binding.minimum : next;
 }
 
 float quantized_binding_value(const SettingBinding& binding, float value) {
@@ -91,12 +103,6 @@ bool binding_edits_tonemap(const SettingBinding& binding) {
 
 bool row_is_selectable(const MenuRow& row) {
     return row.kind != RowKind::Separator;
-}
-
-float cycled_binding_value(const SettingBinding& binding, float current) {
-    const std::size_t next =
-        (choice_index(binding, current) + 1) % choice_count(binding);
-    return binding.minimum + static_cast<float>(next);
 }
 
 }
