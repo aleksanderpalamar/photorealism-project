@@ -1,5 +1,24 @@
 # Changelog
 
+## Pacote 0.22.7 - 2026-09-13
+
+**A granulacao LFGA passa a vir em 0.30.** Escolha do usuario no jogo com a
+0.22.6.
+
+### O que o teste da 0.22.6 mostrou
+
+- 93.235 quadros reconstruidos de 1664x936 para 1920x1080, na escala 0.8660;
+- o ruido azul da granulacao foi gerado em 43 ms, e nenhum erro de shader ou de
+  recurso apareceu;
+- o usuario avaliou a imagem como otima e escolheu a granulacao em 0.30.
+
+### A mudanca
+
+`grain` do `[module.fsr.0.21.0]` e o default do codigo foram de 0.15 para 0.30.
+A guarda que exige cfg e codigo iguais passou a pedir 0.30.
+
+Quem ja tem o cfg instalado mantem o valor gravado nele.
+
 ## Pacote 0.22.6 - 2026-09-13
 
 **O RCAS agora e o da AMD, bit a bit, e o FSR ganhou a granulacao LFGA.** Escala

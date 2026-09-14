@@ -863,7 +863,7 @@ effective_profile="$(awk -F= '
 # que importa. Uma guarda que explica uma regressao sutil so serve se for ela
 # a falar. Nesta ordem o hash continua pegando tudo que as guardas nao
 # cobrem, e so isso.
-expected_cfg_sha256="1554c5ed6d5d951cc625ceeb098760e5dd97e0ecd9b0db5ac98d527e2d29196f"
+expected_cfg_sha256="7dc2b330eda15ed1c21a53960ed0066167b9c6cbb54ae008d91a9877dcd5aba1"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
@@ -1500,9 +1500,9 @@ codigo=${code_fsr_sharpness}, e o padrao escolhido no jogo e 0.60." >&2
   exit 1
 fi
 
-# 0.22.6: escala padrao 0.8660 (75% dos pixels), escolhida pelo usuario, e
-# granulacao LFGA 0.15. Mesma regra: cfg e codigo dizem o mesmo.
-for fsr_default in 'render_scale=0.8660=fsr_render_scale = 0.8660f' 'grain=0.15=fsr_grain = 0.15f'; do
+# 0.22.6: escala padrao 0.8660 (75% dos pixels), escolhida pelo usuario. 0.22.7:
+# granulacao LFGA 0.30, escolhida no jogo. Mesma regra: cfg e codigo dizem o mesmo.
+for fsr_default in 'render_scale=0.8660=fsr_render_scale = 0.8660f' 'grain=0.30=fsr_grain = 0.30f'; do
   cfg_line="${fsr_default%%=fsr_*}"
   code_line="stack.modules.fsr_${fsr_default##*=fsr_}"
   if ! awk '/^\[module\.fsr\./,/^$/' "${project_dir}/config/photorealism-plugin.cfg" |
