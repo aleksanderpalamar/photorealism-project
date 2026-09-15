@@ -9,7 +9,7 @@ FORMAT_NAMES = {
     23: "R10G10B10A2_TYPELESS", 24: "R10G10B10A2_UNORM", 26: "R11G11B10_FLOAT",
     27: "R8G8B8A8_TYPELESS", 28: "R8G8B8A8_UNORM", 29: "R8G8B8A8_UNORM_SRGB",
     33: "R16G16_TYPELESS", 34: "R16G16_FLOAT", 35: "R16G16_UNORM", 36: "R16G16_UINT",
-    37: "R16G16_SNORM", 39: "R32_TYPELESS", 40: "D32_FLOAT", 41: "R32_FLOAT",
+    12: "R16G16B16A16_UINT", 31: "R8G8B8A8_SNORM", 55: "D16_UNORM", 37: "R16G16_SNORM", 39: "R32_TYPELESS", 40: "D32_FLOAT", 41: "R32_FLOAT",
     44: "R24G8_TYPELESS", 45: "D24_UNORM_S8_UINT", 48: "R8G8_TYPELESS", 49: "R8G8_UNORM",
     53: "R16_TYPELESS", 54: "R16_FLOAT", 56: "R16_UNORM", 57: "R16_UINT", 60: "R8_TYPELESS",
     61: "R8_UNORM", 62: "R8_UINT", 87: "B8G8R8A8_UNORM", 88: "B8G8R8X8_UNORM",
@@ -17,7 +17,7 @@ FORMAT_NAMES = {
 }
 
 FLOAT_FORMATS = {2, 10, 26, 34, 41, 54, 19, 20, 40}
-DEPTH_FORMATS = {19, 20, 39, 40, 44, 45}
+DEPTH_FORMATS = {19, 20, 39, 40, 44, 45, 55}
 
 
 def typed_format(texture_format, view_format):
@@ -78,6 +78,12 @@ def decode_pixels(raw, width, height, fmt):
     if fmt == 45:
         packed = np.frombuffer(raw, np.uint32, count).reshape(height, width)
         return np.stack([(packed & 0xFFFFFF) / 16777215.0, (packed >> 24) / 255.0], axis=-1)
+    if fmt == 12:
+        return np.frombuffer(raw, np.uint16, count * 4).reshape(height, width, 4).astype(np.float32)
+    if fmt == 31:
+        return np.maximum(np.frombuffer(raw, np.int8, count * 4).reshape(height, width, 4) / 127.0, -1.0)
+    if fmt == 55:
+        return np.frombuffer(raw, np.uint16, count).reshape(height, width, 1) / 65535.0
     if fmt == 49:
         return np.frombuffer(raw, np.uint8, count * 2).reshape(height, width, 2) / 255.0
     if fmt == 54:

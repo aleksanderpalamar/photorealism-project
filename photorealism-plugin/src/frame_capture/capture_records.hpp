@@ -36,6 +36,15 @@ struct BindRecord {
     std::vector<TargetInfo> targets;
 };
 
+struct ConstantRecord {
+    unsigned bind = 0;
+    const char* stage = "";
+    unsigned slot = 0;
+    unsigned bytes = 0;
+    std::string file;
+    const char* failure = nullptr;
+};
+
 struct SnapshotRecord {
     TargetInfo target;
     unsigned first_bind = 0;

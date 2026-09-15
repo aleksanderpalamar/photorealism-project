@@ -57,8 +57,11 @@ common_flags=(
   "${project_dir}/src/hooks/swap_chain_hooks.cpp" \
   "${project_dir}/src/hooks/context_hooks.cpp" \
   "${project_dir}/src/frame_capture/bind_runs.cpp" \
+  "${project_dir}/src/passfx/pass_effects.cpp" \
+  "${project_dir}/src/passfx/pre_tone_effect.cpp" \
   "${project_dir}/src/frame_capture/capture_folder.cpp" \
   "${project_dir}/src/frame_capture/capture_manifest.cpp" \
+  "${project_dir}/src/frame_capture/constant_snapshots.cpp" \
   "${project_dir}/src/frame_capture/dds_header.cpp" \
   "${project_dir}/src/frame_capture/frame_capture.cpp" \
   "${project_dir}/src/frame_capture/staging_snapshots.cpp" \

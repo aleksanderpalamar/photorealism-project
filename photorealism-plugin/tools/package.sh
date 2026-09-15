@@ -2,7 +2,7 @@
 set -euo pipefail
 
 project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-version="0.24.0"
+version="0.24.1"
 package_name="photorealism-plugin-${version}-ets2-ats-1.60-proton"
 output_dir="${project_dir}/dist"
 staging_dir="$(mktemp -d)"
@@ -30,6 +30,8 @@ cp "${project_dir}/shaders/ssao_occlusion.hlsl" \
   "${staging_dir}/${package_name}/photorealism-plugin/shaders/ssao_occlusion.hlsl"
 cp "${project_dir}/shaders/ssao_compose.hlsl" \
   "${staging_dir}/${package_name}/photorealism-plugin/shaders/ssao_compose.hlsl"
+cp "${project_dir}/shaders/pre_tone.hlsl" \
+  "${staging_dir}/${package_name}/photorealism-plugin/shaders/pre_tone.hlsl"
 cp "${project_dir}/shaders/fxaa.hlsl" \
   "${staging_dir}/${package_name}/photorealism-plugin/shaders/fxaa.hlsl"
 cp "${project_dir}/shaders/interior_light.hlsl" \

@@ -1,5 +1,7 @@
 #include "effect_quality.hpp"
 
+#include <cmath>
+
 namespace photorealism {
 namespace {
 
@@ -34,6 +36,19 @@ unsigned quality_level(float value) {
         return kLevels - 1;
     }
     return static_cast<unsigned>(rounded);
+}
+
+PreToneParameters pre_tone_parameters(const Settings& settings) {
+    PreToneParameters parameters = {};
+    parameters.exposure_gain = std::pow(2.0f, settings.profile_pre_exposure);
+    parameters.contrast =
+        settings.profile_pre_contrast * settings.profile_dynamic_contrast;
+    return parameters;
+}
+
+bool pre_tone_active(const PreToneParameters& parameters) {
+    return std::fabs(parameters.exposure_gain - 1.0f) > 1e-4f ||
+           std::fabs(parameters.contrast) > 1e-4f;
 }
 
 AntiAliasingMode anti_aliasing_mode(const Settings& settings) {

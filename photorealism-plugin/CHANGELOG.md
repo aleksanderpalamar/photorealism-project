@@ -1,5 +1,54 @@
 # Changelog
 
+## Pacote 0.24.1 - 2026-09-15
+
+**Pre-exposicao, pre-contraste e contraste dinamico passam a mudar a imagem.** Primeiro
+efeito entre passes do jogo: o plugin desenha no HDR do ETS2 logo antes do tom do
+proprio jogo. A captura de quadro passa a gravar os constant buffers, para achar as
+matrizes da camera do motion blur. Detalhes em `references/pre-tom-0.24.1.md`.
+
+### O que muda
+
+- **Pre-tom**: com o conjunto de tom ativo, o HDR recebe ganho `2^pre_exposure` e
+  uma curva de contraste `pre_contrast * dynamic_contrast` na luminancia, parada no
+  cinza medio 0.18, antes de o jogo aplicar o tom:
+  - Iluminacao A: -1 EV e contraste 0.42; B: contraste 0.26; C: +0.10 EV;
+  - Iluminacao D padrao nao tem pre-tom e o passe nao roda;
+  - os tres sliders de Cores / Tom agem em qualquer iluminacao;
+- **Onde**: o alvo HDR unico em resolucao de saida seguido do alvo SRGB do tom,
+  reconhecido pela forma dos dois binds, como nas tres capturas do usuario. Esse
+  alvo nao e historico do anti-aliasing do jogo (o historico e o segundo alvo do
+  bind anterior) e e reescrito no quadro seguinte;
+- **Estado do jogo**: alvos, viewport, shaders, estados e os 128 slots de textura do
+  pixel shader voltam como estavam. Nenhum gancho por desenho;
+- **Log**: `Pre-tom 0.24.1 ativo` com ganho, EV e contraste a cada troca, e a
+  contagem de quadros aplicados a cada 10 s;
+- **Captura de quadro**: em cada bind, os constant buffers ligados no vertex e no
+  pixel shader vao para `cb_bPPP_vsS.bin` / `cb_bPPP_psS.bin`, com a lista
+  `constantes` no manifesto. A linha de log da captura conta os buffers;
+- o log do perfil deixa de listar pre-exposicao, pre-contraste e contraste
+  dinamico como pendentes do HDR do jogo;
+- `tools/gbuffer_dds.py` le `R16G16B16A16_UINT`, `R8G8B8A8_SNORM` e `D16_UNORM`,
+  formatos que apareceram nas capturas do usuario;
+- `references/gbuffer-ets2-0.24.0.md`: mapa do quadro do ETS2 a partir das tres
+  capturas (G-buffer, material, luz, HDR do tom, espelhos, velocidade, estrada).
+
+### Verificacao
+
+- **GPU** (Wine + DXVK, "jogo" sintetico): ganho 0.5 e contraste 0.42 sobre
+  (0.4, 0.2, 0.1, 0.7) deram 0.1671 / 0.0836 / 0.0418 / 0.6997 contra
+  0.1673 / 0.0836 / 0.0418 / 0.7 esperados; o alvo do tom, a textura do slot 5 e o
+  buffer do slot 3 do jogo continuaram ligados; um bind do tom sem HDR antes nao foi
+  tocado. Constant buffers de 16 floats conhecidos sairam iguais na captura.
+- **Testes de host**: `pre_tone_test` (reconhecimento do tom, mapeamento dos
+  conjuntos, pivo do contraste) e `frame_capture_logic_test` com constantes no
+  manifesto.
+- **Guardas**, quebradas numa copia: o pre-tom roda depois da captura nos dois
+  ganchos, salva e restaura os 128 slots, as linhas de log, o shader no pacote e a
+  copia das constantes em cada bind.
+
+**Ainda nao rodou no jogo.**
+
 ## Pacote 0.24.0 - 2026-09-15
 
 **Captura do quadro para analise.** Primeiro passo do grupo entre passes do jogo:

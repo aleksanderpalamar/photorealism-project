@@ -78,7 +78,7 @@ unsigned active_set_index(float lighting_method) {
     return static_cast<unsigned>(rounded);
 }
 
-bool uses_pending_controls(const PhotorealismTonemap& tonemap) {
+bool uses_pre_tone_controls(const PhotorealismTonemap& tonemap) {
     return tonemap.pre_exposure != 0.0f || tonemap.pre_contrast != 0.0f ||
            tonemap.dynamic_contrast != 1.0f;
 }

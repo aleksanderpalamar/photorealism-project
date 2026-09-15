@@ -406,6 +406,14 @@ if [[ "${actual_interior_light_sha256}" != "${expected_interior_light_sha256}" ]
   exit 1
 fi
 
+pre_tone_shader="${project_dir}/shaders/pre_tone.hlsl"
+expected_pre_tone_sha256="c1cea4bcaf76d09feee82658b35f945659561a4ef143370f4a916ec9ace8425c"
+actual_pre_tone_sha256="$(sha256sum "${pre_tone_shader}" | awk '{print $1}')"
+if [[ "${actual_pre_tone_sha256}" != "${expected_pre_tone_sha256}" ]]; then
+  echo "Shader do pre-tom aprovado foi alterado: ${actual_pre_tone_sha256}" >&2
+  exit 1
+fi
+
 temporal_shader="${project_dir}/shaders/temporal.hlsl"
 expected_temporal_shader_sha256="999b9766bd3f391a121e70421c204ba4a3a5a8dea14f4792f81d9d71d81b7181"
 actual_temporal_shader_sha256="$(sha256sum "${temporal_shader}" | awk '{print $1}')"
@@ -872,6 +880,9 @@ if command -v glslangValidator >/dev/null 2>&1; then
   glslangValidator -D -S frag -e PSComposeOcclusion -V \
     "${project_dir}/shaders/ssao_compose.hlsl" \
     -o /tmp/photorealism-plugin-ssao_compose.spv >/dev/null
+  glslangValidator -D -S frag -e PSPreTone -V \
+    "${project_dir}/shaders/pre_tone.hlsl" \
+    -o /tmp/photorealism-plugin-pre-tone.spv >/dev/null
   glslangValidator -D -S frag -e PSFxaa -V \
     "${project_dir}/shaders/fxaa.hlsl" \
     -o /tmp/photorealism-plugin-fxaa.spv >/dev/null
@@ -2064,6 +2075,58 @@ if ! grep -Fq 'Captura de quadro 0.24.0 salva: %u de %u alvos em %s' "${dxgi_str
   exit 1
 fi
 python3 "${project_dir}/tools/gbuffer_report.py" --auto-teste
+
+# 0.24.1: pre-exposicao, pre-contraste e contraste dinamico agem no HDR que entra
+# no tom do jogo. O passe do tom e reconhecido pela forma (um alvo f10 seguido de
+# um alvo f29 do mesmo tamanho), o efeito roda depois de a captura observar o
+# bind -- ela guarda o quadro do jogo sem o efeito -- e devolve todos os 128 slots
+# de textura do pixel shader: o tom do jogo pode ter ligado o HDR em qualquer um.
+pre_tone_test="/tmp/photorealism-pre-tone-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/pre_tone_test.cpp" \
+  "${project_dir}/src/config/effect_quality.cpp" \
+  -o "${pre_tone_test}"
+"${pre_tone_test}"
+
+for effect_hook in hooked_set_render_targets hooked_set_render_targets_and_uavs; do
+  hook_body="$(awk "/^void STDMETHODCALLTYPE ${effect_hook}\\(/,/^}/" \
+    "${project_dir}/src/hooks/context_hooks.cpp")"
+  capture_call="$({ grep -n 'observe_capture_binds(' <<<"${hook_body}" || true; } | head -1 | cut -d: -f1)"
+  effect_call="$({ grep -n 'apply_pass_effects(' <<<"${hook_body}" || true; } | head -1 | cut -d: -f1)"
+  if [[ -z "${capture_call}" || -z "${effect_call}" ]] || (( effect_call < capture_call )); then
+    echo "${effect_hook} aplica os efeitos entre passes antes de a captura ver o \
+bind, ou deixou de aplica-los: a captura passa a gravar o quadro ja modificado." >&2
+    exit 1
+  fi
+done
+if ! grep -Fq 'constexpr UINT kPixelSlots = D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT;' \
+  "${project_dir}/src/passfx/pre_tone_effect.cpp" ||
+  ! grep -Fq 'context->PSGetShaderResources(0, kPixelSlots, game_resources);' \
+  "${project_dir}/src/passfx/pre_tone_effect.cpp" ||
+  ! grep -Fq 'context->PSSetShaderResources(0, kPixelSlots, game_resources);' \
+  "${project_dir}/src/passfx/pre_tone_effect.cpp"; then
+  echo "O pre-tom deixou de devolver os 128 slots de textura do jogo: o tom do jogo \
+pode ficar sem o HDR e a tela sai preta." >&2
+  exit 1
+fi
+for pre_tone_message in \
+  'Pre-tom 0.24.1 ativo: ganho=%.3f (%+.2f EV) contraste=%.2f no HDR %ux%u' \
+  'Pre-tom 0.24.1: %u quadros aplicados nos ultimos 10 s.' \
+  'buffers de constantes'; do
+  if ! grep -Fq "${pre_tone_message}" "${dxgi_strings}"; then
+    echo "Linha de log da 0.24.1 sumiu: ${pre_tone_message}" >&2
+    exit 1
+  fi
+done
+if ! grep -Fq 'shaders/pre_tone.hlsl' "${project_dir}/tools/package.sh"; then
+  echo "O shader do pre-tom ficou fora do pacote." >&2
+  exit 1
+fi
+if ! grep -Fq 'g_constants.take(context, index);' "${project_dir}/src/frame_capture/frame_capture.cpp"; then
+  echo "A captura deixou de gravar os buffers de constantes de cada passe: sem \
+eles as matrizes da camera para o motion blur nao aparecem." >&2
+  exit 1
+fi
 
 overlay_draw_list_test="/tmp/photorealism-overlay-draw-list-test"
 g++ -std=c++20 -Wall -Wextra -Werror \

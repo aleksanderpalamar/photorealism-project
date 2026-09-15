@@ -28,6 +28,7 @@ void STDMETHODCALLTYPE hooked_set_render_targets(
         return;
     }
     observe_capture_binds(context, render_target_count, render_targets, depth_target);
+    apply_pass_effects(context, render_target_count, render_targets);
     if (observe_color_targets(
             context, render_target_count, render_targets, depth_target)) {
         reconstruct_game_frame(context, render_targets[0]);
@@ -64,6 +65,7 @@ void STDMETHODCALLTYPE hooked_set_render_targets_and_uavs(
         return;
     }
     observe_capture_binds(context, render_target_count, render_targets, depth_target);
+    apply_pass_effects(context, render_target_count, render_targets);
     const bool reconstruct = observe_color_targets(
         context, render_target_count, render_targets, depth_target);
     if (reconstruct && uav_count == 0) {

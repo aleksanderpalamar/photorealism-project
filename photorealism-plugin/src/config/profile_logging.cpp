@@ -41,18 +41,17 @@ void log_night_exposure(const Settings& settings) {
         static_cast<double>(settings.profile_night_exposure));
 }
 
-void log_pending_tone_controls(const Settings& settings) {
+void log_pre_tone(const Settings& settings) {
     const PhotorealismTonemap& tonemap = active_tonemap(settings);
-    if (!uses_pending_controls(tonemap)) {
+    if (!uses_pre_tone_controls(tonemap)) {
         return;
     }
     log_message(
         "Perfil photorealism 0.23.0: pre_exposure=%.2f pre_contrast=%.2f "
-        "dynamic_contrast=%.2f lidos; %s.",
+        "dynamic_contrast=%.2f aplicados no HDR antes do tom do jogo.",
         static_cast<double>(tonemap.pre_exposure),
         static_cast<double>(tonemap.pre_contrast),
-        static_cast<double>(tonemap.dynamic_contrast),
-        pending_reason_text(PendingReason::GameHdr));
+        static_cast<double>(tonemap.dynamic_contrast));
 }
 
 std::string keys_with_reason(const Settings& settings, PendingReason reason) {
@@ -89,7 +88,7 @@ void log_pending_keys(const Settings& settings) {
 void log_profile(const Settings& settings) {
     log_active_lighting(settings);
     log_night_exposure(settings);
-    log_pending_tone_controls(settings);
+    log_pre_tone(settings);
     log_pending_keys(settings);
 }
 

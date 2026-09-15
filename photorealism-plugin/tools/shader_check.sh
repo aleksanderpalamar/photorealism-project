@@ -51,6 +51,7 @@ shaders=(
   "ssao_compose.hlsl PSComposeOcclusion ps_5_0"
   "fxaa.hlsl PSFxaa ps_5_0"
   "interior_light.hlsl PSInteriorLight ps_5_0"
+  "pre_tone.hlsl PSPreTone ps_5_0"
   "temporal.hlsl PSTemporal ps_5_0"
   "bloom.hlsl PSBloomBright ps_5_0"
   "bloom.hlsl PSBloomDownsample ps_5_0"

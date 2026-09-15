@@ -5,6 +5,7 @@
 #include "../config/profile_state.hpp"
 #include "../frame_capture/frame_capture.hpp"
 #include "../fsr/upscaler.hpp"
+#include "../passfx/pass_effects.hpp"
 #include "../resource_observer/color_observation.hpp"
 #include "../hooks/present_target.hpp"
 #include "../overlay/overlay.hpp"
@@ -39,6 +40,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cfloat>
 #include <cmath>
 #include <cstdio>
@@ -58,6 +60,8 @@ bool key_pressed_once(int virtual_key, bool* was_down) {
     *was_down = is_down;
     return pressed;
 }
+
+std::atomic<bool> g_pass_effects_wanted{false};
 
 class PostProcessor : public overlay::MenuHost {
 public:
@@ -602,6 +606,7 @@ public:
         if (!ensure_device_for(swap_chain)) {
             return;
         }
+        g_pass_effects_wanted.store(pass_effects_wanted(), std::memory_order_release);
         if (!settings_.enabled) {
             return;
         }
@@ -644,6 +649,23 @@ public:
         fsr::upscaler().present(
             device_, back_buffer, description.Width, description.Height);
         back_buffer->Release();
+    }
+
+    void pass_effects_in_frame(
+        ID3D11DeviceContext* context,
+        UINT render_target_count,
+        ID3D11RenderTargetView* const* render_targets) {
+        if (context == nullptr || context != context_ || resize_in_progress_ ||
+            !settings_.enabled) {
+            return;
+        }
+        pass_effects_.observe(
+            context_, render_target_count, render_targets, settings_,
+            shaders_.vertex());
+    }
+
+    bool pass_effects_wanted() const {
+        return settings_.enabled && pre_tone_active(pre_tone_parameters(settings_));
     }
 
     void reconstruct_in_frame(
@@ -762,6 +784,7 @@ private:
             return false;
         }
         effect_shaders_.compile(device_);
+        pass_effects_.create(device_);
         invalidate_temporal_history("recompilacao de shader");
         shaders_.log_state();
         return true;
@@ -870,6 +893,7 @@ private:
         gpu_timer_.release();
         shaders_.release();
         effect_shaders_.release();
+        pass_effects_.release();
         pipeline_.release();
         bloom_.release_constant_buffer();
         safe_release(context_);
@@ -881,6 +905,7 @@ private:
     GpuTimer gpu_timer_;
     ShaderLibrary shaders_;
     EffectShaders effect_shaders_;
+    passfx::PassEffects pass_effects_;
     EffectLog effect_log_;
     OcclusionTarget occlusion_target_;
     BloomPyramid bloom_;
@@ -955,6 +980,21 @@ void upscale_present_frame(IDXGISwapChain* swap_chain) {
     }
     g_post_processor.upscale_frame(swap_chain);
     end_color_frame();
+}
+
+void apply_pass_effects(
+    ID3D11DeviceContext* context,
+    UINT render_target_count,
+    ID3D11RenderTargetView* const* render_targets) {
+    if (!g_pass_effects_wanted.load(std::memory_order_acquire)) {
+        return;
+    }
+    ProcessorScope scope;
+    if (!scope.entered()) {
+        return;
+    }
+    g_post_processor.pass_effects_in_frame(
+        context, render_target_count, render_targets);
 }
 
 void reconstruct_game_frame(

@@ -51,7 +51,7 @@ void keys_land_in_the_numbered_set() {
     assert(near(sets[1].exposure, 0.25f, 1e-6f));
     assert(near(sets[1].pre_contrast, 0.26f, 1e-6f));
     assert(near(sets[4].whites, -0.13f, 1e-6f));
-    assert(uses_pending_controls(sets[1]));
+    assert(uses_pre_tone_controls(sets[1]));
     assert(!apply_tonemap_key(sets, "tonemap_exposure_6", "1"));
     assert(!apply_tonemap_key(sets, "tonemap_exposure", "1"));
     assert(!apply_tonemap_key(sets, "tonemap_operator_a", "7"));
@@ -85,7 +85,7 @@ void every_set_has_the_reference_values() {
     assert(near(sets[2].saturation, 1.01f, 1e-6f));
     assert(near(sets[3].exposure, -0.06f, 1e-6f));
     assert(near(sets[3].highlights, -0.07f, 1e-6f));
-    assert(!uses_pending_controls(sets[3]));
+    assert(!uses_pre_tone_controls(sets[3]));
     assert(sets[4].exposure == 0.0f && sets[4].contrast == 1.0f);
 }
 

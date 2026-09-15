@@ -26,7 +26,14 @@ struct SsaoQuality {
     float curve;
 };
 
+struct PreToneParameters {
+    float exposure_gain;
+    float contrast;
+};
+
 unsigned quality_level(float value);
+PreToneParameters pre_tone_parameters(const Settings& settings);
+bool pre_tone_active(const PreToneParameters& parameters);
 AntiAliasingMode anti_aliasing_mode(const Settings& settings);
 SsaoQuality ssao_quality(const Settings& settings);
 unsigned bloom_level_limit(const Settings& settings);

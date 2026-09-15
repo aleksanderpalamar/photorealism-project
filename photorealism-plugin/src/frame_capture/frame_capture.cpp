@@ -5,6 +5,7 @@
 #include "capture_folder.hpp"
 #include "capture_manifest.hpp"
 #include "capture_schedule.hpp"
+#include "constant_snapshots.hpp"
 #include "staging_snapshots.hpp"
 #include "target_description.hpp"
 
@@ -27,6 +28,7 @@ std::atomic<bool> g_recording{false};
 CaptureSchedule g_schedule;
 BindRuns g_runs;
 StagingSnapshots g_snapshots;
+ConstantSnapshots g_constants;
 std::vector<BindRecord> g_binds;
 ID3D11DeviceContext* g_context = nullptr;
 char g_status[160] = "Capturar quadro para analise";
@@ -44,6 +46,7 @@ void snapshot_released(const std::vector<ReleasedTarget>& released) {
 
 void start_recording() {
     g_snapshots.reset();
+    g_constants.reset();
     g_binds.clear();
     g_runs.reset();
     g_recording.store(true, std::memory_order_release);
@@ -52,6 +55,7 @@ void start_recording() {
 void clear_recording() {
     g_recording.store(false, std::memory_order_release);
     g_snapshots.reset();
+    g_constants.reset();
     g_binds.clear();
     g_runs.reset();
     if (g_context != nullptr) {
@@ -60,12 +64,15 @@ void clear_recording() {
     }
 }
 
-void report(unsigned written, const std::string& name, unsigned long long started) {
+void report(
+    unsigned written, unsigned constants, const std::string& name,
+    unsigned long long started) {
     const unsigned total = static_cast<unsigned>(g_snapshots.records().size());
     log_message(
-        "Captura de quadro 0.24.0 salva: %u de %u alvos em %s, %u binds%s, %llu ms. "
-        "Gerar o relatorio com tools/gbuffer_report.py nessa pasta.",
-        written, total, name.c_str(), g_runs.binds(),
+        "Captura de quadro 0.24.0 salva: %u de %u alvos em %s, %u buffers de "
+        "constantes, %u binds%s, %llu ms. Gerar o relatorio com "
+        "tools/gbuffer_report.py nessa pasta.",
+        written, total, name.c_str(), constants, g_runs.binds(),
         g_snapshots.truncated() ? " (truncada no limite de memoria)" : "",
         GetTickCount64() - started);
     char status[160] = {};
@@ -82,12 +89,16 @@ void flush() {
     std::string name;
     const bool folder_ready = g_context != nullptr && create_capture_folder(&folder, &name);
     const unsigned written = folder_ready ? g_snapshots.write_all(g_context, folder.c_str()) : 0u;
+    const unsigned constants =
+        folder_ready ? g_constants.write_all(g_context, folder.c_str()) : 0u;
     const bool manifest_written =
         folder_ready && write_text_file(
                             folder, L"manifesto.json",
-                            manifest_json(g_binds, g_snapshots.records(), g_snapshots.truncated()));
+                            manifest_json(
+                                g_binds, g_snapshots.records(), g_constants.records(),
+                                g_snapshots.truncated()));
     g_schedule.finish(written > 0 && manifest_written);
-    report(manifest_written ? written : 0u, name, started);
+    report(manifest_written ? written : 0u, constants, name, started);
     clear_recording();
 }
 
@@ -135,6 +146,7 @@ void observe_capture_binds(
     }
     if (accepted) {
         g_binds.push_back({index, targets});
+        g_constants.take(context, index);
     }
     snapshot_released(released);
     ReleaseSRWLockExclusive(&g_lock);

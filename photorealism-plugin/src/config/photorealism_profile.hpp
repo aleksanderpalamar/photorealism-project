@@ -36,7 +36,7 @@ extern const std::size_t kTonemapFieldCount;
 bool apply_tonemap_key(
     PhotorealismTonemap* sets, const char* key, const char* value);
 unsigned active_set_index(float lighting_method);
-bool uses_pending_controls(const PhotorealismTonemap& tonemap);
+bool uses_pre_tone_controls(const PhotorealismTonemap& tonemap);
 void reference_tonemap_sets(PhotorealismTonemap* sets);
 
 }

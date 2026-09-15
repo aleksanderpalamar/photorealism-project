@@ -11,14 +11,13 @@ constexpr const char kProfileSection[] = "profile.photorealism.0.23.0";
 
 enum class PendingReason {
     GBuffer,
-    GameHdr,
     MotionVectors,
     MirrorTarget,
     ShaderSwap,
     NoEquivalent,
 };
 
-constexpr std::size_t kPendingReasonCount = 6;
+constexpr std::size_t kPendingReasonCount = 5;
 
 struct PendingControl {
     float Settings::*member;

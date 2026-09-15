@@ -549,12 +549,20 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   SSAO muito alto deixa marca de "fantasma", causa ainda nao isolada;
 - **0.24.0 (entregue)** captura do quadro para analise, sem mudar a imagem: botao
   no menu, todos os alvos de cada passe gravados em DDS com manifesto, e
-  `tools/gbuffer_report.py` com estatisticas, etiquetas e previews por alvo. Falta
-  rodar a captura no jogo e escrever `references/gbuffer-ets2-0.24.0.md`;
-- **0.24.1 em diante** um efeito entre passes por pacote: pre-exposicao,
-  pre-contraste e contraste dinamico no HDR antes do tom; saturacao do albedo;
-  espelhos do jogo; motion blur pelo buffer de velocidade; SSS; normais da
-  estrada. O que a captura mostrar que nao da entre passes vai para a 0.25.x;
+  `tools/gbuffer_report.py` com estatisticas, etiquetas e previews por alvo.
+  Primeira captura do usuario analisada em `references/gbuffer-ets2-0.24.0.md`:
+  G-buffer, material, luz, HDR antes do tom e atlas dos espelhos identificados;
+  velocidade e mascara de estrada pedem uma captura com o caminhao andando.
+  Duas capturas andando: estrada = canal 1 do material igual a 32; a velocidade
+  do jogo so tem objetos, sem o movimento da camera;
+- **0.24.1 (entregue)** pre-exposicao, pre-contraste e contraste dinamico no HDR
+  do jogo, logo antes do tom, reconhecido pela forma dos binds. A captura passa a
+  gravar os constant buffers de cada bind, para achar as matrizes da camera no
+  anti-aliasing temporal do jogo. Detalhe em `references/pre-tom-0.24.1.md`;
+- **0.24.2 em diante** um efeito entre passes por pacote: saturacao do albedo;
+  espelhos do jogo; SSS; normais da estrada; motion blur pelas matrizes do
+  anti-aliasing do jogo, se a captura das constantes as mostrar. O que nao der
+  entre passes vai para a 0.25.x;
 - **0.25.x** shaders do jogo alterados em memoria, a partir dos arquivos do
   proprio usuario: espessura de folhas e grama, chuva do jogo e, se preciso,
   normais da estrada. A Fase 2 do FSR fica depois disso;

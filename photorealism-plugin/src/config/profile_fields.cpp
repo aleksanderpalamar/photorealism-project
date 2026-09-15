@@ -62,7 +62,6 @@ const std::size_t kPendingControlCount =
 const char* pending_reason_text(PendingReason reason) {
     constexpr const char* kTexts[kPendingReasonCount] = {
         "pendente: descoberta do G-buffer",
-        "pendente: HDR do jogo",
         "pendente: vetores de movimento",
         "pendente: alvo do espelho",
         "exige troca de shader",

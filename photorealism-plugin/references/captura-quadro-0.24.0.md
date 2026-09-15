@@ -31,6 +31,24 @@ a passe, e a ferramenta ajuda a identificar o conteudo de cada alvo.
 - **Limites**: 160 copias ou 1,5 GB. Multiamostra, formato sem tamanho conhecido ou staging recusado ficam
   no manifesto com o motivo e sem arquivo.
 
+## Constantes (0.24.1)
+
+Para achar as matrizes da camera do anti-aliasing temporal do jogo (motion blur), a captura tambem grava os
+constant buffers:
+
+- **Momento**: em cada bind do jogo, os 14 slots do vertex shader e os 14 do pixel shader ainda ligados.
+  Sao as constantes que o passe anterior usou (ou que o jogo ja ligou para o passe que comeca). As do
+  anti-aliasing temporal ficam no bind seguinte ao MRT de dois f10, que e o bind do HDR do tom.
+- **Arquivos**: `cb_bPPP_vsS.bin` e `cb_bPPP_psS.bin`, os bytes crus do buffer, sendo PPP o bind e S o
+  slot.
+- **Manifesto**: lista `constantes` com `bind`, `estagio`, `slot`, `bytes`, `arquivo` e `falha`.
+- **Limites**: 4096 buffers e 64 KB por buffer; acima disso, a entrada fica com o motivo e sem arquivo.
+- **Momento da copia**: a copia para staging acontece no proprio bind, entao o arquivo guarda o valor
+  daquele instante, mesmo que o jogo reescreva o buffer depois.
+
+Verificado no harness Wine + DXVK: dois passes com buffers de 16 floats conhecidos saem nos binds 2 e 3 com
+os mesmos bytes.
+
 ## Relatorio
 
 `python3 tools/gbuffer_report.py <pasta>` escreve `relatorio.md` e `previews/`:

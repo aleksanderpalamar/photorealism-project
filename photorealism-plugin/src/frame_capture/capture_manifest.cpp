@@ -47,13 +47,29 @@ void append_snapshot(std::string* text, const SnapshotRecord& snapshot, bool las
     text->append(last ? "}\n" : "},\n");
 }
 
+void append_constant(std::string* text, const ConstantRecord& constant, bool last) {
+    char buffer[160] = {};
+    std::snprintf(
+        buffer, sizeof(buffer),
+        "    {\"bind\": %u, \"estagio\": \"%s\", \"slot\": %u, \"bytes\": %u, \"arquivo\": \"",
+        constant.bind, constant.stage, constant.slot, constant.bytes);
+    text->append(buffer);
+    text->append(constant.file);
+    text->append("\", \"falha\": ");
+    text->append(constant.failure != nullptr ? "\"" : "null");
+    text->append(constant.failure != nullptr ? constant.failure : "");
+    text->append(constant.failure != nullptr ? "\"" : "");
+    text->append(last ? "}\n" : "},\n");
+}
+
 }
 
 std::string manifest_json(
     const std::vector<BindRecord>& binds,
     const std::vector<SnapshotRecord>& snapshots,
+    const std::vector<ConstantRecord>& constants,
     bool truncated) {
-    std::string text = "{\n  \"versao\": \"0.24.0\",\n  \"truncado\": ";
+    std::string text = "{\n  \"versao\": \"0.24.1\",\n  \"truncado\": ";
     text.append(truncated ? "true" : "false");
     text.append(",\n  \"binds\": [\n");
     for (std::size_t index = 0; index < binds.size(); ++index) {
@@ -62,6 +78,10 @@ std::string manifest_json(
     text.append("  ],\n  \"capturas\": [\n");
     for (std::size_t index = 0; index < snapshots.size(); ++index) {
         append_snapshot(&text, snapshots[index], index + 1 == snapshots.size());
+    }
+    text.append("  ],\n  \"constantes\": [\n");
+    for (std::size_t index = 0; index < constants.size(); ++index) {
+        append_constant(&text, constants[index], index + 1 == constants.size());
     }
     text.append("  ]\n}\n");
     return text;

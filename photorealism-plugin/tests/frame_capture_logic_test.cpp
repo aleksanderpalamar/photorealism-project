@@ -116,7 +116,15 @@ void the_manifest_lists_binds_and_files() {
     snapshot.file = "000_b024-025_id01_s0.dds";
     SnapshotRecord failed = snapshot;
     failed.failure = "formato sem tamanho conhecido";
-    const std::string json = manifest_json({bind}, {snapshot, failed}, false);
+    ConstantRecord constant;
+    constant.bind = 144;
+    constant.stage = "ps";
+    constant.slot = 2;
+    constant.bytes = 256;
+    constant.file = "cb_b144_ps2.bin";
+    const std::string json = manifest_json({bind}, {snapshot, failed}, {constant}, false);
+    assert(json.find("\"constantes\": [") != std::string::npos);
+    assert(json.find("\"estagio\": \"ps\", \"slot\": 2, \"bytes\": 256, \"arquivo\": \"cb_b144_ps2.bin\"") != std::string::npos);
     assert(json.find("\"bind\": 24") != std::string::npos);
     assert(json.find("\"arquivo\": \"000_b024-025_id01_s0.dds\"") != std::string::npos);
     assert(json.find("\"falha\": null") != std::string::npos);
