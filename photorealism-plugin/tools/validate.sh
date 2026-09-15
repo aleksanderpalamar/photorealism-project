@@ -2019,6 +2019,52 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   -o "${white_point_test}"
 "${white_point_test}"
 
+# 0.24.0: captura do quadro para analise. So passes do jogo entram (depois do
+# filtro do proprio plugin), o quadro fecha no Present ANTES de o plugin desenhar,
+# e cada alvo e copiado quando o passe seguinte deixa de liga-lo -- o que o passe
+# escreveu, e nao o que veio depois.
+frame_capture_logic_test="/tmp/photorealism-frame-capture-logic-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/frame_capture_logic_test.cpp" \
+  "${project_dir}/src/frame_capture/bind_runs.cpp" \
+  "${project_dir}/src/frame_capture/capture_manifest.cpp" \
+  "${project_dir}/src/frame_capture/dds_header.cpp" \
+  -o "${frame_capture_logic_test}"
+"${frame_capture_logic_test}"
+
+for capture_hook in hooked_set_render_targets hooked_set_render_targets_and_uavs; do
+  hook_body="$(awk "/^void STDMETHODCALLTYPE ${capture_hook}\\(/,/^}/" \
+    "${project_dir}/src/hooks/context_hooks.cpp")"
+  game_filter="$({ grep -n 'if (!from_game) {' <<<"${hook_body}" || true; } | tail -1 | cut -d: -f1)"
+  capture_call="$({ grep -n 'observe_capture_binds(' <<<"${hook_body}" || true; } | head -1 | cut -d: -f1)"
+  if [[ -z "${game_filter}" || -z "${capture_call}" ]] || (( capture_call < game_filter )); then
+    echo "${capture_hook} deixou de capturar so os passes do jogo: os passes do \
+proprio plugin entrariam na captura." >&2
+    exit 1
+  fi
+done
+for present_hook in hooked_present hooked_present1; do
+  present_body="$(awk "/^HRESULT STDMETHODCALLTYPE ${present_hook}\\(/,/^}/" \
+    "${project_dir}/src/hooks/swap_chain_hooks.cpp")"
+  end_line="$({ grep -n 'end_capture_frame();' <<<"${present_body}" || true; } | head -1 | cut -d: -f1)"
+  upscale_line="$({ grep -n 'upscale_present_frame(swap_chain);' <<<"${present_body}" || true; } | head -1 | cut -d: -f1)"
+  if [[ -z "${end_line}" || -z "${upscale_line}" ]] || (( end_line > upscale_line )); then
+    echo "${present_hook} fecha a captura depois de o plugin desenhar: o quadro \
+salvo passa a ter o pos-processo do plugin por cima." >&2
+    exit 1
+  fi
+done
+if ! grep -Fq 'action_row(RowKind::Capture, "Capturar quadro para analise", kPageMain)' \
+  "${project_dir}/src/overlay/bindings/menu_pages.cpp"; then
+  echo "O botao de captura sumiu da pagina inicial do menu." >&2
+  exit 1
+fi
+if ! grep -Fq 'Captura de quadro 0.24.0 salva: %u de %u alvos em %s' "${dxgi_strings}"; then
+  echo "A linha de log da captura de quadro sumiu do nucleo DXGI." >&2
+  exit 1
+fi
+python3 "${project_dir}/tools/gbuffer_report.py" --auto-teste
+
 overlay_draw_list_test="/tmp/photorealism-overlay-draw-list-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/tests/overlay_draw_list_test.cpp" \

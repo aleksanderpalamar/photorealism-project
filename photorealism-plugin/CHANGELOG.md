@@ -1,5 +1,49 @@
 # Changelog
 
+## Pacote 0.24.0 - 2026-09-15
+
+**Captura do quadro para analise.** Primeiro passo do grupo entre passes do jogo:
+antes de mexer no G-buffer, no HDR ou no espelho, e preciso saber em que alvo cada
+coisa esta. Nada muda na imagem. Detalhes em `references/captura-quadro-0.24.0.md`.
+
+### O que muda
+
+- botao **Capturar quadro para analise** na pagina inicial do menu. O quadro
+  seguinte do jogo e gravado inteiro e o botao passa a mostrar "Captura salva: N
+  alvos";
+- em cada `OMSetRenderTargets` do jogo sao registrados todos os slots (ate 8
+  alvos de cor e o depth), com tamanho, formato da textura, formato da view, mip e
+  fatia;
+- cada alvo e copiado quando o passe seguinte deixa de liga-lo: o arquivo guarda o
+  que aquele passe escreveu. Um alvo religado mais tarde no quadro gera outra
+  copia;
+- os arquivos vao para `photorealism-plugin/captura-quadro-AAAAMMDD-HHMMSS/`: um
+  DDS por copia, no formato original, e um `manifesto.json` com os binds e as
+  copias. Limite de 160 copias e 1,5 GB; passando disso o manifesto marca
+  `truncado`;
+- a gravacao roda no Present e o jogo pausa enquanto os arquivos sao escritos;
+- `tools/gbuffer_report.py <pasta>` gera `relatorio.md` e previews PNG de cada
+  alvo, com estatisticas por canal e etiquetas: normal, possivel normal
+  codificada, id de material, possivel velocidade, HDR, cor LDR, profundidade.
+
+### Verificacao
+
+- **GPU** (Wine + DXVK, "jogo" sintetico):
+  - 4 alvos em MRT, depth `D32_FLOAT_S8X24`, view sRGB sobre textura typeless,
+    `R11G11B10`, `R8G8`, mip 1 e fatia 4 de array;
+  - os 9 arquivos gravados decodificam para os valores desenhados;
+  - um alvo limpo de novo depois de liberado saiu com o valor do passe, e nao
+    com o posterior.
+- **Testes de host**: `frame_capture_logic_test` (agenda de um quadro, fim de
+  passe, reabertura com a mesma identidade, cabecalho DDS, manifesto) e o
+  autoteste da ferramenta sobre capturas sinteticas de resposta conhecida.
+- **Guardas**, quebradas numa copia: so passes do jogo entram na captura, o
+  quadro fecha no Present antes de o plugin desenhar, o botao existe, e a linha de
+  log e o autoteste da ferramenta.
+- **Menu**: rasterizado com o botao antes e depois do clique.
+
+**Ainda nao rodou no jogo.**
+
 ## Pacote 0.23.3 - 2026-09-14
 
 **As opcoes do menu que o pos-processo alcanca passam a mudar a imagem.** Na

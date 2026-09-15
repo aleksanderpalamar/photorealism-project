@@ -33,6 +33,7 @@ enum class RowKind {
     Separator,
     Hide,
     Restore,
+    Capture,
 };
 
 struct MenuRow {

@@ -545,10 +545,12 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
 - **0.23.3 (entregue)** as opcoes que o pos-processo alcanca passam a mudar a
   imagem: brancos como ponto de branco, qualidade, lista de anti-aliasing com
   Temporal nitido e DLAA/DLSS esmaecidos, FXAA, SSAO com forca, preset, detalhe
-  e meia resolucao, e luz de interior pelo depth. Falta rodar no jogo;
-- **0.24.0** captura do quadro para analise, sem mudar a imagem: botao no menu,
-  todos os alvos de cada passe gravados e `tools/gbuffer_report.py` identificando
-  albedo, normal, material, velocidade, HDR antes do tom e alvo do espelho;
+  e meia resolucao, e luz de interior pelo depth. Rodou no jogo e foi aprovado;
+  SSAO muito alto deixa marca de "fantasma", causa ainda nao isolada;
+- **0.24.0 (entregue)** captura do quadro para analise, sem mudar a imagem: botao
+  no menu, todos os alvos de cada passe gravados em DDS com manifesto, e
+  `tools/gbuffer_report.py` com estatisticas, etiquetas e previews por alvo. Falta
+  rodar a captura no jogo e escrever `references/gbuffer-ets2-0.24.0.md`;
 - **0.24.1 em diante** um efeito entre passes por pacote: pre-exposicao,
   pre-contraste e contraste dinamico no HDR antes do tom; saturacao do albedo;
   espelhos do jogo; motion blur pelo buffer de velocidade; SSS; normais da

@@ -32,6 +32,7 @@ constexpr MenuRow kMainRows[] = {
     separator_row(),
     action_row(RowKind::Hide, "Mostrar / esconder: Ctrl+P", kPageMain),
     action_row(RowKind::Restore, "Restaurar padroes", kPageMain),
+    action_row(RowKind::Capture, "Capturar quadro para analise", kPageMain),
 };
 
 constexpr MenuRow kAntiAliasingRows[] = {

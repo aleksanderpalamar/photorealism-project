@@ -3,6 +3,7 @@
 #include "../config/config.hpp"
 #include "../config/effect_quality.hpp"
 #include "../config/profile_state.hpp"
+#include "../frame_capture/frame_capture.hpp"
 #include "../fsr/upscaler.hpp"
 #include "../resource_observer/color_observation.hpp"
 #include "../hooks/present_target.hpp"
@@ -66,6 +67,14 @@ public:
 
     const char* upscale_status() const override {
         return fsr::upscaler().status();
+    }
+
+    void request_frame_capture() override {
+        photorealism::request_frame_capture();
+    }
+
+    const char* frame_capture_status() const override {
+        return photorealism::frame_capture_status();
     }
 
     void settings_changed(const overlay::SettingBinding& binding) override {

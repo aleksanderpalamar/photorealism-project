@@ -1,5 +1,6 @@
 #include "context_hooks.hpp"
 
+#include "../frame_capture/frame_capture.hpp"
 #include "../resource_observer/color_observation.hpp"
 #include "../resource_observer/resource_observer.hpp"
 #include "../postprocess/postprocess.hpp"
@@ -26,6 +27,7 @@ void STDMETHODCALLTYPE hooked_set_render_targets(
     if (!from_game) {
         return;
     }
+    observe_capture_binds(context, render_target_count, render_targets, depth_target);
     if (observe_color_targets(
             context, render_target_count, render_targets, depth_target)) {
         reconstruct_game_frame(context, render_targets[0]);
@@ -61,6 +63,7 @@ void STDMETHODCALLTYPE hooked_set_render_targets_and_uavs(
     if (!from_game) {
         return;
     }
+    observe_capture_binds(context, render_target_count, render_targets, depth_target);
     const bool reconstruct = observe_color_targets(
         context, render_target_count, render_targets, depth_target);
     if (reconstruct && uav_count == 0) {

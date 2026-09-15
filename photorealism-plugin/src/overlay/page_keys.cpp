@@ -111,6 +111,10 @@ void Menu::activate_row(const MenuRow& row) {
     }
     if (row.kind == RowKind::Restore) {
         restore_defaults();
+        return;
+    }
+    if (row.kind == RowKind::Capture && host_ != nullptr) {
+        host_->request_frame_capture();
     }
 }
 

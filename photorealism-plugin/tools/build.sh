@@ -56,6 +56,13 @@ common_flags=(
   "${project_dir}/src/hooks/hook_audit.cpp" \
   "${project_dir}/src/hooks/swap_chain_hooks.cpp" \
   "${project_dir}/src/hooks/context_hooks.cpp" \
+  "${project_dir}/src/frame_capture/bind_runs.cpp" \
+  "${project_dir}/src/frame_capture/capture_folder.cpp" \
+  "${project_dir}/src/frame_capture/capture_manifest.cpp" \
+  "${project_dir}/src/frame_capture/dds_header.cpp" \
+  "${project_dir}/src/frame_capture/frame_capture.cpp" \
+  "${project_dir}/src/frame_capture/staging_snapshots.cpp" \
+  "${project_dir}/src/frame_capture/target_description.cpp" \
   "${project_dir}/src/hooks/device_probe.cpp" \
   "${project_dir}/src/hooks/vtable_patch.cpp" \
   "${project_dir}/src/hooks/module_names.cpp" \

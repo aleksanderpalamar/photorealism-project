@@ -40,7 +40,9 @@ bool Menu::draw_row(
     if (row.kind == RowKind::Setting) {
         return draw_setting(ui, row.first, area, body);
     }
-    if (button(ui, area, row.first.label, false)) {
+    const bool capture = row.kind == RowKind::Capture && host_ != nullptr;
+    const char* label = capture ? host_->frame_capture_status() : row.first.label;
+    if (button(ui, area, label, false)) {
         activate_row(row);
     }
     return false;
