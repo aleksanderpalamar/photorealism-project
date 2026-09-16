@@ -427,7 +427,8 @@ public:
         const bool chain_ready = depth_preview_mode_ == 0 &&
                                  frame_resources_.intermediates_ready();
         plan.ssao_preview = depth_preview_mode_ == 5 && occlusion_ready;
-        plan.ssao = chain_ready && settings_.ssao_enabled && occlusion_ready;
+        plan.ssao = chain_ready && settings_.ssao_enabled && occlusion_ready &&
+                    ssao_strength(settings_) > 0.0f;
         plan.temporal = plan_temporal(description, plan.depth);
         plan.fxaa = chain_ready && fxaa_enabled(settings_) &&
                     effect_shaders_.available(EffectShader::Fxaa);

@@ -2030,6 +2030,22 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   -o "${white_point_test}"
 "${white_point_test}"
 
+# A luz de interior nao pode acender no mundo la fora: a captura real do usuario
+# mostra o painel a ~0.11m (near_plane=0.1) e o mundo comecando a ~1.75m, com um
+# vao vazio entre 0.25m e 1.75m -- kInteriorLightNearStart/End tem que caber nesse
+# vao, senao a estrada e o pavimento visiveis pelo parabrisa acendem junto.
+interior_light_test="/tmp/photorealism-interior-light-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/interior_light_test.cpp" \
+  -o "${interior_light_test}"
+"${interior_light_test}"
+
+if ! grep -Fq 'ssao_strength(settings_) > 0.0f' "${project_dir}/src/postprocess/postprocessor.cpp"; then
+  echo "O SSAO deixou de desligar de verdade quando a intensidade do menu chega a \
+zero: o passe de oclusao continua rodando so por causa de settings_.ssao_enabled." >&2
+  exit 1
+fi
+
 # 0.24.0: captura do quadro para analise. So passes do jogo entram (depois do
 # filtro do proprio plugin), o quadro fecha no Present ANTES de o plugin desenhar,
 # e cada alvo e copiado quando o passe seguinte deixa de liga-lo -- o que o passe

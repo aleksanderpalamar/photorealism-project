@@ -1,5 +1,44 @@
 # Changelog
 
+## Pacote 0.24.4 - 2026-09-16
+
+**Luz de interior parava de ser so da cabine, e o SSAO nao desligava de
+verdade.** Os dois com causa achada e provada em cima do depth real capturado
+pelo usuario. Detalhes em `references/luz-interior-e-ssao-0.24.4.md`.
+
+### O que muda
+
+- **Luz de interior**: o limiar que separa cabine de mundo exterior
+  (`kInteriorLightNearStart`/`End`) passa de 1,5m-4,0m para 0,4m-1,0m. O depth
+  real de duas capturas do usuario mostra um vao vazio entre ~0,25m e ~1,75m; o
+  limiar antigo caia quase todo dentro do mundo, nao da cabine, e acendia 11,4%
+  do quadro no chao e no asfalto visiveis por baixo do capo;
+- o mesmo limiar dentro do SSAO (`ssao_interior_near_start`/`end`, perfil
+  "interior" da oclusao) tinha o mesmo problema com valores ainda mais largos
+  (2,0m-8,0m) e leva a mesma correcao;
+- **SSAO**: o passe de oclusao inteiro agora e pulado quando a intensidade
+  efetiva chega a zero, e nao so neutralizado pela matematica do shader --
+  mesma garantia que a luz de interior ja tinha. Com o slider no minimo, nenhum
+  preset (Suave/Medio/Forte) tem mais como mudar a imagem, porque o passe nem
+  roda.
+
+### Verificacao
+
+- `tests/interior_light_test.cpp` (novo): o depth real do capo fica com peso
+  de interior >0,99; a distancia onde o mundo comeca nas duas capturas do
+  usuario (1,75m, 2,0m, 5,9m) fica com peso <0,01; os limiares ficam dentro do
+  vao vazio medido;
+- reconferido nas duas capturas reais do usuario, cenas diferentes, mesmo vao;
+- **Guardas**, quebradas numa copia: o teste da luz de interior aborta com o
+  limiar antigo; a guarda do SSAO acusa se o passe voltar a rodar so por causa
+  de `ssao_enabled`.
+
+**Ainda nao rodou no jogo.** O "fantasma" do SSAO em intensidade alta, que o
+usuario ja tinha apontado como vindo do proprio SSAO, continua sem causa
+isolada -- falta uma captura em intensidade alta antes de mexer no algoritmo de
+amostragem.
+
+
 ## Pacote 0.24.3 - 2026-09-16
 
 **O menu abre no canto superior esquerdo.** Antes abria centralizado na tela.

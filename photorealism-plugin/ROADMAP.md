@@ -569,7 +569,14 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
 - **0.24.3 (entregue)** o menu abre no canto superior esquerdo (margem de 32 px),
   em vez de centralizado na tela. Pedido do usuario, sem relacao com o resto do
   0.24.x;
-- **0.24.4 em diante** um efeito entre passes por pacote: saturacao do albedo;
+- **0.24.4 (entregue)** dois defeitos achados pelo usuario, causa provada em cima
+  do depth real capturado: a luz de interior vazava pro mundo exterior (limiar de
+  distancia calibrado errado, 11,4% do quadro acendia no asfalto visivel pelo
+  parabrisa) e o SSAO nao desligava de verdade no minimo do slider (o passe
+  rodava do mesmo jeito, so a matematica zerava o resultado). Detalhe em
+  `references/luz-interior-e-ssao-0.24.4.md`. O "fantasma" do SSAO em
+  intensidade alta continua sem causa isolada;
+- **0.24.5 em diante** um efeito entre passes por pacote: saturacao do albedo;
   espelhos do jogo; SSS; normais da estrada; motion blur pelas matrizes do
   anti-aliasing do jogo, se a nova captura as mostrar. O que nao der entre passes
   vai para a 0.25.x;

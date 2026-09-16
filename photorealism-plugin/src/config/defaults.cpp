@@ -53,8 +53,8 @@ void reference_ambient_occlusion(Settings* settings) {
     settings->ssao_highlight_ao_floor = 0.35f;
 
     settings->ssao_interior_enabled = true;
-    settings->ssao_interior_near_start = 2.0f;
-    settings->ssao_interior_near_end = 8.0f;
+    settings->ssao_interior_near_start = 0.4f;
+    settings->ssao_interior_near_end = 1.0f;
     settings->ssao_interior_radius = 0.45f;
     settings->ssao_interior_intensity = 0.20f;
     settings->ssao_interior_bias = 0.05f;

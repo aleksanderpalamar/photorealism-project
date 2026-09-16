@@ -14,8 +14,8 @@ constexpr float kLastSupportedAntiAliasing = 2.0f;
 constexpr unsigned kMaximumSsaoSamples = 16;
 constexpr float kClaritySharpness = 0.9f;
 constexpr float kSsaoGain = 2.2f;
-constexpr float kInteriorLightNearStart = 1.5f;
-constexpr float kInteriorLightNearEnd = 4.0f;
+constexpr float kInteriorLightNearStart = 0.4f;
+constexpr float kInteriorLightNearEnd = 1.0f;
 constexpr float kInteriorLightGain = 3.0f;
 
 struct SsaoQuality {
