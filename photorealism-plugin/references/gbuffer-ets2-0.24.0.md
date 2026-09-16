@@ -126,7 +126,12 @@ binds, 128 alvos): estrada de serra e rodovia, 60-80 km/h, camera na cabine.
 1. **Constantes do passe temporal do jogo.** No fim desse passe, as constantes que ele usou ainda estao
    ligadas; da para ler com `PSGetConstantBuffers` no mesmo gancho de `OMSetRenderTargets`, sem gancho por
    desenho. Se contiverem a matriz da camera atual e a anterior, o blur sai exato, inclusive olhando em volta
-   com o mouse. A captura grava essas constantes desde a 0.24.1 (`captura-quadro-0.24.0.md`, secao
-   Constantes); falta uma captura do usuario com a camera em movimento para conferir contra o depth.
+   com o mouse. A captura grava essas constantes desde a 0.24.1.
+
+   As duas primeiras capturas do usuario com o caminhao andando e a camera girando (feitas na 0.24.1) nao
+   trouxeram nada do passe de anti-aliasing: o jogo liga ali um buffer de 2 MB por deslocamento
+   (`VSSetConstantBuffers1`), e a leitura sem o "1" devolvia o buffer inteiro, rejeitado por tamanho. A
+   0.24.2 corrige a leitura para seguir o deslocamento real (`captura-quadro-0.24.0.md`, secao Constantes).
+   Falta uma nova captura do usuario, com a 0.24.2, para ver se o intervalo agora capturado tem as matrizes.
 2. **Telemetria oficial da SCS.** Da velocidade e rotacao do caminhao, mas nao o olhar da cabeca. Fica como
    alternativa se a opcao 1 nao achar as matrizes.

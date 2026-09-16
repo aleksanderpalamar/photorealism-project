@@ -1,5 +1,6 @@
 #include "constant_snapshots.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <string>
 
@@ -8,6 +9,7 @@ namespace frame_capture {
 namespace {
 
 constexpr UINT kSlots = D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT;
+constexpr UINT kConstantRegisterBytes = 16;
 
 bool write_buffer(
     ID3D11DeviceContext* context, ID3D11Buffer* staging, const ConstantRecord& record,
@@ -37,17 +39,26 @@ void ConstantSnapshots::reset() {
 }
 
 const char* ConstantSnapshots::copy_buffer(
-    ID3D11DeviceContext* context, ID3D11Buffer* buffer, unsigned* bytes,
-    ID3D11Buffer** staging) {
+    ID3D11DeviceContext* context, ID3D11Buffer* buffer, unsigned offset_bytes,
+    unsigned requested_bytes, unsigned* bytes, ID3D11Buffer** staging) {
     D3D11_BUFFER_DESC description = {};
     buffer->GetDesc(&description);
-    *bytes = description.ByteWidth;
-    if (description.ByteWidth > kMaximumConstantBytes) {
+    if (offset_bytes > description.ByteWidth) {
+        return "intervalo fora do buffer";
+    }
+    const unsigned available = description.ByteWidth - offset_bytes;
+    const unsigned range = std::min(requested_bytes != 0 ? requested_bytes : available, available);
+    if (range == 0) {
+        return "sem constantes no intervalo";
+    }
+    if (range > kMaximumConstantBytes) {
         return "buffer grande demais";
     }
     if (records_.size() >= kMaximumConstantSnapshots) {
         return "limite de constantes da captura";
     }
+    *bytes = range;
+    description.ByteWidth = range;
     description.Usage = D3D11_USAGE_STAGING;
     description.BindFlags = 0;
     description.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
@@ -60,13 +71,19 @@ const char* ConstantSnapshots::copy_buffer(
     if (FAILED(result)) {
         return "staging recusado pelo driver";
     }
-    context->CopyResource(*staging, buffer);
+    D3D11_BOX box = {};
+    box.left = offset_bytes;
+    box.right = offset_bytes + range;
+    box.bottom = 1;
+    box.back = 1;
+    context->CopySubresourceRegion(*staging, 0, 0, 0, 0, buffer, 0, &box);
     return nullptr;
 }
 
 void ConstantSnapshots::take_stage(
     ID3D11DeviceContext* context, unsigned bind, const char* stage,
-    ID3D11Buffer* const* buffers) {
+    ID3D11Buffer* const* buffers, const UINT* first_constants,
+    const UINT* num_constants) {
     for (UINT slot = 0; slot < kSlots; ++slot) {
         if (buffers[slot] == nullptr) {
             continue;
@@ -78,8 +95,13 @@ void ConstantSnapshots::take_stage(
         char name[48] = {};
         std::snprintf(name, sizeof(name), "cb_b%03u_%s%u.bin", bind, stage, slot);
         record.file = name;
+        const unsigned offset_bytes =
+            first_constants != nullptr ? first_constants[slot] * kConstantRegisterBytes : 0u;
+        const unsigned requested_bytes =
+            num_constants != nullptr ? num_constants[slot] * kConstantRegisterBytes : 0u;
         ID3D11Buffer* staging = nullptr;
-        record.failure = copy_buffer(context, buffers[slot], &record.bytes, &staging);
+        record.failure =
+            copy_buffer(context, buffers[slot], offset_bytes, requested_bytes, &record.bytes, &staging);
         records_.push_back(record);
         staging_.push_back(staging);
     }
@@ -88,10 +110,25 @@ void ConstantSnapshots::take_stage(
 void ConstantSnapshots::take(ID3D11DeviceContext* context, unsigned bind) {
     ID3D11Buffer* vertex[kSlots] = {};
     ID3D11Buffer* pixel[kSlots] = {};
-    context->VSGetConstantBuffers(0, kSlots, vertex);
-    context->PSGetConstantBuffers(0, kSlots, pixel);
-    take_stage(context, bind, "vs", vertex);
-    take_stage(context, bind, "ps", pixel);
+    UINT vertex_first[kSlots] = {};
+    UINT vertex_count[kSlots] = {};
+    UINT pixel_first[kSlots] = {};
+    UINT pixel_count[kSlots] = {};
+    ID3D11DeviceContext1* ranged = nullptr;
+    context->QueryInterface(IID_ID3D11DeviceContext1, reinterpret_cast<void**>(&ranged));
+    const bool has_ranges = ranged != nullptr;
+    if (has_ranges) {
+        ranged->VSGetConstantBuffers1(0, kSlots, vertex, vertex_first, vertex_count);
+        ranged->PSGetConstantBuffers1(0, kSlots, pixel, pixel_first, pixel_count);
+        ranged->Release();
+    } else {
+        context->VSGetConstantBuffers(0, kSlots, vertex);
+        context->PSGetConstantBuffers(0, kSlots, pixel);
+    }
+    take_stage(context, bind, "vs", vertex, has_ranges ? vertex_first : nullptr,
+               has_ranges ? vertex_count : nullptr);
+    take_stage(context, bind, "ps", pixel, has_ranges ? pixel_first : nullptr,
+               has_ranges ? pixel_count : nullptr);
     for (UINT slot = 0; slot < kSlots; ++slot) {
         if (vertex[slot] != nullptr) {
             vertex[slot]->Release();

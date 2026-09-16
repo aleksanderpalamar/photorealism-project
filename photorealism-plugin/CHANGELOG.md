@@ -1,5 +1,57 @@
 # Changelog
 
+## Pacote 0.24.2 - 2026-09-16
+
+**Correcao da captura de constantes: le pelo intervalo real, nao mais o buffer
+inteiro.** Sem mudanca na imagem. As duas capturas do usuario com o caminhao andando e
+a camera girando (feitas na 0.24.1) mostraram que a captura de constantes nao estava
+gravando nada no passe de anti-aliasing temporal do jogo -- e e ali que devem estar as
+matrizes da camera para o motion blur.
+
+### O que foi encontrado
+
+- nos dois passes do anti-aliasing temporal (binds 139-146 e 119-127 nas capturas do
+  usuario), o vertex e o pixel shader tem ligado um unico buffer de **2.097.152 bytes (2
+  MB)** no slot 0, em vez de um buffer pequeno por passe;
+- a captura rejeitava esse buffer inteiro com `"buffer grande demais"` (limite de 64 KB)
+  e nenhum arquivo chegava a ser gravado: os binds do anti-aliasing ficaram sem nenhuma
+  constante salva nas duas capturas;
+- os 11-14 arquivos que a 0.24.1 salvou por captura sao de outro passe (mapa de sombra,
+  no comeco do quadro), sem relacao com a camera principal;
+- **causa**: o ETS2 liga um buffer grande compartilhado e usa
+  `VSSetConstantBuffers1`/`PSSetConstantBuffers1` com um deslocamento e uma contagem
+  apontando so para o pedaco que cada desenho usa (tecnica comum de "ring buffer"). A
+  leitura da 0.24.1, com `VSGetConstantBuffers`/`PSGetConstantBuffers` (sem o "1"),
+  devolve o buffer inteiro e perde essa informacao.
+
+### O que muda
+
+- a captura agora le com `VSGetConstantBuffers1`/`PSGetConstantBuffers1`, que devolvem
+  tambem o deslocamento e o tamanho que o proprio jogo esta usando naquele desenho, e
+  copia so esse intervalo com `CopySubresourceRegion`, em vez do buffer inteiro com
+  `CopyResource`;
+- quando o dispositivo nao suporta a leitura por intervalo, a captura volta ao
+  comportamento da 0.24.1 (buffer inteiro);
+- o limite de 64 KB por constante continua valendo, agora so como rede de seguranca: a
+  API do Direct3D 11 ja impede ligar mais que 4096 registradores (64 KB) de uma vez, entao
+  um intervalo de verdade nunca deveria estourar esse limite.
+
+### Verificacao
+
+- **GPU** (Wine + DXVK, dispositivo real, codigo de producao incluido direto no
+  executavel de teste): um payload de 16 floats plantado no offset do registrador 64 de
+  um buffer de 2 MB saiu inteiro e correto no arquivo, sem rejeicao por tamanho; um
+  intervalo de exatamente 64 KB (o maximo que a API aceita numa unica ligacao) tambem foi
+  aceito; a API confirmou na pratica o teto de 4096 registradores por ligacao;
+- **Guardas**, quebrada numa copia: a leitura por intervalo (`VSGetConstantBuffers1`,
+  `PSGetConstantBuffers1`, `CopySubresourceRegion`) tem que continuar presente na
+  captura.
+
+**Ainda nao rodou no jogo.** Pede uma nova captura do usuario (dirigindo e olhando ao
+redor, mesmo teste de antes) para conferir se o intervalo agora capturado tem as
+matrizes da camera.
+
+
 ## Pacote 0.24.1 - 2026-09-15
 
 **Pre-exposicao, pre-contraste e contraste dinamico passam a mudar a imagem.** Primeiro

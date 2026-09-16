@@ -559,10 +559,17 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   do jogo, logo antes do tom, reconhecido pela forma dos binds. A captura passa a
   gravar os constant buffers de cada bind, para achar as matrizes da camera no
   anti-aliasing temporal do jogo. Detalhe em `references/pre-tom-0.24.1.md`;
-- **0.24.2 em diante** um efeito entre passes por pacote: saturacao do albedo;
+- **0.24.2 (entregue)** correcao da captura de constantes, sem mudar a imagem: as
+  duas capturas do usuario com o caminhao andando e a camera girando mostraram que
+  o passe de anti-aliasing temporal liga um buffer de 2 MB por deslocamento
+  (`VSSetConstantBuffers1`), e a leitura da 0.24.1 (sem o "1") devolvia o buffer
+  inteiro e rejeitava tudo por tamanho -- nenhuma constante do anti-aliasing foi
+  salva nas duas capturas. A leitura agora segue o deslocamento real. Pede nova
+  captura do usuario para conferir se as matrizes aparecem;
+- **0.24.3 em diante** um efeito entre passes por pacote: saturacao do albedo;
   espelhos do jogo; SSS; normais da estrada; motion blur pelas matrizes do
-  anti-aliasing do jogo, se a captura das constantes as mostrar. O que nao der
-  entre passes vai para a 0.25.x;
+  anti-aliasing do jogo, se a nova captura as mostrar. O que nao der entre passes
+  vai para a 0.25.x;
 - **0.25.x** shaders do jogo alterados em memoria, a partir dos arquivos do
   proprio usuario: espessura de folhas e grama, chuva do jogo e, se preciso,
   normais da estrada. A Fase 2 do FSR fica depois disso;

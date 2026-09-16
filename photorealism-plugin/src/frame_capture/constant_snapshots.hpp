@@ -2,7 +2,7 @@
 
 #include "capture_records.hpp"
 
-#include <d3d11.h>
+#include <d3d11_1.h>
 
 #include <vector>
 
@@ -23,10 +23,11 @@ class ConstantSnapshots {
   private:
     void take_stage(
         ID3D11DeviceContext* context, unsigned bind, const char* stage,
-        ID3D11Buffer* const* buffers);
+        ID3D11Buffer* const* buffers, const UINT* first_constants,
+        const UINT* num_constants);
     const char* copy_buffer(
-        ID3D11DeviceContext* context, ID3D11Buffer* buffer, unsigned* bytes,
-        ID3D11Buffer** staging);
+        ID3D11DeviceContext* context, ID3D11Buffer* buffer, unsigned offset_bytes,
+        unsigned requested_bytes, unsigned* bytes, ID3D11Buffer** staging);
 
     std::vector<ConstantRecord> records_;
     std::vector<ID3D11Buffer*> staging_;

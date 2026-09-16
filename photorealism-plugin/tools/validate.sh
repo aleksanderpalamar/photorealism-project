@@ -2128,6 +2128,20 @@ eles as matrizes da camera para o motion blur nao aparecem." >&2
   exit 1
 fi
 
+# 0.24.2: o ETS2 liga as constantes reais por VSSetConstantBuffers1/PSSetConstantBuffers1
+# com deslocamento dentro de um buffer grande compartilhado (2MB medidos no jogo). Ler
+# pelo metodo sem o "1" devolve o buffer inteiro e a captura rejeita tudo como grande
+# demais -- foi o que aconteceu nas duas primeiras capturas de anti-aliasing do usuario,
+# sem nenhum arquivo salvo no passe temporal. A leitura tem que ser pelo intervalo real.
+constant_snapshots_source="${project_dir}/src/frame_capture/constant_snapshots.cpp"
+if ! grep -Fq 'VSGetConstantBuffers1(' "${constant_snapshots_source}" ||
+  ! grep -Fq 'PSGetConstantBuffers1(' "${constant_snapshots_source}" ||
+  ! grep -Fq 'CopySubresourceRegion(' "${constant_snapshots_source}"; then
+  echo "A captura de constantes voltou a ler o buffer inteiro em vez do intervalo que \
+o jogo usa: as matrizes da camera ficam presas atras do limite de tamanho de novo." >&2
+  exit 1
+fi
+
 overlay_draw_list_test="/tmp/photorealism-overlay-draw-list-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/tests/overlay_draw_list_test.cpp" \

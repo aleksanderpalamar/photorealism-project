@@ -31,7 +31,7 @@ a passe, e a ferramenta ajuda a identificar o conteudo de cada alvo.
 - **Limites**: 160 copias ou 1,5 GB. Multiamostra, formato sem tamanho conhecido ou staging recusado ficam
   no manifesto com o motivo e sem arquivo.
 
-## Constantes (0.24.1)
+## Constantes (0.24.1, intervalo corrigido na 0.24.2)
 
 Para achar as matrizes da camera do anti-aliasing temporal do jogo (motion blur), a captura tambem grava os
 constant buffers:
@@ -39,15 +39,28 @@ constant buffers:
 - **Momento**: em cada bind do jogo, os 14 slots do vertex shader e os 14 do pixel shader ainda ligados.
   Sao as constantes que o passe anterior usou (ou que o jogo ja ligou para o passe que comeca). As do
   anti-aliasing temporal ficam no bind seguinte ao MRT de dois f10, que e o bind do HDR do tom.
-- **Arquivos**: `cb_bPPP_vsS.bin` e `cb_bPPP_psS.bin`, os bytes crus do buffer, sendo PPP o bind e S o
+- **Leitura por intervalo (0.24.2)**: o ETS2 liga um unico buffer grande (2 MB, medido nas capturas do
+  usuario) por deslocamento, com `VSSetConstantBuffers1`/`PSSetConstantBuffers1`, em vez de um buffer
+  pequeno por passe -- tecnica comum de "ring buffer". A leitura sem o "1"
+  (`VSGetConstantBuffers`/`PSGetConstantBuffers`, usada na 0.24.1) devolve o buffer inteiro e perde o
+  deslocamento; como o buffer inteiro passa do limite de 64 KB, a captura rejeitava tudo com
+  `"buffer grande demais"` e nenhum arquivo saia do passe de anti-aliasing. A 0.24.2 le com
+  `VSGetConstantBuffers1`/`PSGetConstantBuffers1`, que devolvem tambem o deslocamento e o tamanho que o
+  jogo esta usando naquele desenho, e copia so esse intervalo com `CopySubresourceRegion`. Sem suporte a
+  leitura por intervalo, cai de volta no buffer inteiro.
+- **Arquivos**: `cb_bPPP_vsS.bin` e `cb_bPPP_psS.bin`, os bytes crus do intervalo, sendo PPP o bind e S o
   slot.
 - **Manifesto**: lista `constantes` com `bind`, `estagio`, `slot`, `bytes`, `arquivo` e `falha`.
-- **Limites**: 4096 buffers e 64 KB por buffer; acima disso, a entrada fica com o motivo e sem arquivo.
+- **Limites**: 4096 buffers e 64 KB por entrada; acima disso, a entrada fica com o motivo e sem arquivo. Na
+  pratica isso so acontece se a leitura cair no buffer inteiro, porque o Direct3D 11 ja impede ligar mais
+  que 4096 registradores (64 KB) de uma vez numa unica chamada.
 - **Momento da copia**: a copia para staging acontece no proprio bind, entao o arquivo guarda o valor
   daquele instante, mesmo que o jogo reescreva o buffer depois.
 
-Verificado no harness Wine + DXVK: dois passes com buffers de 16 floats conhecidos saem nos binds 2 e 3 com
-os mesmos bytes.
+Verificado no harness Wine + DXVK, com o codigo de producao incluido direto no executavel de teste: um
+payload de 16 floats plantado no registrador 64 de um buffer de 2 MB saiu inteiro e correto no arquivo, sem
+rejeicao por tamanho; um intervalo de exatamente 64 KB tambem foi aceito, e a API confirmou o teto de 4096
+registradores por ligacao.
 
 ## Relatorio
 
