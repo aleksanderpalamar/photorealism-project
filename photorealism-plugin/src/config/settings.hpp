@@ -98,6 +98,13 @@ struct Settings {
     float fsr_sharpness;
     float fsr_grain;
 
+    bool wet_surface_enabled;
+    float wet_roads_amount;
+    float wet_roads_ripple;
+    float wet_roads_gloss;
+    float wet_roads_darkening;
+    float wet_roads_floor;
+
     bool scene_observer_enabled;
     float scene_observer_interval_frames;
     float scene_observer_log_seconds;

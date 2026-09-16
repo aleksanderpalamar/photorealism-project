@@ -270,8 +270,8 @@ for section in \
   '[profile.photorealism.0.23.0]' \
   '[module.fsr.0.21.0]' \
   '[native_aa.0.12.2]' \
-  '[native_graphics.0.1.0]' \
   '[module.bloom.0.17.0]' \
+  '[module.wet_surface.0.25.0]' \
   '[module.scene_observer.0.18.0]'; do
   if ! grep -Fqx "${section}" "${cfg}"; then
     echo "Secao sumiu do cfg: ${section}" >&2
@@ -448,6 +448,41 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/tests/depth_scoring_test.cpp" \
   -o "${depth_scoring_test}"
 "${depth_scoring_test}"
+
+# 0.25.0: o plugin passa a reescrever os pixel shaders do proprio jogo. O que
+# sustenta isso e o transpilador de DXBC para HLSL: se ele errar o dominio de
+# tipo, a assinatura empacotada ou o ponto de injecao, o G-buffer sai torto e
+# nao ha log que denuncie -- a imagem so fica errada.
+shader_patch_test="/tmp/photorealism-shader-patch-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/shader_patch_test.cpp" \
+  -o "${shader_patch_test}"
+"${shader_patch_test}"
+
+# A injecao roda DEPOIS do codigo do jogo, entao ela le o G-buffer ja escrito:
+# normal em o0.xyz, profundidade em o0.w, mascara de estrada em o3.y (=32,
+# medida nas capturas 0.24.0) e refletividade em o3.z. Se a chamada deixar de
+# receber o0..o3 nao sobra de onde tirar nada disso.
+for injection_marker in \
+  'photorealism_wet_surface(o0, o1, o2, o3, ' \
+  'material.y == (uint)photorealism_mask.x' \
+  'register(b13)'; do
+  if ! grep -Fq "${injection_marker}" \
+    "${project_dir}/shaders/gbuffer_inject.hlsl" \
+    "${project_dir}/src/shader_patch/gbuffer_patch.cpp"; then
+    echo "Injecao de G-buffer 0.25.0 incompleta: ${injection_marker}" >&2
+    exit 1
+  fi
+done
+
+# O slot b13 e livre porque os pixel shaders do jogo so declaram cb0 -- medido
+# nos 1703 shaders sm5x do effect.scs. Trocar por um slot baixo colide com o
+# material e o shader passa a ler lixo.
+if ! grep -Fq 'kSurfaceConstantSlot = 13' \
+  "${project_dir}/src/shader_patch/surface_constants.hpp"; then
+  echo "O buffer de superficie saiu de b13, onde nao colide com o jogo." >&2
+  exit 1
+fi
 
 native_aa_config_test="/tmp/photorealism-native-aa-config-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
@@ -845,7 +880,7 @@ g++ -std=c++20 -Wall -Wextra -Werror \
 # que importa. Uma guarda que explica uma regressao sutil so serve se for ela
 # a falar. Nesta ordem o hash continua pegando tudo que as guardas nao
 # cobrem, e so isso.
-expected_cfg_sha256="c8cdbf5a138e4504eb965c5c0f180dde0f4ac6be907a95cba59ead98574e9e0e"
+expected_cfg_sha256="b20edc8cfbee9f0a7ea29588a1ad4b42dc180d1b19bbca55055d311b040ad227"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
@@ -924,34 +959,6 @@ for native_aa_marker in \
   'politica=photorealism-plugin.cfg'; do
   if ! grep -rFq "${native_aa_marker}" "${native_aa_source}"; then
     echo "Gestao automatica AA nativo incompleta: ${native_aa_marker}" >&2
-    exit 1
-  fi
-done
-
-# 0.24.5: o SSAO nativo do jogo (r_ssao) fica ligado por padrao e soma com o
-# SSAO do proprio plugin, dobrando a oclusao -- foi o que o usuario viu de
-# "fantasma" e confirmou nos strings do SnowyMoon instalado ('uset r_ssao "0"'
-# no dxgi.dll dele). O mesmo mecanismo do AA nativo, agora para o SSAO.
-if ! grep -Fq 'configure_native_graphics_for_photorealism(g_proxy_module);' \
-  "${project_dir}/src/proxy.cpp"; then
-  echo "O bootstrap deixou de configurar o SSAO nativo antes do DXGI: o \
-SSAO do jogo pode continuar ligado e somar com o do plugin." >&2
-  exit 1
-fi
-native_graphics_source="${project_dir}/src/native_graphics"
-for native_graphics_marker in \
-  '{"r_ssao", "0"}' \
-  'kNativeGraphicsSection = "native_graphics.0.1.0"' \
-  'read_native_graphics_policy' \
-  'policy.manage' \
-  'policy.desired[index].c_str()' \
-  'plugin_config_value' \
-  'nenhuma alteracao no ' \
-  'politica=photorealism-plugin.cfg' \
-  'native_aa::write_atomic(target.config_path, contents)' \
-  'native_aa::make_backup(target.config_path)'; do
-  if ! grep -rFq "${native_graphics_marker}" "${native_graphics_source}"; then
-    echo "Gestao automatica do SSAO nativo incompleta: ${native_graphics_marker}" >&2
     exit 1
   fi
 done

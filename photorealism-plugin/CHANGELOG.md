@@ -1,5 +1,58 @@
 # Changelog
 
+## Pacote 0.25.0 - 2026-09-16
+
+**O plugin passa a reescrever os pixel shaders do proprio jogo.** Ate aqui ele
+so fazia pos-processo no Present. O SnowyMoon atua em outro lugar: intercepta
+`ID3D11Device::CreatePixelShader` e devolve ao jogo um shader trocado, que altera
+o G-buffer antes da iluminacao. Este pacote implanta o mesmo mecanismo, por um
+caminho diferente. Medicoes e leitura do binario dele em
+`references/shader-patch-0.25.0.md`.
+
+### O que muda
+
+- novo `src/shader_patch/`: contentor DXBC (chunks, ISGN/OSGN, hash FNV-1a de 64
+  bits), decodificador de SHEX, transpilador de DXBC para HLSL, inspecao do
+  G-buffer, cache em disco e hook de `CreatePixelShader` (slot 15 da vtable do
+  device, pelo mesmo `DeviceProbe` que ja pega Present);
+- `shaders/gbuffer_inject.hlsl`: normal de detalhe por gradiente de luminancia do
+  albedo, ondulacao de chuva procedural, escurecimento e brilho do piso molhado.
+  Roda **depois** do codigo do jogo, entao le `o0.xyz` (normal), `o0.w`
+  (profundidade), `o3.y` (mascara de estrada = 32, medida na 0.24.0) e `o3.z`
+  (refletividade) em vez de precisar de ligacao por variante;
+- buffer de constantes do plugin em `b13`, ligado quando o bind de 4 alvos
+  f10/f10/f10/f12 aparece. b13 e livre porque os 1703 pixel shaders `sm5x` do
+  jogo declaram so `cb0` -- medido, nao suposto;
+- `Intensidade das normais` e `Normais padrao` (Objetos / Estradas) saem de
+  `PendingReason::GBuffer`: existiam desde a 0.23.0 sem mecanismo por tras, e
+  agora alimentam o shader. A pagina ganhou `Piso molhado`, `Quantidade de agua`,
+  `Molhado minimo`, `Ondulacao da chuva`, `Brilho molhado` e `Escurecimento
+  molhado`, na secao `module.wet_surface.0.25.0`;
+- `src/native_graphics/` removido a pedido, com as referencias em `proxy.cpp`,
+  `build.sh` e `validate.sh`. **O `r_ssao` do jogo volta a ficar por conta do
+  usuario**: era o que a 0.24.5 desligava para o SSAO nativo nao somar com o do
+  plugin.
+
+### Verificacao
+
+- `tools/shader_transpile` (nativo) e `tools/shader_batch_compile.exe` (Wine,
+  mesmo `d3dcompiler_47.dll` e mesmos flags do runtime), contra o `effect.scs` do
+  ETS2 instalado: **1703 de 1703** pixel shaders `sm5x` transpilam e **1699 de
+  1699** arquivos distintos recompilam, zero falhas.
+- Ida e volta do `defattr` de `eut2.dif.spec.weight`: o HLSL gerado bate
+  instrucao a instrucao com o DXBC original (`dp3`/`rsq`/`mul`->`o0.xyz`,
+  `mov o0.w`, `sample t6/s0`), e o mesmo shader com a injecao compila.
+- Essa varredura achou quatro defeitos que o shader de referencia sozinho nao
+  mostraria: broadcast em construtor (601 shaders), `SamplerComparisonState`
+  (384), registradores empacotados no ISGN (5) e imediatos `nan` (27).
+- `tests/shader_patch_test.cpp`: monta DXBC em bytes e confere parse de
+  assinatura, decodificacao, elegibilidade do G-buffer, recusa de shader de um
+  alvo so, forma do HLSL emitido, montagem de registrador empacotado e hash.
+- Build e validate.
+
+**Ainda nao rodou no jogo.** A cobertura acima e de compilacao, nao de imagem:
+nenhum pixel foi visto em tela.
+
 ## Pacote 0.24.6 - 2026-09-16
 
 **"Qualidade alta / media / baixa" da pagina inicial para de mexer no SSAO.**

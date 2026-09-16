@@ -23,6 +23,14 @@ constexpr ModuleField kFsrFields[] = {
     {"grain", &Settings::fsr_grain},
 };
 
+constexpr ModuleField kWetSurfaceFields[] = {
+    {"amount", &Settings::wet_roads_amount},
+    {"ripple", &Settings::wet_roads_ripple},
+    {"gloss", &Settings::wet_roads_gloss},
+    {"darkening", &Settings::wet_roads_darkening},
+    {"floor", &Settings::wet_roads_floor},
+};
+
 constexpr ModuleField kSceneObserverFields[] = {
     {"interval_frames", &Settings::scene_observer_interval_frames},
     {"log_seconds", &Settings::scene_observer_log_seconds},
@@ -45,6 +53,8 @@ const SectionSpec kSections[] = {
      count_of(kBloomFields), nullptr},
     {"module.fsr.0.21.0", &Settings::fsr_enabled, kFsrFields,
      count_of(kFsrFields), nullptr},
+    {"module.wet_surface.0.25.0", &Settings::wet_surface_enabled,
+     kWetSurfaceFields, count_of(kWetSurfaceFields), nullptr},
     {"module.scene_observer.0.18.0", &Settings::scene_observer_enabled,
      kSceneObserverFields, count_of(kSceneObserverFields), nullptr},
 };

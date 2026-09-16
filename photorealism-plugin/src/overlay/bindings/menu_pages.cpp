@@ -90,6 +90,13 @@ constexpr MenuRow kSurfaceRows[] = {
 };
 
 constexpr MenuRow kRoadRows[] = {
+    setting_row(flag_toggle("Piso molhado", &Settings::wet_surface_enabled)),
+    setting_row(slider("Quantidade de agua", &Settings::wet_roads_amount, 0.0f, 1.0f, 2)),
+    setting_row(slider("Molhado minimo", &Settings::wet_roads_floor, 0.0f, 1.0f, 2)),
+    setting_row(slider("Ondulacao da chuva", &Settings::wet_roads_ripple, 0.0f, 1.0f, 2)),
+    setting_row(slider("Brilho molhado", &Settings::wet_roads_gloss, 0.0f, 1.0f, 2)),
+    setting_row(slider("Escurecimento molhado", &Settings::wet_roads_darkening, 0.0f, 1.0f, 2)),
+    separator_row(),
     setting_row(toggle("Normais padrao", &Settings::profile_roads_default_normals)),
     setting_row(slider("Intensidade das normais", &Settings::profile_roads_normal_intensity, 0.0f, 10.0f, 2)),
     link_row(kBack, kPageObjects),

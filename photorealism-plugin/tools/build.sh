@@ -39,8 +39,6 @@ common_flags=(
   "${project_dir}/src/config/file_io.cpp" \
   "${project_dir}/src/native_aa/aa_log.cpp" \
   "${project_dir}/src/config/path_utils.cpp" \
-  "${project_dir}/src/native_graphics/graphics_apply.cpp" \
-  "${project_dir}/src/native_graphics/graphics_policy.cpp" \
   "${project_dir}/src/dinput8.def" \
   -o "${build_dir}/dinput8.dll" \
   -lole32 \
@@ -54,6 +52,13 @@ common_flags=(
   -Wno-cast-function-type-mismatch \
   "${project_dir}/src/dxgi_proxy.cpp" \
   "${project_dir}/src/hooks/hook_install.cpp" \
+  "${project_dir}/src/shader_patch/dxbc.cpp" \
+  "${project_dir}/src/shader_patch/shex.cpp" \
+  "${project_dir}/src/shader_patch/hlsl_emit.cpp" \
+  "${project_dir}/src/shader_patch/gbuffer_patch.cpp" \
+  "${project_dir}/src/shader_patch/shader_patch.cpp" \
+  "${project_dir}/src/shader_patch/device_shader_hooks.cpp" \
+  "${project_dir}/src/shader_patch/surface_constants.cpp" \
   "${project_dir}/src/hooks/hook_state.cpp" \
   "${project_dir}/src/hooks/hook_audit.cpp" \
   "${project_dir}/src/hooks/swap_chain_hooks.cpp" \

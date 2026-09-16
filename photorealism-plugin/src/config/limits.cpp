@@ -64,6 +64,11 @@ constexpr Limit kLimits[] = {
     {&Settings::fsr_sharpness, 0.0f, 1.0f},
     {&Settings::fsr_grain, 0.0f, 1.0f},
 
+    {&Settings::wet_roads_amount, 0.0f, 1.0f},
+    {&Settings::wet_roads_ripple, 0.0f, 1.0f},
+    {&Settings::wet_roads_gloss, 0.0f, 1.0f},
+    {&Settings::wet_roads_darkening, 0.0f, 1.0f},
+    {&Settings::wet_roads_floor, 0.0f, 1.0f},
     {&Settings::scene_observer_interval_frames, 1.0f, 600.0f},
     {&Settings::scene_observer_log_seconds, 0.0f, 3600.0f},
     {&Settings::condition_time_constant_seconds, 1.0f, 1800.0f},

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-version="0.24.6"
+version="0.25.0"
 package_name="photorealism-plugin-${version}-ets2-ats-1.60-proton"
 output_dir="${project_dir}/dist"
 staging_dir="$(mktemp -d)"
@@ -22,6 +22,8 @@ cp "${project_dir}/config/photorealism-plugin.cfg" \
   "${staging_dir}/${package_name}/photorealism-plugin/photorealism-plugin.cfg"
 cp "${project_dir}/shaders/depth_view_space.hlsli" \
   "${staging_dir}/${package_name}/photorealism-plugin/shaders/depth_view_space.hlsli"
+cp "${project_dir}/shaders/gbuffer_inject.hlsl" \
+  "${staging_dir}/${package_name}/photorealism-plugin/shaders/gbuffer_inject.hlsl"
 cp "${project_dir}/shaders/photorealism.hlsl" \
   "${staging_dir}/${package_name}/photorealism-plugin/shaders/photorealism.hlsl"
 cp "${project_dir}/shaders/depth-preview.hlsl" \

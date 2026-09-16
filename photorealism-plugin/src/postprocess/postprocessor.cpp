@@ -13,6 +13,8 @@
 #include "../runtime.hpp"
 
 #include "../scene/observer.hpp"
+#include "../shader_patch/shader_patch.hpp"
+#include "../shader_patch/surface_constants.hpp"
 #include "../steam/steam_screenshots.hpp"
 #include "com_utils.hpp"
 #include "condition_adapter.hpp"
@@ -96,6 +98,7 @@ public:
     void refresh_derived_settings() {
         const bool temporal_before = settings_.temporal_enabled;
         finish_settings(&settings_);
+        refresh_surface_constants();
         if (temporal_before != settings_.temporal_enabled) {
             invalidate_temporal_history("menu trocou o anti-aliasing");
         }
@@ -616,9 +619,41 @@ public:
 
         FrameTargets targets = {};
         if (acquire_frame_targets(swap_chain, &targets)) {
+            note_surface_size(targets.description);
+            refresh_surface_constants();
             render_frame(targets);
         }
         release_frame_targets(&targets);
+    }
+
+    void note_surface_size(const D3D11_TEXTURE2D_DESC& description) {
+        surface_width_ = description.Width;
+        surface_height_ = description.Height;
+    }
+
+    void refresh_surface_constants() {
+        if (surface_width_ == 0 || surface_height_ == 0) {
+            return;
+        }
+        shader_patch::update_surface_constants(
+            settings_, surface_width_, surface_height_);
+        report_shader_patch();
+    }
+
+    void report_shader_patch() {
+        constexpr unsigned long long kReportIntervalMs = 60000ull;
+        const unsigned long long now = GetTickCount64();
+        if (surface_report_ms_ != 0ull &&
+            now - surface_report_ms_ < kReportIntervalMs) {
+            return;
+        }
+        surface_report_ms_ = now;
+        const shader_patch::PatchStatistics current =
+            shader_patch::statistics();
+        if (current.inspected == 0 && current.patched == 0) {
+            return;
+        }
+        shader_patch::log_statistics("quadro");
     }
 
     bool acquire_overlay_target(
@@ -786,6 +821,7 @@ private:
         }
         effect_shaders_.compile(device_);
         pass_effects_.create(device_);
+        shader_patch::create_surface_constants(device_);
         invalidate_temporal_history("recompilacao de shader");
         shaders_.log_state();
         return true;
@@ -895,6 +931,7 @@ private:
         shaders_.release();
         effect_shaders_.release();
         pass_effects_.release();
+        shader_patch::release_surface_constants();
         pipeline_.release();
         bloom_.release_constant_buffer();
         safe_release(context_);
@@ -902,6 +939,9 @@ private:
     }
 
     Settings settings_;
+    UINT surface_width_ = 0;
+    UINT surface_height_ = 0;
+    unsigned long long surface_report_ms_ = 0ull;
     SceneObserver scene_observer_;
     GpuTimer gpu_timer_;
     ShaderLibrary shaders_;
