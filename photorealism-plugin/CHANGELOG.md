@@ -1,5 +1,66 @@
 # Changelog
 
+## Pacote 0.25.1 - 2026-09-16
+
+**"Qualidade alta / media / baixa" passa a valer para as opcoes graficas do
+jogo.** O usuario reportou que a opcao nao fazia nada e estava certo: desde a
+0.24.6 ela so limitava o teto de niveis do bloom, que e imperceptivel. Agora ela
+escreve 23 chaves do `config.cfg` do ETS2/ATS.
+
+O SnowyMoon **nao** faz isso. Medido no `dxgi.dll` dele: as chaves
+`r_texture_detail`, `r_anisotropy_factor`, `r_sun_shadow_quality`,
+`r_interior_shadow`, `r_far_shadow_disable`, `r_deferred_mirrors`,
+`r_mirror_view_distance`, `r_sunshafts`, `g_grass_density`, `g_pedestrian`,
+`r_scale_x` e `g_gfx_quality` nao existem como string no binario. Ele so forca
+oito chaves de que o pipeline dele depende (`r_aa`, `r_ssao`, `r_dof`,
+`r_normal_maps`, `r_fake_shadows`, `r_color_correction`, `g_veg_detail`,
+`g_reflection`) e, para o DLSS, apenas mostra um aviso pedindo ao usuario que
+mude a escala de resolucao do jogo a mao. O `Quality High/Medium/Low` dele
+regula o custo dos efeitos dele, nao do jogo.
+
+### O que muda
+
+- novo `src/native_quality/`, irmao do modulo de AA nativo: no bootstrap, antes
+  do DXGI, escreve as opcoes graficas do jogo conforme `global_quality` do menu.
+  E o unico momento possivel -- o ETS2 le o `config.cfg` na inicializacao e
+  ignora alteracoes feitas depois, entao **a escolha vale a partir do proximo
+  inicio do jogo**;
+- 23 chaves em tres niveis: textura, filtragem anisotropica, mapas de normal,
+  sombras (sol, distantes, interiores, falsas, de nuvem), espelhos (qualidade,
+  escala, alcance), reflexos, raios solares, vegetacao, grama, pedestres, raio
+  de luz e tres fatores de LOD;
+- a tabela carrega a direcao de cada chave (`lower_is_better`), porque
+  `r_texture_detail` e `r_far_shadow_disable` sao invertidas: 0 e o melhor valor
+  nas duas. O teste confere a ordenacao por essa marca;
+- chave ausente do `config.cfg` **nunca** e criada, so atualizada;
+- backup e escrita atomica, os mesmos do modulo de AA;
+- cada nivel e sobrescrivel chave a chave na secao `[native_quality.0.25.1]` do
+  `photorealism-plugin.cfg`, sem recompilar.
+
+### Verificacao
+
+- `tests/native_quality_test.cpp`: unicidade e nomes das chaves, ordenacao por
+  `lower_is_better`, o preset alto levanta um config baixo por inteiro, o preset
+  baixo e ponto fixo, chaves de fora sobrevivem, chave ausente nao e criada,
+  cada nivel atinge o proprio alvo e a descricao reporta a transicao.
+- Ensaio contra o `config.cfg` real do ETS2 instalado: as 23 chaves existem
+  (nenhuma ausente), "alta" muda 22 delas e a releitura pos-escrita acusa zero
+  divergencias. "baixa" muda so 3, o que confirma que o arquivo ja estava
+  praticamente no preset baixo.
+- Build, validate e package.
+
+### Sobre o rebaixamento relatado nesta versao
+
+As capturas do usuario mostram tudo no minimo depois de instalar a 0.25.0. **Nao
+foi o plugin.** O `game.log.txt` da sessao mostra que, aos 12,5 s de
+inicializacao -- quando o jogo le o `config.cfg`, antes de o plugin agir --
+`r_texture_detail` ja era `2`, `r_anisotropy_factor` `0`, `r_normal_maps` `0`,
+`r_interior_shadow` `0` e `r_deferred_mirrors` `0`. O log do proprio plugin
+registra `nenhuma escrita necessaria` no mesmo minuto. Nenhuma versao do plugin
+escreveu essas chaves antes desta.
+
+**Ainda nao rodou no jogo.**
+
 ## Pacote 0.25.0 - 2026-09-16
 
 **O plugin passa a reescrever os pixel shaders do proprio jogo.** Ate aqui ele

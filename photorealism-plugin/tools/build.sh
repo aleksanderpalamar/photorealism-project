@@ -34,6 +34,8 @@ common_flags=(
   "${project_dir}/src/fsr/game_scale.cpp" \
   "${project_dir}/src/fsr/render_scale.cpp" \
   "${project_dir}/src/native_aa/policy.cpp" \
+  "${project_dir}/src/native_quality/quality_apply.cpp" \
+  "${project_dir}/src/native_quality/quality_policy.cpp" \
   "${project_dir}/src/native_aa/game_target.cpp" \
   "${project_dir}/src/native_aa/config_file.cpp" \
   "${project_dir}/src/config/file_io.cpp" \

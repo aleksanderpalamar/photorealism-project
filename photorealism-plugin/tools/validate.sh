@@ -272,6 +272,7 @@ for section in \
   '[native_aa.0.12.2]' \
   '[module.bloom.0.17.0]' \
   '[module.wet_surface.0.25.0]' \
+  '[native_quality.0.25.1]' \
   '[module.scene_observer.0.18.0]'; do
   if ! grep -Fqx "${section}" "${cfg}"; then
     echo "Secao sumiu do cfg: ${section}" >&2
@@ -453,6 +454,36 @@ g++ -std=c++20 -Wall -Wextra -Werror \
 # sustenta isso e o transpilador de DXBC para HLSL: se ele errar o dominio de
 # tipo, a assinatura empacotada ou o ponto de injecao, o G-buffer sai torto e
 # nao ha log que denuncie -- a imagem so fica errada.
+# 0.25.1: "Qualidade alta/media/baixa" da pagina inicial nao fazia nada alem de
+# limitar o teto do bloom. O usuario reportou, e estava certo. Agora ela escreve
+# as opcoes graficas do proprio jogo no bootstrap -- e o unico momento possivel,
+# porque o ETS2 le o config.cfg na inicializacao e ignora mudancas depois.
+#
+# O SnowyMoon nao faz isso: medido no dxgi.dll dele, as chaves r_texture_detail,
+# r_sun_shadow_quality, r_deferred_mirrors, g_grass_density e g_pedestrian nem
+# aparecem como string. Ele so forca 8 chaves de que o pipeline dele depende.
+native_quality_test="/tmp/photorealism-native-quality-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/native_quality_test.cpp" \
+  -o "${native_quality_test}"
+"${native_quality_test}"
+
+# A escrita so pode acontecer antes do DXGI carregar, junto com a do AA nativo.
+if ! grep -Fq 'configure_native_quality_for_photorealism(g_proxy_module);' \
+  "${project_dir}/src/proxy.cpp"; then
+  echo "O bootstrap deixou de escrever as opcoes graficas do jogo: a escolha de \
+qualidade do menu volta a nao fazer nada." >&2
+  exit 1
+fi
+
+# Chave ausente no config.cfg nunca e criada: o jogo apaga o que nao reconhece,
+# e inventar chave e como um plugin ganha fama de corromper configuracao.
+if ! grep -Fq 'snapshot.detected[index] != kAbsent' \
+  "${project_dir}/src/native_quality/quality_plan.hpp"; then
+  echo "A politica de qualidade perdeu a guarda de chave ausente." >&2
+  exit 1
+fi
+
 shader_patch_test="/tmp/photorealism-shader-patch-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/tests/shader_patch_test.cpp" \
@@ -880,7 +911,7 @@ g++ -std=c++20 -Wall -Wextra -Werror \
 # que importa. Uma guarda que explica uma regressao sutil so serve se for ela
 # a falar. Nesta ordem o hash continua pegando tudo que as guardas nao
 # cobrem, e so isso.
-expected_cfg_sha256="b20edc8cfbee9f0a7ea29588a1ad4b42dc180d1b19bbca55055d311b040ad227"
+expected_cfg_sha256="a00f71fe129383c3ab5ea51b271d26b5bc71281487091f291e9d7b45a45d0dd0"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
