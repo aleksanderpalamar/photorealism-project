@@ -44,8 +44,6 @@ const PendingControl kPendingControls[] = {
     {&Settings::profile_use_default_mirrors, PendingReason::MirrorTarget},
     {&Settings::profile_use_default_rain, PendingReason::ShaderSwap},
     {&Settings::profile_use_sss, PendingReason::GBuffer},
-    {&Settings::profile_surface_albedo_saturation, PendingReason::GBuffer},
-    {&Settings::profile_vegetation_leaves_thickness, PendingReason::ShaderSwap},
     {&Settings::profile_vegetation_grass_thickness, PendingReason::ShaderSwap},
     {&Settings::profile_color_preset, PendingReason::NoEquivalent},
     {&Settings::profile_color_preset_extra_brightness, PendingReason::NoEquivalent},

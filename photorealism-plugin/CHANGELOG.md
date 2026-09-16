@@ -1,5 +1,66 @@
 # Changelog
 
+## Pacote 0.25.2 - 2026-09-16
+
+**Saturacao do albedo e espessura das folhas passam a funcionar.** Eram duas
+opcoes do menu marcadas "pendente" desde a 0.23.0. O levantamento dos 87 efeitos
+que o SnowyMoon ataca mostrou que elas ja estavam ao alcance do contrato de
+G-buffer entregue na 0.25.0 -- nao faltava mecanismo, faltava usar.
+
+### O levantamento dos 87 alvos
+
+Cada efeito foi resolvido para o `.fso` de cada passe `sm5x` e passado pela
+inspecao do plugin. Resultado: **46 dos 87 ja tem passe coberto** (41 `defattr`
+mais 6 `defattrcu`, o recorte alfa), o que bate com os 43 trocados no jogo.
+
+Entre os cobertos estao `truckpaint` (9), `leaves` (4), `water` (3), `lamp` (2),
+`baked` (2) e `retroreflective` -- nao so a estrada.
+
+Os 41 restantes nao escrevem G-buffer: tem **uma saida so** (`o0:float`). Sao
+`decal`/`decalpost` (11), `blend` (8), a cadeia deferida em `defquad`/`defgeom`
+(8: tonemap, fog, adapt, compose lighting, fake shadow), `transparent` (2) e
+avulsos. Precisam de outro contrato de injecao.
+
+**Seis dos 87 alvos do SnowyMoon estao mortos**: sao caminhos diretos de
+`_shd/<md5>.sm5x.fso` que nao existem no `effect.scs` do ETS2 **nem do ATS**
+atuais. Ele identifica por hash e caminho fixo, que apodrece a cada patch do
+jogo; a inspecao por estrutura (assinatura de saida mais amostragem de albedo)
+nao tem essa lista para envelhecer.
+
+### O que muda
+
+- `photorealism_surface_grade()` na biblioteca de injecao, chamada **antes** da
+  de piso molhado e para todo shader de G-buffer, nao so para estrada:
+  - saturacao do albedo em `o2.rgb`, neutra em 1.0;
+  - espessura das folhas em `o2.a`, neutra em 0.0. A chave e que `o2.a` so e
+    diferente de zero na vegetacao, medido na captura 0.24.0 e confirmado agora
+    no proprio shader: `eut2.leaves` escreve `o2.w = 2 x mascara.r` quando a
+    textura de mascara existe, e `cb0[0].w` quando nao;
+- `surface_albedo_saturation` e `vegetation_leaves_thickness` saem de
+  `PendingReason`;
+- o buffer de superficie em b13 ganha um quinto `float4` (64 -> 80 bytes).
+
+`vegetation_grass_thickness` **continua pendente**: nao ha como separar grama de
+folha no shader com o que foi medido, e inventar um criterio seria fingir que
+funciona.
+
+### Verificacao
+
+- `tests/shader_patch_test.cpp`: a chamada de graduacao e emitida, e emitida
+  antes da de piso molhado, e aparece no HLSL final.
+- `eut2.leaves` e `eut2.dif.spec.weight`, transpilados do `effect.scs` real com
+  a injecao nova, compilam com o `d3dcompiler_47.dll` do runtime.
+- Build, validate e package.
+
+### Confirmado no jogo (0.25.0)
+
+A troca de shader rodou: **716 pixel shaders inspecionados, 43 trocados, zero
+falhas**, G-buffer reconhecido e constantes ligadas em b13. As ligacoes de
+albedo saíram certas e variadas (`t6/s0` em `v4.xy`, `t0/s1` em `v5.xy`,
+`t1/s0` em `v3.xy`), o que so acontece se a inspecao estiver lendo o shader.
+
+**A graduacao desta versao ainda nao rodou no jogo.**
+
 ## Pacote 0.25.1 - 2026-09-16
 
 **"Qualidade alta / media / baixa" passa a valer para as opcoes graficas do

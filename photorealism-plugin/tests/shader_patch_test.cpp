@@ -354,7 +354,10 @@ void test_gbuffer_is_recognised() {
     assert(info.blend_input == "v0");
 
     const std::string call = build_injection_call(info);
+    assert(contains(call, "photorealism_surface_grade(o2);"));
     assert(contains(call, "photorealism_wet_surface(o0, o1, o2, o3, v1, t6, s0, v4.xy"));
+    assert(call.find("photorealism_surface_grade") <
+           call.find("photorealism_wet_surface"));
 }
 
 void test_single_target_shader_is_rejected() {
@@ -409,6 +412,7 @@ void test_emitted_hlsl_shape() {
     assert(contains(result.source, "out uint4 o3 : SV_Target3"));
     assert(contains(result.source, "r0.xyzw = t6.Sample(s0, v4.xy).xyzw;"));
     assert(contains(result.source, "o3.xy = uint2(0u, 32u);"));
+    assert(contains(result.source, "photorealism_surface_grade("));
     assert(contains(result.source, "photorealism_wet_surface("));
     assert(contains(result.source, "// biblioteca"));
 

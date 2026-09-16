@@ -494,7 +494,11 @@ g++ -std=c++20 -Wall -Wextra -Werror \
 # normal em o0.xyz, profundidade em o0.w, mascara de estrada em o3.y (=32,
 # medida nas capturas 0.24.0) e refletividade em o3.z. Se a chamada deixar de
 # receber o0..o3 nao sobra de onde tirar nada disso.
+# 0.25.2: a graduacao de superficie roda para TODO shader de G-buffer, nao so
+# para a estrada, entao e uma chamada propria antes da de piso molhado -- que
+# retorna cedo quando o material nao e estrada (o3.y != 32).
 for injection_marker in \
+  'photorealism_surface_grade(o2);' \
   'photorealism_wet_surface(o0, o1, o2, o3, ' \
   'material.y == (uint)photorealism_mask.x' \
   'register(b13)'; do

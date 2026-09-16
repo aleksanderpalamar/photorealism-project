@@ -115,6 +115,11 @@ void update_surface_constants(
     values.mask[2] = 0.0f;
     values.mask[3] = 0.0f;
 
+    values.surface[0] = settings.profile_surface_albedo_saturation;
+    values.surface[1] = settings.profile_vegetation_leaves_thickness;
+    values.surface[2] = 0.0f;
+    values.surface[3] = 0.0f;
+
     g_values = values;
     g_dirty.store(true, std::memory_order_release);
 }

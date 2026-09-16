@@ -14,11 +14,12 @@ struct SurfaceConstants {
     float road[4];
     float frame[4];
     float mask[4];
+    float surface[4];
 };
 
 static_assert(
-    sizeof(SurfaceConstants) == 64,
-    "o buffer de superficie precisa de 64 bytes alinhados");
+    sizeof(SurfaceConstants) == 80,
+    "o buffer de superficie precisa de 80 bytes alinhados");
 
 bool create_surface_constants(ID3D11Device* device);
 void release_surface_constants();

@@ -4,6 +4,7 @@ cbuffer photorealism_surface_constants : register(b13)
     float4 photorealism_road;
     float4 photorealism_frame;
     float4 photorealism_mask;
+    float4 photorealism_surface;
 };
 
 static const float kPhotorealismPi = 3.14159265;
@@ -79,6 +80,22 @@ float3 photorealism_ripple_normal(float2 plane, float wetness, float time)
     }
 
     return normalize(float3(accumulated * 0.4 * wetness, 1.0));
+}
+
+void photorealism_surface_grade(inout float4 o2)
+{
+    float saturation = photorealism_surface.x;
+    if (abs(saturation - 1.0) > 0.001)
+    {
+        float luma = photorealism_luminance(o2.rgb);
+        o2.rgb = max(lerp(luma.xxx, o2.rgb, saturation), 0.0);
+    }
+
+    float thickness = photorealism_surface.y;
+    if (thickness > 0.001 && o2.a > 0.0)
+    {
+        o2.a = saturate(o2.a * (1.0 + thickness * 2.0));
+    }
 }
 
 void photorealism_wet_surface(

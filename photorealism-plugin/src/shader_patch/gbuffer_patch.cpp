@@ -150,7 +150,8 @@ std::string build_injection_call(const GBufferInfo& info) {
     if (!info.eligible) {
         return std::string();
     }
-    std::string call = "    photorealism_wet_surface(o0, o1, o2, o3, ";
+    std::string call = "    photorealism_surface_grade(o2);\n";
+    call += "    photorealism_wet_surface(o0, o1, o2, o3, ";
     call += info.position_input;
     call += ", ";
     call += info.albedo_texture;
