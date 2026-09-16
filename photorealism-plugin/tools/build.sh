@@ -39,6 +39,8 @@ common_flags=(
   "${project_dir}/src/config/file_io.cpp" \
   "${project_dir}/src/native_aa/aa_log.cpp" \
   "${project_dir}/src/config/path_utils.cpp" \
+  "${project_dir}/src/native_graphics/graphics_apply.cpp" \
+  "${project_dir}/src/native_graphics/graphics_policy.cpp" \
   "${project_dir}/src/dinput8.def" \
   -o "${build_dir}/dinput8.dll" \
   -lole32 \

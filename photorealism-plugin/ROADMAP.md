@@ -576,7 +576,15 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   rodava do mesmo jeito, so a matematica zerava o resultado). Detalhe em
   `references/luz-interior-e-ssao-0.24.4.md`. O "fantasma" do SSAO em
   intensidade alta continua sem causa isolada;
-- **0.24.5 em diante** um efeito entre passes por pacote: saturacao do albedo;
+- **0.24.5 (entregue)** o plugin passa a desligar o SSAO nativo do ETS2
+  (`r_ssao` no `config.cfg` do jogo, fora da pasta do plugin), que ate aqui
+  ficava ligado e somava com o SSAO do proprio plugin -- achado comparando com
+  outro plugin do mesmo genero, que reseta a qualidade grafica nativa e tem a
+  mesma chave desligada nos proprios strings. Mecanismo novo
+  `src/native_graphics/`, irmao do gerenciamento de AA nativo. Detalhe em
+  `references/ssao-nativo-do-jogo-0.24.5.md`. Falta confirmar no jogo se isso
+  reduz o "fantasma";
+- **0.24.6 em diante** um efeito entre passes por pacote: saturacao do albedo;
   espelhos do jogo; SSS; normais da estrada; motion blur pelas matrizes do
   anti-aliasing do jogo, se a nova captura as mostrar. O que nao der entre passes
   vai para a 0.25.x;

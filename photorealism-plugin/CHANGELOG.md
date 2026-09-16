@@ -1,5 +1,44 @@
 # Changelog
 
+## Pacote 0.24.5 - 2026-09-16
+
+**O plugin passa a desligar o SSAO nativo do jogo.** O usuario testou outro
+plugin grafico ao lado e percebeu que ele reseta configuracoes graficas do
+proprio jogo; o `config.cfg` do ETS2 (fora da pasta do plugin) tem uma chave
+`r_ssao` propria do motor que o photorealism-plugin nunca gerenciava. Se
+estiver ligada, o motor ja aplica a propria oclusao de ambiente antes do
+pos-processo comecar, e o SSAO do plugin soma em cima -- consistente com o
+efeito de "fantasma" ja relatado em intensidade alta. Detalhes em
+`references/ssao-nativo-do-jogo-0.24.5.md`.
+
+### O que muda
+
+- novo `src/native_graphics/`, irmao do gerenciamento de AA nativo ja
+  existente: no bootstrap, antes do DXGI, forca `r_ssao=0` no `config.cfg` do
+  jogo (Documents\Euro Truck Simulator 2), so se a chave ja existir e
+  estiver diferente;
+- politica em `[native_graphics.0.1.0]` no `photorealism-plugin.cfg`,
+  `manage=true` por padrao;
+- backup do `config.cfg` original antes da primeira escrita, reaproveitando o
+  mesmo arquivo que o AA nativo ja cria;
+- `r_aa` continua so com o AA nativo (valor 6): o outro plugin desliga o AA
+  nativo dele (r_aa=0), mas o nosso depende do TAA nativo ligado para expor o
+  depth ao SSAO e ao resolve temporal -- nao da pra copiar;
+- `r_color_correction`, `r_dof` e as chaves de espelho/chuva/vegetacao do
+  outro plugin ficam de fora por enquanto: sem efeito equivalente implementado
+  ainda para justificar mexer, e `r_color_correction` desligado arrisca mudar
+  o passe de tom que o pre-tom (0.24.1) depende para funcionar.
+
+### Verificacao
+
+- Build e validate com as guardas novas: secao no cfg, gancho no bootstrap,
+  lista de chaves geridas e escrita atomica;
+- **Guardas**, quebradas numa copia: as tres acusam a falta.
+
+**Ainda nao rodou no jogo.** Falta confirmar que isso reduz o "fantasma" do
+SSAO em intensidade alta.
+
+
 ## Pacote 0.24.4 - 2026-09-16
 
 **Luz de interior parava de ser so da cabine, e o SSAO nao desligava de

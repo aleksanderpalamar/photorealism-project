@@ -270,6 +270,7 @@ for section in \
   '[profile.photorealism.0.23.0]' \
   '[module.fsr.0.21.0]' \
   '[native_aa.0.12.2]' \
+  '[native_graphics.0.1.0]' \
   '[module.bloom.0.17.0]' \
   '[module.scene_observer.0.18.0]'; do
   if ! grep -Fqx "${section}" "${cfg}"; then
@@ -844,7 +845,7 @@ g++ -std=c++20 -Wall -Wextra -Werror \
 # que importa. Uma guarda que explica uma regressao sutil so serve se for ela
 # a falar. Nesta ordem o hash continua pegando tudo que as guardas nao
 # cobrem, e so isso.
-expected_cfg_sha256="7aecea3db59ca851a6d35bb3da2597dd5a879c65843ac611098b1d477f9912bd"
+expected_cfg_sha256="c8cdbf5a138e4504eb965c5c0f180dde0f4ac6be907a95cba59ead98574e9e0e"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
@@ -923,6 +924,34 @@ for native_aa_marker in \
   'politica=photorealism-plugin.cfg'; do
   if ! grep -rFq "${native_aa_marker}" "${native_aa_source}"; then
     echo "Gestao automatica AA nativo incompleta: ${native_aa_marker}" >&2
+    exit 1
+  fi
+done
+
+# 0.24.5: o SSAO nativo do jogo (r_ssao) fica ligado por padrao e soma com o
+# SSAO do proprio plugin, dobrando a oclusao -- foi o que o usuario viu de
+# "fantasma" e confirmou nos strings do SnowyMoon instalado ('uset r_ssao "0"'
+# no dxgi.dll dele). O mesmo mecanismo do AA nativo, agora para o SSAO.
+if ! grep -Fq 'configure_native_graphics_for_photorealism(g_proxy_module);' \
+  "${project_dir}/src/proxy.cpp"; then
+  echo "O bootstrap deixou de configurar o SSAO nativo antes do DXGI: o \
+SSAO do jogo pode continuar ligado e somar com o do plugin." >&2
+  exit 1
+fi
+native_graphics_source="${project_dir}/src/native_graphics"
+for native_graphics_marker in \
+  '{"r_ssao", "0"}' \
+  'kNativeGraphicsSection = "native_graphics.0.1.0"' \
+  'read_native_graphics_policy' \
+  'policy.manage' \
+  'policy.desired[index].c_str()' \
+  'plugin_config_value' \
+  'nenhuma alteracao no ' \
+  'politica=photorealism-plugin.cfg' \
+  'native_aa::write_atomic(target.config_path, contents)' \
+  'native_aa::make_backup(target.config_path)'; do
+  if ! grep -rFq "${native_graphics_marker}" "${native_graphics_source}"; then
+    echo "Gestao automatica do SSAO nativo incompleta: ${native_graphics_marker}" >&2
     exit 1
   fi
 done
