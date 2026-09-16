@@ -584,7 +584,11 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   `src/native_graphics/`, irmao do gerenciamento de AA nativo. Detalhe em
   `references/ssao-nativo-do-jogo-0.24.5.md`. Falta confirmar no jogo se isso
   reduz o "fantasma";
-- **0.24.6 em diante** um efeito entre passes por pacote: saturacao do albedo;
+- **0.24.6 (entregue)** a qualidade global (pagina inicial) parou de mexer no
+  SSAO -- amostras e meia resolucao do SSAO agora vem so do detalhe do SSAO,
+  na propria pagina de Renderizacao / Iluminacao. Qualidade global continua
+  so com o teto de niveis do bloom;
+- **0.24.7 em diante** um efeito entre passes por pacote: saturacao do albedo;
   espelhos do jogo; SSS; normais da estrada; motion blur pelas matrizes do
   anti-aliasing do jogo, se a nova captura as mostrar. O que nao der entre passes
   vai para a 0.25.x;

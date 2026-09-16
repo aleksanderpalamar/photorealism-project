@@ -57,15 +57,13 @@ AntiAliasingMode anti_aliasing_mode(const Settings& settings) {
 }
 
 SsaoQuality ssao_quality(const Settings& settings) {
-    const unsigned quality = quality_level(settings.profile_global_quality);
     const unsigned detail = quality_level(settings.profile_ssao_detail_quality);
-    const unsigned coarsest = quality > detail ? quality : detail;
     const SsaoPreset& preset =
         kSsaoPresets[quality_level(settings.profile_ssao_preset)];
     SsaoQuality result = {};
-    result.samples = kSamplesByLevel[coarsest];
+    result.samples = kSamplesByLevel[detail];
     result.half_resolution =
-        switched_on(settings.profile_use_half_res_ssao) || quality == kLevels - 1;
+        switched_on(settings.profile_use_half_res_ssao) || detail == kLevels - 1;
     result.radius_scale = preset.radius_scale;
     result.bias_scale = preset.bias_scale;
     result.curve = preset.curve;

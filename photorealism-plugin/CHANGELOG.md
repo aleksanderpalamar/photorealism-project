@@ -1,5 +1,28 @@
 # Changelog
 
+## Pacote 0.24.6 - 2026-09-16
+
+**"Qualidade alta / media / baixa" da pagina inicial para de mexer no SSAO.**
+As opcoes de SSAO ja tem pagina propria (preset, detalhe, intensidade); a
+qualidade global nao devia se misturar com elas.
+
+### O que muda
+
+- `ssao_quality()` usa so `ssao_detail_quality` (pagina de Renderizacao /
+  Iluminacao) para amostras e meia resolucao do SSAO; `global_quality` (pagina
+  inicial) nao entra mais nessa conta;
+- `global_quality` continua controlando o teto de niveis do bloom (5/4/3), que
+  nao tem controle proprio em nenhuma outra pagina.
+
+### Verificacao
+
+- `tests/effect_quality_test.cpp`: `global_quality` em qualquer valor nao muda
+  amostras nem meia resolucao do SSAO; so `ssao_detail_quality` muda.
+- Build e validate.
+
+**Ainda nao rodou no jogo.**
+
+
 ## Pacote 0.24.5 - 2026-09-16
 
 **O plugin passa a desligar o SSAO nativo do jogo.** O usuario testou outro

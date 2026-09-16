@@ -36,18 +36,27 @@ void anti_aliasing_follows_the_list() {
     assert(anti_aliasing_mode(settings) == AntiAliasingMode::TemporalSharp);
 }
 
-void quality_and_detail_pick_the_coarsest() {
+void global_quality_never_touches_ssao() {
     Settings settings = neutral();
     assert(ssao_quality(settings).samples == 16);
     assert(!ssao_quality(settings).half_resolution);
-    settings.profile_ssao_detail_quality = 1.0f;
-    assert(ssao_quality(settings).samples == 12);
     settings.profile_global_quality = 2.0f;
-    assert(ssao_quality(settings).samples == 8);
-    assert(ssao_quality(settings).half_resolution);
+    assert(ssao_quality(settings).samples == 16);
+    assert(!ssao_quality(settings).half_resolution);
     assert(bloom_level_limit(settings) == 3);
     settings.profile_global_quality = 1.0f;
     assert(bloom_level_limit(settings) == 4);
+    assert(ssao_quality(settings).samples == 16);
+}
+
+void only_the_ssao_page_drives_ssao_detail() {
+    Settings settings = neutral();
+    settings.profile_ssao_detail_quality = 1.0f;
+    assert(ssao_quality(settings).samples == 12);
+    settings.profile_ssao_detail_quality = 2.0f;
+    assert(ssao_quality(settings).samples == 8);
+    assert(ssao_quality(settings).half_resolution);
+    settings.profile_ssao_detail_quality = 0.0f;
     assert(!ssao_quality(settings).half_resolution);
     settings.profile_use_half_res_ssao = 1.0f;
     assert(ssao_quality(settings).half_resolution);
@@ -82,7 +91,8 @@ void switches_turn_effects_off() {
 int main() {
     levels_round_and_clamp();
     anti_aliasing_follows_the_list();
-    quality_and_detail_pick_the_coarsest();
+    global_quality_never_touches_ssao();
+    only_the_ssao_page_drives_ssao_detail();
     presets_widen_and_deepen();
     switches_turn_effects_off();
     std::printf("effect_quality_test ok\n");
