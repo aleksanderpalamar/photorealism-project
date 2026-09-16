@@ -175,7 +175,7 @@ void Menu::render(
                      : input_hook().poll();
     ui.active = active_;
 
-    const MenuFrame frame = frame_for(width, height);
+    const MenuFrame frame = frame_for(height);
     list_.begin(width, height);
     draw_chrome(ui, frame);
     draw_body(ui, frame);

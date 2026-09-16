@@ -15,10 +15,11 @@ namespace {
 constexpr float kCloseSize = 22.0f;
 constexpr float kHeaderHeight = 26.0f;
 constexpr float kFooterRows = 2.0f;
+constexpr float kScreenMargin = theme::kPadding * 2.0f;
 
 }
 
-MenuFrame Menu::frame_for(float width, float height) const {
+MenuFrame Menu::frame_for(float height) const {
     const float footer_height =
         kFooterRows * theme::kRowHeight + theme::kRowGap + theme::kPadding;
     const float chrome_height = theme::kTitleBarHeight + theme::kPadding +
@@ -26,15 +27,15 @@ MenuFrame Menu::frame_for(float width, float height) const {
                                 theme::kRowGap * 2.0f + footer_height;
     const float content =
         content_height_of(setting_pages()[page_]) + theme::kPadding;
-    const float available = height - theme::kPadding * 4.0f;
+    const float available = height - kScreenMargin - theme::kPadding * 2.0f;
     const float wanted = chrome_height + content;
     const float panel_height = wanted < available ? wanted : available;
 
     MenuFrame frame = {};
     frame.panel.width = theme::kPanelWidth;
     frame.panel.height = panel_height;
-    frame.panel.x = (width - frame.panel.width) * 0.5f;
-    frame.panel.y = (height - frame.panel.height) * 0.5f;
+    frame.panel.x = kScreenMargin;
+    frame.panel.y = kScreenMargin;
 
     const float inner_x = frame.panel.x + theme::kPadding;
     const float inner_width = frame.panel.width - theme::kPadding * 2.0f;

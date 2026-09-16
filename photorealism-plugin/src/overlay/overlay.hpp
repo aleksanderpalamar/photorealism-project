@@ -14,7 +14,7 @@
 namespace photorealism {
 namespace overlay {
 
-constexpr const char* kMenuTitle = "photorealism-plugin 0.24.2";
+constexpr const char* kMenuTitle = "photorealism-plugin 0.24.3";
 constexpr const char* kProjectUrl =
     "https://github.com/aleksanderpalamar/photorealism-project";
 constexpr std::size_t kNoPage = static_cast<std::size_t>(-1);
@@ -57,7 +57,7 @@ class Menu {
   private:
     bool ensure_resources(ID3D11Device* device);
     void ensure_on_disk();
-    MenuFrame frame_for(float width, float height) const;
+    MenuFrame frame_for(float height) const;
     void draw_chrome(UiContext& ui, const MenuFrame& frame);
     void draw_footer(UiContext& ui, const MenuFrame& frame);
     void draw_body(UiContext& ui, const MenuFrame& frame);

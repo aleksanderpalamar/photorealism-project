@@ -566,7 +566,10 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   inteiro e rejeitava tudo por tamanho -- nenhuma constante do anti-aliasing foi
   salva nas duas capturas. A leitura agora segue o deslocamento real. Pede nova
   captura do usuario para conferir se as matrizes aparecem;
-- **0.24.3 em diante** um efeito entre passes por pacote: saturacao do albedo;
+- **0.24.3 (entregue)** o menu abre no canto superior esquerdo (margem de 32 px),
+  em vez de centralizado na tela. Pedido do usuario, sem relacao com o resto do
+  0.24.x;
+- **0.24.4 em diante** um efeito entre passes por pacote: saturacao do albedo;
   espelhos do jogo; SSS; normais da estrada; motion blur pelas matrizes do
   anti-aliasing do jogo, se a nova captura as mostrar. O que nao der entre passes
   vai para a 0.25.x;

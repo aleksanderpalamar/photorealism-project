@@ -1,5 +1,21 @@
 # Changelog
 
+## Pacote 0.24.3 - 2026-09-16
+
+**O menu abre no canto superior esquerdo.** Antes abria centralizado na tela.
+
+### O que muda
+
+- o painel do menu (Ctrl+P) ancora no canto superior esquerdo, com a mesma margem
+  (32 px) usada nos dois eixos, em vez de centralizar pela largura e altura da tela;
+- a altura maxima do painel continua se ajustando ao conteudo da pagina, agora
+  descontando a margem do topo e uma folga do mesmo tamanho embaixo.
+
+### Verificacao
+
+- build e validate.
+
+
 ## Pacote 0.24.2 - 2026-09-16
 
 **Correcao da captura de constantes: le pelo intervalo real, nao mais o buffer
