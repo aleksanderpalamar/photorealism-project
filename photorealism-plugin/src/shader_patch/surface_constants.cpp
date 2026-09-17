@@ -18,8 +18,16 @@ constexpr UINT kGBufferTargetCount = 4;
 constexpr unsigned kNormalFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
 constexpr unsigned kMaterialFormat = DXGI_FORMAT_R16G16B16A16_UINT;
 
+SurfaceConstants neutral_constants() {
+    SurfaceConstants values = {};
+    values.road[1] = 1.0f;
+    values.mask[0] = kRoadMaterialMask;
+    values.surface[0] = 1.0f;
+    return values;
+}
+
 ID3D11Buffer* g_buffer = nullptr;
-SurfaceConstants g_values = {};
+SurfaceConstants g_values = neutral_constants();
 std::atomic<bool> g_dirty{true};
 std::atomic<unsigned> g_binds{0};
 unsigned long long g_origin_ms = 0ull;
@@ -121,6 +129,11 @@ void update_surface_constants(
     values.surface[3] = 0.0f;
 
     g_values = values;
+    g_dirty.store(true, std::memory_order_release);
+}
+
+void neutralize_surface_constants() {
+    g_values = neutral_constants();
     g_dirty.store(true, std::memory_order_release);
 }
 

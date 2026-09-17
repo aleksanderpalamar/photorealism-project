@@ -109,14 +109,17 @@ void photorealism_wet_surface(
     float2 uv,
     float reflection_scale)
 {
-    if (photorealism_rain.w < 0.5 || !photorealism_is_road(o3))
+    if (!photorealism_is_road(o3))
     {
         return;
     }
 
     float reflectivity = saturate(float(o3.z) / max(reflection_scale, 1.0));
-    float wet_amount = saturate(photorealism_rain.x) * max(reflectivity, photorealism_mask.y);
-    if (wet_amount <= 0.002)
+    float wet_amount = photorealism_rain.w < 0.5
+        ? 0.0
+        : saturate(photorealism_rain.x) * max(reflectivity, photorealism_mask.y);
+    float normal_strength = photorealism_road.x;
+    if (wet_amount <= 0.002 && normal_strength <= 0.001)
     {
         return;
     }
@@ -133,15 +136,21 @@ void photorealism_wet_surface(
     float near_field = 1.0 - saturate((view_depth - 25.0) / 45.0);
     float wetness = saturate(wet_amount * (0.35 + 0.65 * near_field));
 
-    float3 detail = photorealism_detail_normal(albedo, state, uv, photorealism_road.x);
-    float3 ripple = photorealism_ripple_normal(
-        uv * photorealism_rain.y, wetness * near_field, photorealism_rain.z);
-
-    float3 surface = detail;
+    float3 surface = photorealism_detail_normal(albedo, state, uv, normal_strength);
     surface.xy *= lerp(photorealism_road.y, 1.0, wet_amount);
-    surface.xy *= 1.0 - saturate(wetness * 0.65);
-    surface = normalize(surface);
-    surface = normalize(float3(surface.xy + ripple.xy, surface.z * ripple.z));
+
+    if (wetness > 0.0)
+    {
+        float3 ripple = photorealism_ripple_normal(
+            uv * photorealism_rain.y, wetness * near_field, photorealism_rain.z);
+        surface.xy *= 1.0 - saturate(wetness * 0.65);
+        surface = normalize(surface);
+        surface = normalize(float3(surface.xy + ripple.xy, surface.z * ripple.z));
+    }
+    else
+    {
+        surface = normalize(surface);
+    }
 
     float3 dx = ddx(view_position);
     float3 dy = ddy(view_position);
@@ -162,7 +171,10 @@ void photorealism_wet_surface(
     float3x3 frame = float3x3(tangent, bitangent, view_normal);
     o0.xyz = normalize(mul(surface, frame));
 
-    o2.rgb *= lerp(1.0, photorealism_road.w, wetness);
-    o1.rgb = lerp(o1.rgb, float3(1.0, 1.0, 1.0), wetness * photorealism_road.z);
-    o1.a = lerp(o1.a, photorealism_road.z > 0.0 ? 900.0 : o1.a, wetness);
+    if (wetness > 0.0)
+    {
+        o2.rgb *= lerp(1.0, photorealism_road.w, wetness);
+        o1.rgb = lerp(o1.rgb, float3(1.0, 1.0, 1.0), wetness * photorealism_road.z);
+        o1.a = lerp(o1.a, photorealism_road.z > 0.0 ? 900.0 : o1.a, wetness);
+    }
 }

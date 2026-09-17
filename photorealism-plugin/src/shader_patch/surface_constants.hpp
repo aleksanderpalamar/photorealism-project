@@ -25,6 +25,7 @@ bool create_surface_constants(ID3D11Device* device);
 void release_surface_constants();
 
 void update_surface_constants(const Settings& settings, UINT width, UINT height);
+void neutralize_surface_constants();
 
 void bind_surface_constants(
     ID3D11DeviceContext* context,

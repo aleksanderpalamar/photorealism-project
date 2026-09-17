@@ -1,6 +1,7 @@
 #include "quality_policy.hpp"
 
 #include "../config/path_utils.hpp"
+#include "../config/text_utils.hpp"
 #include "../native_aa/config_file.hpp"
 #include "../native_aa/config_text.hpp"
 
@@ -11,11 +12,14 @@ namespace {
 using photorealism::aa_config::plugin_config_value;
 
 QualityLevel level_from_text(const std::string& text) {
-    if (text == "1" || text == "1.0" || text == "1.000000") {
-        return QualityLevel::medium;
-    }
-    if (text == "2" || text == "2.0" || text == "2.000000") {
+    const float value = config_text::clamp_value(
+        config_text::to_number(text.c_str()), 0.0f, 2.0f);
+    const float rounded = value + 0.5f;
+    if (rounded >= 2.0f) {
         return QualityLevel::low;
+    }
+    if (rounded >= 1.0f) {
+        return QualityLevel::medium;
     }
     return QualityLevel::high;
 }

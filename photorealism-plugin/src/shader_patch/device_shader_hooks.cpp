@@ -55,8 +55,9 @@ HRESULT STDMETHODCALLTYPE hooked_create_pixel_shader(
         }
         log_message(
             "Patch de shader: o shader trocado nao foi aceito (0x%08X); "
-            "voltando ao original.",
+            "voltando ao original e descartando o cache.",
             static_cast<unsigned>(result));
+        discard_patched_shader(bytecode, static_cast<std::size_t>(length));
     }
     return original(device, bytecode, length, linkage, shader);
 }

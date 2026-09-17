@@ -18,6 +18,9 @@ void SceneObserver::configure(
     log_seconds_ = log_seconds < 0.0f ? 0.0f : log_seconds;
 
     first_measurement_logged_ = false;
+    if (!enabled_) {
+        latest_ = SceneFeatures{};
+    }
 }
 
 void SceneObserver::release() {

@@ -611,7 +611,9 @@ public:
             return;
         }
         g_pass_effects_wanted.store(pass_effects_wanted(), std::memory_order_release);
+        shader_patch::set_enabled(settings_.enabled);
         if (!settings_.enabled) {
+            shader_patch::neutralize_surface_constants();
             return;
         }
 

@@ -21,6 +21,8 @@ void set_enabled(bool enabled);
 bool patch_pixel_shader(
     const void* bytecode, std::size_t size, std::vector<std::uint8_t>* patched);
 
+void discard_patched_shader(const void* bytecode, std::size_t size);
+
 PatchStatistics statistics();
 void log_statistics(const char* phase);
 

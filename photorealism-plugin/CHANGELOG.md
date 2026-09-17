@@ -1,5 +1,56 @@
 # Changelog
 
+## Pacote 0.25.3 - 2026-09-17
+
+**Cinco defeitos apontados pela revisao automatica do PR #6.** Todos se
+confirmaram na leitura do codigo; nenhum era falso positivo.
+
+### O que muda
+
+- **a chave geral volta a valer para a troca de shader.** `set_enabled()` do
+  modulo de troca estava declarada no header e **nunca era chamada**: o hook de
+  `CreatePixelShader` ficava ativo com `[plugin] enabled=false` e depois do Home.
+  Pior, `update_surface_constants()` so roda depois da saida antecipada de
+  `render()`, entao num inicio ja desligado o buffer b13 subia zerado -- e
+  saturacao zero em `photorealism_surface_grade` deixa **todo o albedo do jogo em
+  escala de cinza**. Agora o estado da chave geral e propagado para o modulo, o
+  buffer nasce neutro (saturacao 1.0) e e reneutralizado ao desligar;
+- **as normais de estrada saem de dentro da porta do piso molhado.** O padrao de
+  fabrica e `wet_roads_amount=0`, o que fazia `photorealism_wet_surface()`
+  retornar antes de ler `roads_normal_intensity` e `roads_default_normals`. Os
+  dois controles que a 0.25.0 tirou de pendente **nao faziam nada em pista seca**,
+  e desligar o piso molhado desligava eles junto. A graduacao de normal agora
+  roda para toda superficie de estrada; ondulacao, brilho e escurecimento
+  continuam so no molhado;
+- **o nivel de qualidade e lido como numero.** `level_from_text()` comparava o
+  texto exato contra `"1"`, `"1.0"` e `"1.000000"`; qualquer outra grafia valida
+  para o carregador de perfil (`1.00`, `01`, notacao cientifica) caia no preset
+  alto. O menu mostrava medio ou baixo e o proximo inicio escrevia alto nas 23
+  chaves do jogo. Passa a converter e arredondar com a mesma semantica do perfil;
+- **amostra de cena velha nao sobrevive ao desligamento.** `configure(false, ...)`
+  nao limpava `latest_`, e `capture_scene_for_grade()` realimentava a amostra
+  antiga em `ConditionAdapter::update()` a cada quadro, sustentando um peso de
+  noite baseado em cena que nao existe mais. O observador agora zera a amostra ao
+  ser desligado;
+- **entrada de cache invalida e recusada e reconstruida.** `write_cache()`
+  ignorava a contagem de bytes escritos e `read_cache()` aceitava qualquer arquivo
+  acima de 32 bytes, entao uma escrita interrompida virava um blob permanente: o
+  `CreatePixelShader` recusava, o hook voltava ao original e ninguem despejava a
+  entrada -- aquele shader ficava sem troca para sempre. Agora a escrita curta
+  apaga o arquivo, a leitura confere o contentor DXBC (assinatura e tamanho
+  declarado) e a recusa do dispositivo despeja memoria e disco.
+
+### Verificacao
+
+- Build e `validate.sh` completo: as 25 suites passam.
+- A biblioteca de injecao alterada compila com o `d3dcompiler_47.dll` do runtime
+  (`compilados=1 falhas=0`), num shader de prova que declara os quatro alvos de
+  G-buffer e chama as duas funcoes que o patch emite.
+
+**Ainda nao rodou no jogo.** A cobertura acima e de compilacao e de teste de
+unidade, nao de imagem.
+
+
 ## Pacote 0.25.2 - 2026-09-16
 
 **Saturacao do albedo e espessura das folhas passam a funcionar.** Eram duas

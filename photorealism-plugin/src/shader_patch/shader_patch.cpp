@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <cstdio>
+#include <cstring>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -129,6 +130,19 @@ std::wstring cache_path(std::uint64_t key) {
     return cache_directory() + name;
 }
 
+bool looks_like_dxbc(const std::vector<std::uint8_t>& blob) {
+    if (blob.size() < 32) {
+        return false;
+    }
+    if (blob[0] != 'D' || blob[1] != 'X' || blob[2] != 'B' ||
+        blob[3] != 'C') {
+        return false;
+    }
+    std::uint32_t total = 0;
+    std::memcpy(&total, blob.data() + 24, sizeof(total));
+    return static_cast<std::size_t>(total) == blob.size();
+}
+
 bool read_cache(std::uint64_t key, std::vector<std::uint8_t>* out) {
     const std::wstring path = cache_path(key);
     HANDLE file = CreateFileW(
@@ -160,6 +174,11 @@ bool read_cache(std::uint64_t key, std::vector<std::uint8_t>* out) {
         }
     }
     CloseHandle(file);
+    if (ok && !looks_like_dxbc(*out)) {
+        out->clear();
+        DeleteFileW(path.c_str());
+        ok = false;
+    }
     return ok;
 }
 
@@ -177,13 +196,16 @@ void write_cache(std::uint64_t key, const std::vector<std::uint8_t>& blob) {
         return;
     }
     DWORD written = 0;
-    WriteFile(
+    const BOOL ok = WriteFile(
         file,
         blob.data(),
         static_cast<DWORD>(blob.size()),
         &written,
         nullptr);
     CloseHandle(file);
+    if (ok == 0 || static_cast<std::size_t>(written) != blob.size()) {
+        DeleteFileW(path.c_str());
+    }
 }
 
 std::string first_error_line(ID3DBlob* errors) {
@@ -342,6 +364,21 @@ bool patch_pixel_shader(
         size,
         blob.size());
     return true;
+}
+
+void discard_patched_shader(const void* bytecode, std::size_t size) {
+    if (bytecode == nullptr || size < 32) {
+        return;
+    }
+    std::lock_guard<std::mutex> guard(g_mutex);
+    Container container;
+    if (!container.parse(bytecode, size)) {
+        return;
+    }
+    const std::uint64_t key = container.hash() ^ (g_library_hash * 31u);
+    g_memory_cache.erase(key);
+    g_rejected[key] = true;
+    DeleteFileW(cache_path(key).c_str());
 }
 
 PatchStatistics statistics() {
