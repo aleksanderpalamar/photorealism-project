@@ -13,7 +13,6 @@ wchar_t g_plugin_root[MAX_PATH] = {};
 wchar_t g_config_path[MAX_PATH] = {};
 wchar_t g_shader_path[MAX_PATH] = {};
 wchar_t g_depth_preview_shader_path[MAX_PATH] = {};
-wchar_t g_ssao_shader_path[MAX_PATH] = {};
 wchar_t g_temporal_shader_path[MAX_PATH] = {};
 wchar_t g_bloom_shader_path[MAX_PATH] = {};
 wchar_t g_overlay_shader_path[MAX_PATH] = {};
@@ -59,9 +58,6 @@ BOOL CALLBACK initialize_paths(PINIT_ONCE, PVOID, PVOID*) {
         g_depth_preview_shader_path,
         MAX_PATH,
         L"\\shaders\\depth-preview.hlsl");
-
-    std::wcsncpy(g_ssao_shader_path, g_plugin_root, MAX_PATH - 1);
-    append_path(g_ssao_shader_path, MAX_PATH, L"\\shaders\\ssao.hlsl");
 
     std::wcsncpy(g_temporal_shader_path, g_plugin_root, MAX_PATH - 1);
     append_path(
@@ -118,11 +114,6 @@ const wchar_t* shader_path() {
 const wchar_t* depth_preview_shader_path() {
     ensure_paths();
     return g_depth_preview_shader_path;
-}
-
-const wchar_t* ssao_shader_path() {
-    ensure_paths();
-    return g_ssao_shader_path;
 }
 
 const wchar_t* temporal_shader_path() {

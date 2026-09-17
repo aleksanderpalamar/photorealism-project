@@ -1,6 +1,7 @@
 #include "overlay.hpp"
 
 #include "../config/config.hpp"
+#include "../config/defaults.hpp"
 #include "../config/limits.hpp"
 #include "../runtime.hpp"
 #include "font_bitmap.hpp"
@@ -40,13 +41,14 @@ Menu& menu() {
 void Menu::bind(Settings* settings, MenuHost* host) {
     settings_ = settings;
     host_ = host;
-    baseline_loaded_ = false;
+    on_disk_loaded_ = false;
 }
 
 void Menu::toggle() {
     visible_ = !visible_;
     close_armed_ = false;
     active_ = nullptr;
+    open_choice_ = nullptr;
     input_hook().set_capturing(visible_);
     log_message("Menu %s pelo atalho Ctrl+P.", visible_ ? "aberto" : "fechado");
 }
@@ -58,6 +60,7 @@ void Menu::hide() {
     visible_ = false;
     close_armed_ = false;
     active_ = nullptr;
+    open_choice_ = nullptr;
     input_hook().set_capturing(false);
     log_message("Menu fechado pelo botao de fechar.");
 }
@@ -93,16 +96,17 @@ bool Menu::ensure_resources(ID3D11Device* device) {
     return true;
 }
 
-void Menu::ensure_baseline() {
-    if (baseline_loaded_) {
+void Menu::ensure_on_disk() {
+    if (on_disk_loaded_) {
         return;
     }
-    CalibrationStack stack = {};
-    load_stack(&stack);
-    baseline_ = measured_baseline(stack);
-    on_disk_ = compose(stack);
-    defaults_ = default_settings();
-    baseline_loaded_ = true;
+    read_settings(&on_disk_);
+    on_disk_loaded_ = true;
+}
+
+void Menu::set_value(const SettingBinding& binding, float value) {
+    set_binding_value(binding, settings_, quantized_binding_value(binding, value));
+    apply_change(binding);
 }
 
 void Menu::apply_change(const SettingBinding& binding) {
@@ -113,29 +117,33 @@ void Menu::apply_change(const SettingBinding& binding) {
 }
 
 void Menu::reset_binding(const SettingBinding& binding) {
-    ensure_baseline();
-    const Settings& reference = binding.grade ? baseline_ : defaults_;
+    const Settings reference =
+        default_settings_with_lighting(settings_->profile_lighting_method);
     if (binding.kind == BindingKind::Toggle) {
         set_binding_flag(binding, settings_, binding_flag(binding, reference));
     } else {
-        set_binding_value(
-            binding, settings_, binding_value(binding, reference));
+        set_binding_value(binding, settings_, binding_value(binding, reference));
     }
     apply_change(binding);
-    log_message("Menu devolveu %s ao valor de referencia.", binding.label);
+    log_message("Menu devolveu %s ao valor padrao.", binding.label);
 }
 
 void Menu::discard_changes() {
-    if (settings_ == nullptr) {
-        return;
-    }
     load_settings(settings_);
-    baseline_loaded_ = false;
-    ensure_baseline();
+    on_disk_loaded_ = false;
+    ensure_on_disk();
     if (host_ != nullptr) {
-        host_->settings_changed(kGradeBindings[0]);
+        host_->settings_reloaded();
     }
     log_message("Menu descartou as mudancas e releu o cfg.");
+}
+
+void Menu::restore_defaults() {
+    restore_profile_defaults(settings_);
+    if (host_ != nullptr) {
+        host_->settings_reloaded();
+    }
+    log_message("Menu restaurou os padroes do perfil; Salvar grava no cfg.");
 }
 
 void Menu::render(
@@ -155,14 +163,9 @@ void Menu::render(
     if (!ensure_resources(device)) {
         return;
     }
-    ensure_baseline();
+    ensure_on_disk();
 
     keys_ = input_hook().poll_keys();
-    if ((keys_ & kKeyTab) != 0) {
-        page_ = (page_ + 1) % setting_page_count();
-        selected_ = 0;
-        scroll_ = 0.0f;
-    }
 
     UiContext ui;
     ui.list = &list_;
@@ -172,7 +175,7 @@ void Menu::render(
                      : input_hook().poll();
     ui.active = active_;
 
-    const MenuFrame frame = frame_for(width, height);
+    const MenuFrame frame = frame_for(height);
     list_.begin(width, height);
     draw_chrome(ui, frame);
     draw_body(ui, frame);

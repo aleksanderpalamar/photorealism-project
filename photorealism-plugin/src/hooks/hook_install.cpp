@@ -5,6 +5,8 @@
 #include "device_probe.hpp"
 #include "hook_audit.hpp"
 #include "hook_state.hpp"
+#include "../shader_patch/device_shader_hooks.hpp"
+#include "../shader_patch/surface_constants.hpp"
 #include "swap_chain_hooks.hpp"
 #include "vtable_patch.hpp"
 
@@ -21,6 +23,7 @@ struct InstallReport {
     bool render_targets;
     bool render_targets_and_uavs;
     bool clear_depth_stencil;
+    bool pixel_shader;
 };
 
 bool already_installed() {
@@ -157,6 +160,13 @@ bool install_swap_chain_hooks() {
     patch_present(probe.swap_chain(), &report);
     patch_present1(probe.swap_chain(), &report);
     patch_context(probe.context(), &report);
+    report.pixel_shader =
+        shader_patch::install_device_shader_hooks(probe.device());
+    if (!report.pixel_shader) {
+        log_message(
+            "Patch de shader: nao foi possivel interceptar CreatePixelShader; "
+            "os shaders do jogo ficam como estao.");
+    }
 
     if (!report_is_complete(report)) {
         log_partial_failure(report);

@@ -219,8 +219,9 @@ for observer_message in \
   'Modulo SSAO refinement 0.8.0' \
   'Modulo SSAO interior 0.9.0' \
   'Modulo temporal 0.10.0' \
-  'SSAO 0.9.1 ativo' \
-  'ssao_0.9.1' \
+  'SSAO 0.23.3 ativo' \
+  'ssao_oclusao=%s' \
+  'Efeitos 0.23.3: qualidade=%s aa=%s fxaa=%s' \
   'Resolve temporal 0.10.0 ativo' \
   'Historico temporal 0.10.0 inicializado' \
   'temporal_0.10.0'; do
@@ -243,8 +244,7 @@ for scene_observer_message in \
   'Cena 0.18.0: ceu_R/B=%.3f mediana=%.1f faixa_p90-p10=%.1f' \
   'Perfil efetivo (cor): tint=%.3f' \
   'Balanco de branco 0.18.2: bruto=%.4f/%.4f/%.4f luma_bruta=%.6f' \
-  'Modulo adaptacao por condicao 0.19.0' \
-  'Ancoras 0.19.0: sol=%.0fK/%.3f chuva=%.0fK/%.3f noite=%.0fK/%.3f' \
+  'Detector de noite 0.19.0: tau=%.0fs' \
   'Condicao 0.19.0: sol=%.3f chuva=%.3f noite=%.3f'; do
   if ! grep -Fq "${scene_observer_message}" "${dxgi_strings}"; then
     echo "Observador de cena 0.18.0 incompleto: ${scene_observer_message}" >&2
@@ -262,93 +262,50 @@ for telemetry_message in \
 done
 
 cfg="${project_dir}/config/photorealism-plugin.cfg"
+# 0.23.2: o cfg so tem as secoes que o perfil comanda. SSAO, resolve temporal,
+# depth e o detector de noite rodam com valores internos, e as camadas de cor
+# medidas sairam: o grade vem inteiro do perfil.
 for section in \
-  '[base.0.1.2]' \
-  '[module.visual.0.2.0]' \
-  '[module.rain_overcast.0.3.0]' \
-  '[depth.0.6.4]' \
-  '[module.ssao.0.7.0]' \
-  '[module.ssao_refinement.0.8.0]' \
-  '[module.ssao_interior.0.9.0]' \
-  '[module.temporal.0.10.0]'; do
-  grep -Fqx "${section}" "${cfg}"
+  '[plugin]' \
+  '[profile.photorealism.0.23.0]' \
+  '[module.fsr.0.21.0]' \
+  '[native_aa.0.12.2]' \
+  '[module.bloom.0.17.0]' \
+  '[module.wet_surface.0.25.0]' \
+  '[native_quality.0.25.1]' \
+  '[module.scene_observer.0.18.0]'; do
+  if ! grep -Fqx "${section}" "${cfg}"; then
+    echo "Secao sumiu do cfg: ${section}" >&2
+    exit 1
+  fi
 done
-grep -Fqx 'near_plane=0.1' "${cfg}"
-grep -Fqx 'preview_distance=50.0' "${cfg}"
-grep -Fqx 'vertical_fov=60.0' "${cfg}"
-grep -Fqx 'radius=0.8' "${cfg}"
-grep -Fqx 'intensity=0.28' "${cfg}"
-grep -Fqx 'bias=0.04' "${cfg}"
-grep -Fqx 'fade_start=30.0' "${cfg}"
-grep -Fqx 'fade_end=70.0' "${cfg}"
-grep -Fqx 'edge_rejection=1.5' "${cfg}"
-grep -Fqx 'highlight_start=0.55' "${cfg}"
-grep -Fqx 'highlight_end=0.95' "${cfg}"
-grep -Fqx 'highlight_ao_floor=0.35' "${cfg}"
-grep -Fqx 'near_start=2.0' "${cfg}"
-grep -Fqx 'near_end=8.0' "${cfg}"
-grep -Fqx 'radius=0.45' "${cfg}"
-grep -Fqx 'intensity=0.20' "${cfg}"
-grep -Fqx 'bias=0.05' "${cfg}"
-grep -Fqx 'edge_rejection=1.75' "${cfg}"
-grep -Fqx 'history_weight=0.65' "${cfg}"
-grep -Fqx 'depth_rejection=0.02' "${cfg}"
-grep -Fqx 'color_rejection=0.08' "${cfg}"
+for retired_section in \
+  '[base.0.1.2]' '[module.visual.0.2.0]' '[module.rain_overcast.0.3.0]' \
+  '[module.user.0.20.0]' '[depth.0.6.4]' '[module.ssao.0.7.0]' \
+  '[module.ssao_refinement.0.8.0]' '[module.ssao_interior.0.9.0]' \
+  '[module.temporal.0.10.0]' '[module.condition_adaptation.0.19.0]'; do
+  if grep -Fqx "${retired_section}" "${cfg}"; then
+    echo "Secao aposentada na 0.23.2 voltou ao cfg: ${retired_section}. Ela nao \
+e mais lida e parece mandar na imagem." >&2
+    exit 1
+  fi
+done
+for ssao_pin in 'settings->ssao_radius = 0.8f;' 'settings->ssao_intensity = 0.28f;' \
+  'settings->ssao_interior_intensity = 0.20f;' 'settings.temporal_history_weight = 0.65f;'; do
+  if ! grep -Fq "${ssao_pin}" "${project_dir}/src/config/defaults.cpp"; then
+    echo "Valor interno aprovado do SSAO/temporal mudou: ${ssao_pin}" >&2
+    exit 1
+  fi
+done
 
-# As guardas da curva de tom vivem AQUI, junto dos outros pinos do cfg, e nao
-# no meio das chaves de outro modulo. Na 0.14.0 elas foram colocadas logo
-# depois de max_indirect_luma, que era chave do RTGI -- e sairam junto com ele
-# na 0.16.0, silenciosamente. Guarda misturada com modulo alheio morre com o
-# modulo alheio.
-# A curva de tom da 0.14.0. black_lift e o piso do preto: em zero o shader
-# volta ao saturate() sem toe da 0.13.3, que esmaga a sombra em 0 e transforma
-# o painel em massa preta. As quatro referencias do ATS medidas para esta
-# versao tem o 1% mais escuro entre 8 e 11 de 255, e 0.0027 em linear cai
-# exatamente ali depois do encode sRGB.
-for lift_channel in black_lift_r black_lift_g black_lift_b; do
-  if grep -Eq "^${lift_channel}=0(\.0+)?$" "${cfg}"; then
-    echo "${lift_channel} voltou a zero: a sombra volta a ser esmagada em 0 e \
-o visual medido nas referencias (p1 entre 8 e 11) fica inalcancavel." >&2
+# 0.23.1: os cinco conjuntos de tom estao no cfg.
+for profile_set in 1 2 3 4 5; do
+  if ! grep -Eq "^tonemap_exposure_${profile_set}=" "${cfg}"; then
+    echo "O conjunto de tom ${profile_set} sumiu do cfg: a iluminacao que usa \
+esse conjunto cai nos neutros internos sem aviso." >&2
     exit 1
   fi
 done
-# 0.17.1: o piso tem cor. R abaixo de G nas cinco referencias -- se os tres
-# voltarem a ser iguais o piso e acromatico de novo, que foi o que as capturas
-# da 0.17.0 mostraram (8/8/8 e 9/9/9, R/G e B/G exatamente 1,000).
-lift_r="$(grep -E '^black_lift_r=' "${cfg}" | head -1 | cut -d= -f2 || true)"
-lift_g="$(grep -E '^black_lift_g=' "${cfg}" | head -1 | cut -d= -f2 || true)"
-if [[ -z "${lift_r}" || -z "${lift_g}" ]] ||
-  ! awk -v r="${lift_r}" -v g="${lift_g}" 'BEGIN { exit !(r + 0 < g + 0) }'; then
-  echo "black_lift_r nao esta abaixo de black_lift_g: o piso volta a ser \
-cinza, e o alvo medido tem R entre 29% e 64% de G nas cinco referencias." >&2
-  exit 1
-fi
-for tone_pin in 'black_lift_r=0.001017' 'black_lift_g=0.001982' \
-  'black_lift_b=0.001888' 'highlight_rolloff=0.35'; do
-  if ! grep -Fqx "${tone_pin}" "${cfg}"; then
-    echo "Curva de tom fora do valor aprovado: ${tone_pin}. A calibracao da \
-0.14.0 foi medida contra as referencias; mudar sem medir de novo a perde." >&2
-    exit 1
-  fi
-done
-# tint e o eixo verde-magenta. Em zero sobra so temperature, que troca R contra
-# B e nunca toca em G -- e as quatro referencias tem G como canal mais alto.
-if grep -Eq '^tint=0(\.0+)?$' "${cfg}"; then
-  echo "tint voltou a zero: sem o eixo verde-magenta nenhum ajuste de \
-temperature alcanca o balanco medido nas referencias." >&2
-  exit 1
-fi
-if ! grep -Fqx 'tint=0.35' "${cfg}"; then
-  echo "tint fora do valor aprovado (0.35)." >&2
-  exit 1
-fi
-# blacks somado das tres camadas era -0.06 e empurrava os pretos para baixo,
-# contra o alvo. A base leva 0.05 para a soma dar zero.
-if ! grep -Fqx 'blacks=0.05' "${cfg}"; then
-  echo "blacks da base saiu de 0.05: somado aos dois deltas ele volta a ser \
-negativo e empurra os pretos para baixo, contra o piso de black_lift." >&2
-  exit 1
-fi
 
 # Bloom 0.17.0. Os valores ainda sao PROVISORIOS -- derivacao fisica e nao
 # medicao -- e por isso o que se guarda aqui e a FORMA, e nao o numero exato:
@@ -374,13 +331,11 @@ if grep -Eq '^threshold=(1(\.0+)?|[2-9])' "${cfg}"; then
 limiar e o modulo fica ativo sem produzir nada." >&2
   exit 1
 fi
-# A ressalva de que o modulo contraria a medicao. Ela e o registro de que as
-# cinco referencias do ATS foram medidas e NAO tem bloom -- bordas nitidas, sem
-# cauda no lado escuro. Sem ela, o proximo a ler o arquivo assume que estes
-# numeros perseguem o alvo medido, quando na verdade se afastam dele por
-# escolha.
-if ! grep -Fq 'ESTE MODULO E LICENCA ARTISTICA, E NAO O ALVO MEDIDO' "${cfg}"; then
-  echo "A ressalva do bloom sumiu do cfg. Ela registra que as referencias \
+# A ressalva de que o modulo contraria a medicao saiu do cfg na 0.23.1, com os
+# demais comentarios, e fica na linha de log do modulo: as referencias foram
+# medidas e nao tem bloom.
+if ! grep -Fq 'licenca artistica; so o limiar e medido' "${dxgi_strings}"; then
+  echo "A ressalva do bloom sumiu do log. Ela registra que as referencias \
 foram medidas e nao tem bloom; sem ela alguem vai subir intensity achando que \
 esta se aproximando do alvo, quando esta se afastando." >&2
   exit 1
@@ -421,11 +376,43 @@ if [[ "${actual_depth_preview_shader_sha256}" != "${expected_depth_preview_shade
   exit 1
 fi
 
-ssao_shader="${project_dir}/shaders/ssao.hlsl"
-expected_ssao_shader_sha256="8528e57b3dba89f3b905a5c0338d905e13f1514c78e766dd3e160af991134192"
-actual_ssao_shader_sha256="$(sha256sum "${ssao_shader}" | awk '{print $1}')"
-if [[ "${actual_ssao_shader_sha256}" != "${expected_ssao_shader_sha256}" ]]; then
-  echo "Shader SSAO aprovado foi alterado: ${actual_ssao_shader_sha256}" >&2
+ssao_occlusion_shader="${project_dir}/shaders/ssao_occlusion.hlsl"
+expected_ssao_occlusion_sha256="d0465b1f61b16baa2b55142459f4707d7a6843c6f66d08b5ac59082e68e75b9b"
+actual_ssao_occlusion_sha256="$(sha256sum "${ssao_occlusion_shader}" | awk '{print $1}')"
+if [[ "${actual_ssao_occlusion_sha256}" != "${expected_ssao_occlusion_sha256}" ]]; then
+  echo "Shader de oclusao SSAO aprovado foi alterado: ${actual_ssao_occlusion_sha256}" >&2
+  exit 1
+fi
+
+ssao_compose_shader="${project_dir}/shaders/ssao_compose.hlsl"
+expected_ssao_compose_sha256="802d887b66a0d17bbcc7df8ea2f70ac3df1d45d0952243dcee20626aff397adf"
+actual_ssao_compose_sha256="$(sha256sum "${ssao_compose_shader}" | awk '{print $1}')"
+if [[ "${actual_ssao_compose_sha256}" != "${expected_ssao_compose_sha256}" ]]; then
+  echo "Shader de composicao SSAO aprovado foi alterado: ${actual_ssao_compose_sha256}" >&2
+  exit 1
+fi
+
+fxaa_shader="${project_dir}/shaders/fxaa.hlsl"
+expected_fxaa_sha256="7d6303378b6cea7ac2a70df531b41995f55ca855d7ea87adfd906d8d7e219c89"
+actual_fxaa_sha256="$(sha256sum "${fxaa_shader}" | awk '{print $1}')"
+if [[ "${actual_fxaa_sha256}" != "${expected_fxaa_sha256}" ]]; then
+  echo "Shader de FXAA aprovado foi alterado: ${actual_fxaa_sha256}" >&2
+  exit 1
+fi
+
+interior_light_shader="${project_dir}/shaders/interior_light.hlsl"
+expected_interior_light_sha256="1480847462adb8f90b252a1ce5315a7d1a33c338a9882bc08e8367fbaf19b829"
+actual_interior_light_sha256="$(sha256sum "${interior_light_shader}" | awk '{print $1}')"
+if [[ "${actual_interior_light_sha256}" != "${expected_interior_light_sha256}" ]]; then
+  echo "Shader de luz de interior aprovado foi alterado: ${actual_interior_light_sha256}" >&2
+  exit 1
+fi
+
+pre_tone_shader="${project_dir}/shaders/pre_tone.hlsl"
+expected_pre_tone_sha256="c1cea4bcaf76d09feee82658b35f945659561a4ef143370f4a916ec9ace8425c"
+actual_pre_tone_sha256="$(sha256sum "${pre_tone_shader}" | awk '{print $1}')"
+if [[ "${actual_pre_tone_sha256}" != "${expected_pre_tone_sha256}" ]]; then
+  echo "Shader do pre-tom aprovado foi alterado: ${actual_pre_tone_sha256}" >&2
   exit 1
 fi
 
@@ -463,27 +450,81 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   -o "${depth_scoring_test}"
 "${depth_scoring_test}"
 
+# 0.25.0: o plugin passa a reescrever os pixel shaders do proprio jogo. O que
+# sustenta isso e o transpilador de DXBC para HLSL: se ele errar o dominio de
+# tipo, a assinatura empacotada ou o ponto de injecao, o G-buffer sai torto e
+# nao ha log que denuncie -- a imagem so fica errada.
+# 0.25.1: "Qualidade alta/media/baixa" da pagina inicial nao fazia nada alem de
+# limitar o teto do bloom. O usuario reportou, e estava certo. Agora ela escreve
+# as opcoes graficas do proprio jogo no bootstrap -- e o unico momento possivel,
+# porque o ETS2 le o config.cfg na inicializacao e ignora mudancas depois.
+#
+# O SnowyMoon nao faz isso: medido no dxgi.dll dele, as chaves r_texture_detail,
+# r_sun_shadow_quality, r_deferred_mirrors, g_grass_density e g_pedestrian nem
+# aparecem como string. Ele so forca 8 chaves de que o pipeline dele depende.
+native_quality_test="/tmp/photorealism-native-quality-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/native_quality_test.cpp" \
+  -o "${native_quality_test}"
+"${native_quality_test}"
+
+# A escrita so pode acontecer antes do DXGI carregar, junto com a do AA nativo.
+if ! grep -Fq 'configure_native_quality_for_photorealism(g_proxy_module);' \
+  "${project_dir}/src/proxy.cpp"; then
+  echo "O bootstrap deixou de escrever as opcoes graficas do jogo: a escolha de \
+qualidade do menu volta a nao fazer nada." >&2
+  exit 1
+fi
+
+# Chave ausente no config.cfg nunca e criada: o jogo apaga o que nao reconhece,
+# e inventar chave e como um plugin ganha fama de corromper configuracao.
+if ! grep -Fq 'snapshot.detected[index] != kAbsent' \
+  "${project_dir}/src/native_quality/quality_plan.hpp"; then
+  echo "A politica de qualidade perdeu a guarda de chave ausente." >&2
+  exit 1
+fi
+
+shader_patch_test="/tmp/photorealism-shader-patch-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/shader_patch_test.cpp" \
+  -o "${shader_patch_test}"
+"${shader_patch_test}"
+
+# A injecao roda DEPOIS do codigo do jogo, entao ela le o G-buffer ja escrito:
+# normal em o0.xyz, profundidade em o0.w, mascara de estrada em o3.y (=32,
+# medida nas capturas 0.24.0) e refletividade em o3.z. Se a chamada deixar de
+# receber o0..o3 nao sobra de onde tirar nada disso.
+# 0.25.2: a graduacao de superficie roda para TODO shader de G-buffer, nao so
+# para a estrada, entao e uma chamada propria antes da de piso molhado -- que
+# retorna cedo quando o material nao e estrada (o3.y != 32).
+for injection_marker in \
+  'photorealism_surface_grade(o2);' \
+  'photorealism_wet_surface(o0, o1, o2, o3, ' \
+  'material.y == (uint)photorealism_mask.x' \
+  'register(b13)'; do
+  if ! grep -Fq "${injection_marker}" \
+    "${project_dir}/shaders/gbuffer_inject.hlsl" \
+    "${project_dir}/src/shader_patch/gbuffer_patch.cpp"; then
+    echo "Injecao de G-buffer 0.25.0 incompleta: ${injection_marker}" >&2
+    exit 1
+  fi
+done
+
+# O slot b13 e livre porque os pixel shaders do jogo so declaram cb0 -- medido
+# nos 1703 shaders sm5x do effect.scs. Trocar por um slot baixo colide com o
+# material e o shader passa a ler lixo.
+if ! grep -Fq 'kSurfaceConstantSlot = 13' \
+  "${project_dir}/src/shader_patch/surface_constants.hpp"; then
+  echo "O buffer de superficie saiu de b13, onde nao colide com o jogo." >&2
+  exit 1
+fi
+
 native_aa_config_test="/tmp/photorealism-native-aa-config-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/tests/native_aa_config_test.cpp" \
   -o "${native_aa_config_test}"
 "${native_aa_config_test}"
 
-# Os defaults internos de config.cpp valem quando o cfg some, e tone_curve_test
-# nao consegue ve-los: aquele arquivo e Windows-only e nao linka no Linux. A
-# igualdade entre as duas copias fica por conta destas guardas.
-for tone_default in \
-  'layer.black_lift_r = 0.001017f;' \
-  'layer.black_lift_g = 0.001982f;' \
-  'layer.black_lift_b = 0.001888f;' \
-  'layer.highlight_rolloff = 0.35f;' \
-  'layer.tint = 0.35f;'; do
-  if ! grep -Fq "${tone_default}" "${project_dir}/src/config/defaults.cpp"; then
-    echo "Default interno da curva de tom 0.14.0 divergiu do cfg: \
-${tone_default}" >&2
-    exit 1
-  fi
-done
 # A curva em si. Sem o lift o shader volta ao saturate() sem toe da 0.13.3.
 for tone_marker in \
   'float3 apply_black_lift(float3 color, float3 lift)' \
@@ -578,8 +619,22 @@ fi
 # razao que o do cfg: vindo antes, qualquer edicao do arquivo saia com
 # "Shader visual aprovado foi alterado" e as guardas nomeadas nunca falavam.
 # Uma guarda muda nao guarda coisa alguma.
+for white_point_line in \
+  'float mask = smoothstep(0.30, 1.0, luma);' \
+  'float white_point = clamp(1.0 - 0.5 * whites, 0.25, 4.0);' \
+  'return color / lerp(1.0, white_point, mask);'; do
+  if ! grep -Fq "${white_point_line}" "${project_dir}/shaders/photorealism.hlsl"; then
+    echo "Brancos saiu do ponto de branco que white_point_test espelha: ${white_point_line}" >&2
+    exit 1
+  fi
+done
+if ! grep -Fq 'std::clamp(1.0f - 0.5f * whites, 0.25f, 4.0f)' \
+  "${project_dir}/tests/white_point_test.cpp"; then
+  echo "white_point_test deixou de espelhar o ponto de branco do shader." >&2
+  exit 1
+fi
 visual_shader="${project_dir}/shaders/photorealism.hlsl"
-expected_visual_shader_sha256="cc221815e206ffe96c50613d7b8fda72831f23bcb4ee61063bc205df279b4e6a"
+expected_visual_shader_sha256="c0b52dcd277927f8d2183cdf90687e654c120e4c2297fdbce5e3e1159b8a2be3"
 actual_visual_shader_sha256="$(sha256sum "${visual_shader}" | awk '{print $1}')"
 if [[ "${actual_visual_shader_sha256}" != "${expected_visual_shader_sha256}" ]]; then
   echo "Shader visual aprovado foi alterado: ${actual_visual_shader_sha256}" >&2
@@ -730,19 +785,16 @@ if ! grep -Fq 'condition_.update(settings_, scene_observer_.latest());' \
   echo "A adaptacao por condicao nao e mais chamada no ponto pre-grade." >&2
   exit 1
 fi
-if ! grep -Fq 'constants.temperature = input.temperature;' \
-  "${project_dir}/src/postprocess/frame_constants.cpp" ||
-   ! grep -Fq 'input.temperature = condition_.temperature();' \
-  "${project_dir}/src/postprocess/postprocessor.cpp"; then
-  echo "O cbuffer voltou a receber a temperatura estatica: a adaptacao \
-calcularia e ninguem usaria." >&2
-  exit 1
-fi
-if ! grep -Fq 'constants.tint = input.tint;' \
-  "${project_dir}/src/postprocess/frame_constants.cpp" ||
-   ! grep -Fq 'input.tint = condition_.tint();' \
-  "${project_dir}/src/postprocess/postprocessor.cpp"; then
-  echo "O cbuffer voltou a receber o tint estatico." >&2
+# 0.23.2: a cor vem do perfil. O detector so pesa a exposicao noturna; se
+# voltar a produzir temperatura ou matiz, briga com o conjunto de tom escolhido.
+if ! grep -Fq 'input.temperature = settings_.temperature;' \
+  "${project_dir}/src/postprocess/postprocessor.cpp" ||
+   ! grep -Fq 'input.tint = settings_.tint;' \
+  "${project_dir}/src/postprocess/postprocessor.cpp" ||
+   grep -Fq 'blend_condition_grade' \
+  "${project_dir}/src/postprocess/condition_adapter.cpp"; then
+  echo "A adaptacao por condicao voltou a mandar na cor: ela briga com o conjunto \
+de tom do perfil." >&2
   exit 1
 fi
 
@@ -765,9 +817,10 @@ if ! grep -Fq 'const SectionSpec kSections[]' "${project_dir}/src/config/section
   echo "config.cpp deixou de ser dirigido por tabela de secoes." >&2
   exit 1
 fi
-if ! grep -Fq 'constexpr GradeField kGradeFields[]' "${project_dir}/src/config/grade_fields.cpp"; then
-  echo "config.cpp deixou de ter a tabela unica de parametros de cor: parse e \
-composicao voltam a poder divergir." >&2
+if ! grep -Fq 'constexpr ToneLink kToneLinks[]' "${project_dir}/src/config/profile_state.cpp" ||
+  ! grep -Fq 'const TonemapField kTonemapFields[]' "${project_dir}/src/config/photorealism_profile.cpp"; then
+  echo "O perfil deixou de ter as tabelas unicas do conjunto de tom: leitura, \
+menu e gravacao voltam a poder divergir." >&2
   exit 1
 fi
 
@@ -791,11 +844,38 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/src/config/loader.cpp" \
   "${project_dir}/src/config/defaults.cpp" \
   "${project_dir}/src/config/section_table.cpp" \
-  "${project_dir}/src/config/grade_fields.cpp" \
+  "${project_dir}/src/config/photorealism_profile.cpp" \
+  "${project_dir}/src/config/profile_fields.cpp" \
+  "${project_dir}/src/config/profile_logging.cpp" \
+  "${project_dir}/src/config/profile_reference.cpp" \
+  "${project_dir}/src/config/profile_state.cpp" \
+  "${project_dir}/src/config/effect_quality.cpp" \
+  "${project_dir}/src/config/effect_logging.cpp" \
   "${project_dir}/src/config/limits.cpp" \
   "${project_dir}/src/config/logging.cpp" \
   -o "${config_load_test}"
 PHOTOREALISM_PROJECT_DIR="${project_dir}" "${config_load_test}"
+
+# Perfil de tom 0.23.0: chaves por conjunto, escalas convertidas, e a composicao
+# troca as camadas medidas pelo perfil sem tocar na camada do usuario.
+photorealism_profile_test="/tmp/photorealism-profile-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  -I"${project_dir}/tests/support" -I"${project_dir}/src" \
+  "${project_dir}/tests/photorealism_profile_test.cpp" \
+  "${project_dir}/src/config/loader.cpp" \
+  "${project_dir}/src/config/defaults.cpp" \
+  "${project_dir}/src/config/section_table.cpp" \
+  "${project_dir}/src/config/photorealism_profile.cpp" \
+  "${project_dir}/src/config/profile_fields.cpp" \
+  "${project_dir}/src/config/profile_logging.cpp" \
+  "${project_dir}/src/config/profile_reference.cpp" \
+  "${project_dir}/src/config/profile_state.cpp" \
+  "${project_dir}/src/config/effect_quality.cpp" \
+  "${project_dir}/src/config/effect_logging.cpp" \
+  "${project_dir}/src/config/limits.cpp" \
+  "${project_dir}/src/config/logging.cpp" \
+  -o "${photorealism_profile_test}"
+PHOTOREALISM_PROJECT_DIR="${project_dir}" "${photorealism_profile_test}"
 
 # 0.19.13. A suavizacao nao pode depender da taxa de quadros. GetTickCount64
 # tem resolucao de ~15,6 ms: acima de 64 fps muitos quadros chegam com
@@ -825,35 +905,7 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   -o "${scene_formats_test}"
 "${scene_formats_test}"
 
-effective_profile="$(awk -F= '
-  /^\[/ { section=$0; next }
-  /^[[:space:]]*(#|;|$)/ { next }
-  {
-    key=$1
-    value=$2
-    gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
-    gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
-    if (key == "enabled") next
-    if (section == "[base.0.1.2]") {
-      total[key]=value + 0
-    } else if (section == "[module.visual.0.2.0]" ||
-               section == "[module.rain_overcast.0.3.0]" ||
-               section == "[module.user.0.20.0]") {
-      sub(/_delta$/, "", key)
-      total[key]+=value + 0
-    }
-  }
-  END {
-    printf "%.1f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f", \
-      total["temperature"], total["exposure"], total["contrast"], \
-      total["saturation"], total["vibrance"], total["shadows"], \
-      total["highlights"], total["blacks"], total["whites"], \
-      total["local_contrast"], total["sharpness"], total["vignette"]
-    printf " %.6f %.6f %.6f %.3f %.3f", \
-      total["black_lift_r"], total["black_lift_g"], total["black_lift_b"], \
-      total["highlight_rolloff"], total["tint"]
-  }
-' "${cfg}")"
+
 
 # O hash fecha o cfg depois das guardas por chave, e nao antes.
 #
@@ -863,7 +915,7 @@ effective_profile="$(awk -F= '
 # que importa. Uma guarda que explica uma regressao sutil so serve se for ela
 # a falar. Nesta ordem o hash continua pegando tudo que as guardas nao
 # cobrem, e so isso.
-expected_cfg_sha256="7dc2b330eda15ed1c21a53960ed0066167b9c6cbb54ae008d91a9877dcd5aba1"
+expected_cfg_sha256="a00f71fe129383c3ab5ea51b271d26b5bc71281487091f291e9d7b45a45d0dd0"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
@@ -882,13 +934,6 @@ fi
 # balanco de branco carregava +0,0411 EV escondidos e agora e normalizado em
 # luminancia; os +0,0411 EV vieram para a exposicao base, onde da para ler.
 # Exposicao e balanco sao multiplicacao em linear e comutam.
-expected_profile="6400.0 0.011 1.070 0.970 0.050 0.100 -0.180 0.000"
-expected_profile="${expected_profile} 0.080 0.240 0.200 0.030"
-expected_profile="${expected_profile} 0.001398 0.002480 0.002268 0.350 0.500"
-if [[ "${effective_profile}" != "${expected_profile}" ]]; then
-  echo "Perfil cumulativo divergiu da 0.3.0 aprovada: ${effective_profile}" >&2
-  exit 1
-fi
 
 if command -v glslangValidator >/dev/null 2>&1; then
   glslangValidator -D -S vert -e VSMain -V \
@@ -900,9 +945,21 @@ if command -v glslangValidator >/dev/null 2>&1; then
   glslangValidator -D -S frag -e PSDepthPreview -V \
     "${project_dir}/shaders/depth-preview.hlsl" \
     -o /tmp/photorealism-plugin-depth-preview.spv >/dev/null
-  glslangValidator -D -S frag -e PSSSAO -V \
-    "${project_dir}/shaders/ssao.hlsl" \
-    -o /tmp/photorealism-plugin-ssao.spv >/dev/null
+  glslangValidator -D -S frag -e PSAmbientOcclusion -V \
+    "${project_dir}/shaders/ssao_occlusion.hlsl" \
+    -o /tmp/photorealism-plugin-ssao_occlusion.spv >/dev/null
+  glslangValidator -D -S frag -e PSComposeOcclusion -V \
+    "${project_dir}/shaders/ssao_compose.hlsl" \
+    -o /tmp/photorealism-plugin-ssao_compose.spv >/dev/null
+  glslangValidator -D -S frag -e PSPreTone -V \
+    "${project_dir}/shaders/pre_tone.hlsl" \
+    -o /tmp/photorealism-plugin-pre-tone.spv >/dev/null
+  glslangValidator -D -S frag -e PSFxaa -V \
+    "${project_dir}/shaders/fxaa.hlsl" \
+    -o /tmp/photorealism-plugin-fxaa.spv >/dev/null
+  glslangValidator -D -S frag -e PSInteriorLight -V \
+    "${project_dir}/shaders/interior_light.hlsl" \
+    -o /tmp/photorealism-plugin-interior_light.spv >/dev/null
   glslangValidator -D -S frag -e PSTemporal -V \
     "${project_dir}/shaders/temporal.hlsl" \
     -o /tmp/photorealism-plugin-temporal.spv >/dev/null
@@ -1107,15 +1164,6 @@ for vertex_slot_call in 'VSGetShaderResources' 'VSSetShaderResources'; do
   fi
 done
 
-# O menu nunca grava sobre a calibracao medida. As tres camadas abaixo sao
-# resultado de 541 amostras de jogo e so mudam por medicao nova.
-for measured_layer in 'base.0.1.2' 'module.visual.0.2.0' 'module.rain_overcast.0.3.0'; do
-  if grep -rFq "${measured_layer}" "${project_dir}/src/overlay"; then
-    echo "O menu citou a camada medida ${measured_layer}. Ele so pode escrever \
-na camada do usuario -- as medidas nao se ajustam por slider." >&2
-    exit 1
-  fi
-done
 
 # Aplicar um ajuste do menu nao pode passar por reload_configuration: ela
 # recompila sete entry points de shader dentro do Present e reinicia a
@@ -1214,7 +1262,13 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   "${project_dir}/src/config/loader.cpp" \
   "${project_dir}/src/config/defaults.cpp" \
   "${project_dir}/src/config/section_table.cpp" \
-  "${project_dir}/src/config/grade_fields.cpp" \
+  "${project_dir}/src/config/photorealism_profile.cpp" \
+  "${project_dir}/src/config/profile_fields.cpp" \
+  "${project_dir}/src/config/profile_logging.cpp" \
+  "${project_dir}/src/config/profile_reference.cpp" \
+  "${project_dir}/src/config/profile_state.cpp" \
+  "${project_dir}/src/config/effect_quality.cpp" \
+  "${project_dir}/src/config/effect_logging.cpp" \
   "${project_dir}/src/config/limits.cpp" \
   "${project_dir}/src/config/logging.cpp" \
   -o "${menu_roundtrip_test}"
@@ -1507,13 +1561,97 @@ if ! grep -Fq 'owner_ == context' "${project_dir}/src/resource_observer/color_ca
   exit 1
 fi
 
+# Perfil de tom. O multiplicador do SSAO entra so na hora de desenhar, e a
+# exposicao noturna do conjunto so existe se o peso de noite chegar ao shader.
+if ! grep -Fq 'constants.intensity = settings.ssao_intensity * strength;' \
+  "${project_dir}/src/postprocess/effect_constants_upload.cpp" ||
+  ! grep -Fq 'constants.interior_intensity = settings.ssao_interior_intensity * strength;' \
+  "${project_dir}/src/postprocess/effect_constants_upload.cpp" ||
+  ! grep -Fq 'return settings.ssao_intensity_scale * kSsaoGain;' \
+  "${project_dir}/src/config/effect_quality.cpp"; then
+  echo "A intensidade de SSAO do perfil deixou de chegar ao desenho." >&2
+  exit 1
+fi
+# 0.23.3: a nitidez do Temporal nitido vem DEPOIS do resolve temporal, e o
+# historico guarda o que o resolve escreveu. Com a nitidez antes, ou gravada no
+# historico, cada quadro afia o anterior de novo e as bordas estouram.
+chain_body="$(awk '/^EffectChain plan_effect_chain/,/^}/' \
+  "${project_dir}/src/postprocess/effect_chain.cpp")"
+temporal_append="$({ grep -n 'EffectPass::Temporal' <<<"${chain_body}" || true; } | head -1 | cut -d: -f1)"
+sharpen_append="$({ grep -n 'EffectPass::Sharpen' <<<"${chain_body}" || true; } | head -1 | cut -d: -f1)"
+fxaa_append="$({ grep -n 'EffectPass::Fxaa' <<<"${chain_body}" || true; } | head -1 | cut -d: -f1)"
+visual_append="$({ grep -n 'EffectPass::Visual' <<<"${chain_body}" || true; } | head -1 | cut -d: -f1)"
+if [[ -z "${temporal_append}" || -z "${sharpen_append}" || -z "${fxaa_append}" ||
+  -z "${visual_append}" ]] || (( sharpen_append < temporal_append || fxaa_append > visual_append )); then
+  echo "A ordem da cadeia de efeitos mudou: FXAA tem que vir antes do grade e a \
+nitidez depois do resolve temporal." >&2
+  exit 1
+fi
+if ! grep -Fq 'scene.temporal->store(io.target_texture, scene.depth->texture());' \
+  "${project_dir}/src/postprocess/effect_draws.cpp"; then
+  echo "O historico temporal deixou de guardar a saida do proprio resolve." >&2
+  exit 1
+fi
+# DLAA e DLSS nao rodam em placa AMD: na lista eles aparecem esmaecidos e nao
+# podem ser escolhidos, como no plugin de referencia na maquina do usuario.
+if ! grep -Fq 'limited_choice("", &Settings::profile_taa, 6.0f, 2.0f, kAntiAliasingChoices)' \
+  "${project_dir}/src/overlay/bindings/menu_pages.cpp" ||
+  ! grep -Fq '{&Settings::profile_taa, 0.0f, 2.0f},' "${project_dir}/src/config/limits.cpp"; then
+  echo "DLAA/DLSS voltaram a ser selecionaveis: escolher um deles nao faz nada." >&2
+  exit 1
+fi
+for effect_shader in fxaa.hlsl ssao_occlusion.hlsl ssao_compose.hlsl interior_light.hlsl; do
+  if ! grep -Fq "L\"${effect_shader}\"" "${project_dir}/src/postprocess/effect_shaders.cpp" ||
+    ! grep -Fq "shaders/${effect_shader}" "${project_dir}/tools/package.sh"; then
+    echo "Shader de efeito fora do codigo ou do pacote: ${effect_shader}. O plugin \
+compila um arquivo que o pacote nao leva e o efeito some sem aviso." >&2
+    exit 1
+  fi
+done
+if ! grep -Fq 'night_weight_ = weights.night;' \
+  "${project_dir}/src/postprocess/condition_adapter.cpp" ||
+  ! grep -Fq 'input.night_weight = condition_.night_weight();' \
+  "${project_dir}/src/postprocess/postprocessor.cpp" ||
+  ! grep -Fq 'night_adjusted_exposure(settings, input.night_weight)' \
+  "${project_dir}/src/postprocess/frame_constants.cpp"; then
+  echo "A exposicao noturna do perfil deixou de chegar ao shader." >&2
+  exit 1
+fi
+# 0.23.2: editar a cor no menu muda o conjunto da iluminacao escolhida, e trocar
+# a iluminacao carrega o conjunto dela. Sem as duas pontas, o Salvar grava um
+# conjunto e a tela mostra outro.
+if ! grep -Fq 'store_active_tonemap(&settings_);' \
+  "${project_dir}/src/postprocess/postprocessor.cpp" ||
+  ! awk '/^void finish_settings/,/^}/' "${project_dir}/src/config/loader.cpp" |
+  grep -Fq 'apply_active_tonemap(settings);'; then
+  echo "A cor do menu deixou de ir e voltar do conjunto da iluminacao ativa." >&2
+  exit 1
+fi
+for profile_message in \
+  'Perfil photorealism 0.23.0 sem efeito (%s):%s.' \
+  'exposicao_noturna=%+.2fEV' \
+  'Perfil photorealism 0.23.0: iluminacao %c (conjunto de tom %u)'; do
+  if ! grep -Fq "${profile_message}" "${dxgi_strings}"; then
+    echo "Linha do perfil sumiu do log: ${profile_message}" >&2
+    exit 1
+  fi
+done
+third_party_hits="$(grep -rli 'snowy' "${project_dir}/src" "${project_dir}/shaders" \
+  "${project_dir}/config" "${project_dir}/tests" "${project_dir}/tools/build.sh" \
+  "${project_dir}/tools/package.sh" 2>/dev/null || true)"
+if [[ -n "${third_party_hits}" ]]; then
+  echo "Nome de plugin de terceiros no codigo do photorealism-plugin: \
+${third_party_hits//$'\n'/ }" >&2
+  exit 1
+fi
+
 # O cfg que vai no pacote e o default interno do codigo tem que concordar sobre
 # o FSR. Divergindo, quem apaga o cfg ganha um comportamento diferente de quem
 # nao apaga, e ninguem percebe ate ir atras.
 cfg_fsr_enabled="$(awk '/^\[module\.fsr\./,/^$/' \
   "${project_dir}/config/photorealism-plugin.cfg" | grep -E '^enabled=' |
   cut -d= -f2)"
-code_fsr_enabled="$(grep -oE 'stack\.modules\.fsr_enabled = (true|false)' \
+code_fsr_enabled="$(grep -oE 'settings\.fsr_enabled = (true|false)' \
   "${project_dir}/src/config/defaults.cpp" | awk '{print $3}' | tr -d ';')"
 if [[ "${cfg_fsr_enabled}" != "${code_fsr_enabled}" ]]; then
   echo "O cfg empacotado diz FSR=${cfg_fsr_enabled} e o default interno diz \
@@ -1527,7 +1665,7 @@ fi
 cfg_fsr_sharpness="$(awk '/^\[module\.fsr\./,/^$/' \
   "${project_dir}/config/photorealism-plugin.cfg" | grep -E '^sharpness=' |
   cut -d= -f2)"
-code_fsr_sharpness="$(grep -oE 'stack\.modules\.fsr_sharpness = [0-9.]+f' \
+code_fsr_sharpness="$(grep -oE 'settings\.fsr_sharpness = [0-9.]+f' \
   "${project_dir}/src/config/defaults.cpp" | awk '{print $3}' | tr -d 'f')"
 if [[ "${cfg_fsr_sharpness}" != "0.60" || "${code_fsr_sharpness}" != "0.60" ]]; then
   echo "A nitidez padrao do RCAS diverge: cfg=${cfg_fsr_sharpness} \
@@ -1539,7 +1677,7 @@ fi
 # granulacao LFGA 0.30, escolhida no jogo. Mesma regra: cfg e codigo dizem o mesmo.
 for fsr_default in 'render_scale=0.8660=fsr_render_scale = 0.8660f' 'grain=0.30=fsr_grain = 0.30f'; do
   cfg_line="${fsr_default%%=fsr_*}"
-  code_line="stack.modules.fsr_${fsr_default##*=fsr_}"
+  code_line="settings.fsr_${fsr_default##*=fsr_}"
   if ! awk '/^\[module\.fsr\./,/^$/' "${project_dir}/config/photorealism-plugin.cfg" |
     grep -Fxq "${cfg_line}" ||
     ! grep -Fq "${code_line};" "${project_dir}/src/config/defaults.cpp"; then
@@ -1818,7 +1956,8 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   -I"${project_dir}/tests/support" -I"${project_dir}/src" \
   "${project_dir}/tests/menu_save_test.cpp" \
   "${project_dir}/src/config/section_table.cpp" \
-  "${project_dir}/src/config/grade_fields.cpp" \
+  "${project_dir}/src/config/photorealism_profile.cpp" \
+  "${project_dir}/src/config/profile_fields.cpp" \
   -o "${menu_save_test}"
 "${menu_save_test}"
 
@@ -1883,7 +2022,7 @@ fi
 # inutilizavel. A navegacao por teclado nao depende de DirectInput, de entrada
 # bruta nem de posicao de cursor.
 for keyboard_path in 'kKeyUp' 'kKeyDown' 'kKeyLeft' 'kKeyRight' 'kKeyEnter' 'kKeyTab'; do
-  if ! grep -rFqw "${keyboard_path}" "${project_dir}/src/overlay/page_view.cpp" \
+  if ! grep -rFqw "${keyboard_path}" "${project_dir}/src/overlay/page_keys.cpp" \
     "${project_dir}/src/overlay/overlay.cpp"; then
     echo "A navegacao por teclado do menu perdeu ${keyboard_path}: sem ela, \
 qualquer defeito no caminho do mouse deixa o menu inutilizavel." >&2
@@ -1907,8 +2046,18 @@ overlay_bindings_test="/tmp/photorealism-overlay-bindings-test"
 g++ -std=c++20 -Wall -Wextra -Werror \
   -I"${project_dir}/tests/support" -I"${project_dir}/src" \
   "${project_dir}/tests/overlay_bindings_test.cpp" \
+  "${project_dir}/src/config/loader.cpp" \
+  "${project_dir}/src/config/defaults.cpp" \
   "${project_dir}/src/config/section_table.cpp" \
-  "${project_dir}/src/config/grade_fields.cpp" \
+  "${project_dir}/src/config/photorealism_profile.cpp" \
+  "${project_dir}/src/config/profile_fields.cpp" \
+  "${project_dir}/src/config/profile_logging.cpp" \
+  "${project_dir}/src/config/profile_reference.cpp" \
+  "${project_dir}/src/config/profile_state.cpp" \
+  "${project_dir}/src/config/effect_quality.cpp" \
+  "${project_dir}/src/config/effect_logging.cpp" \
+  "${project_dir}/src/config/limits.cpp" \
+  "${project_dir}/src/config/logging.cpp" \
   -o "${overlay_bindings_test}"
 "${overlay_bindings_test}"
 
@@ -1920,23 +2069,163 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   -o "${config_writer_test}"
 "${config_writer_test}"
 
-# A camada do usuario tem que ser a ULTIMA soma: o menu grava a diferenca entre
-# o que o usuario escolheu e o que as medidas dizem, e essa conta so fecha se
-# nada vier depois dela.
-if ! grep -A 12 'Settings compose_layers' "${project_dir}/src/config/loader.cpp" |
-  grep -A 2 'stack.rain_overcast_0_3' | grep -Fq 'stack.user_0_20'; then
-  echo "A camada do usuario deixou de ser somada por ultimo em compose_layers: \
-o delta que o menu grava para de reproduzir o valor que estava na tela." >&2
+# O menu precisa ter controles. Um menu vazio compila, passa no validate e nao
+# serve para nada -- foi o que a 0.20.0 entregou na primeira tentativa.
+menu_controls="$(grep -cE '(toggle|slider|tone_slider|choice)\(' \
+  "${project_dir}/src/overlay/bindings/menu_pages.cpp")"
+if [[ "${menu_controls}" -lt 30 ]]; then
+  echo "O menu tem so ${menu_controls} controles declarados. Ele existe para \
+ajustar o plugin no jogo; uma janela sem opcoes nao entrega isso." >&2
   exit 1
 fi
 
-# O menu precisa ter controles. Um menu vazio compila, passa no validate e nao
-# serve para nada -- foi o que a 0.20.0 entregou na primeira tentativa.
-menu_controls="$(grep -c 'BindingKind::' "${project_dir}"/src/overlay/bindings/*_bindings.cpp |
-  awk -F: '{ total += $2 } END { print total+0 }')"
-if [[ "${menu_controls}" -lt 50 ]]; then
-  echo "O menu tem so ${menu_controls} controles declarados. Ele existe para \
-ajustar o plugin no jogo; uma janela sem opcoes nao entrega isso." >&2
+# 0.23.3: qualidade, detalhe e preset do SSAO, anti-aliasing e interruptores dos
+# efeitos; a ordem da cadeia de passes; e o ponto de branco espelhado do shader.
+effect_quality_test="/tmp/photorealism-effect-quality-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/effect_quality_test.cpp" \
+  "${project_dir}/src/config/effect_quality.cpp" \
+  -o "${effect_quality_test}"
+"${effect_quality_test}"
+
+effect_chain_test="/tmp/photorealism-effect-chain-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/effect_chain_test.cpp" \
+  "${project_dir}/src/postprocess/effect_chain.cpp" \
+  -o "${effect_chain_test}"
+"${effect_chain_test}"
+
+white_point_test="/tmp/photorealism-white-point-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/white_point_test.cpp" \
+  -o "${white_point_test}"
+"${white_point_test}"
+
+# A luz de interior nao pode acender no mundo la fora: a captura real do usuario
+# mostra o painel a ~0.11m (near_plane=0.1) e o mundo comecando a ~1.75m, com um
+# vao vazio entre 0.25m e 1.75m -- kInteriorLightNearStart/End tem que caber nesse
+# vao, senao a estrada e o pavimento visiveis pelo parabrisa acendem junto.
+interior_light_test="/tmp/photorealism-interior-light-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/interior_light_test.cpp" \
+  -o "${interior_light_test}"
+"${interior_light_test}"
+
+if ! grep -Fq 'ssao_strength(settings_) > 0.0f' "${project_dir}/src/postprocess/postprocessor.cpp"; then
+  echo "O SSAO deixou de desligar de verdade quando a intensidade do menu chega a \
+zero: o passe de oclusao continua rodando so por causa de settings_.ssao_enabled." >&2
+  exit 1
+fi
+
+# 0.24.0: captura do quadro para analise. So passes do jogo entram (depois do
+# filtro do proprio plugin), o quadro fecha no Present ANTES de o plugin desenhar,
+# e cada alvo e copiado quando o passe seguinte deixa de liga-lo -- o que o passe
+# escreveu, e nao o que veio depois.
+frame_capture_logic_test="/tmp/photorealism-frame-capture-logic-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/frame_capture_logic_test.cpp" \
+  "${project_dir}/src/frame_capture/bind_runs.cpp" \
+  "${project_dir}/src/frame_capture/capture_manifest.cpp" \
+  "${project_dir}/src/frame_capture/dds_header.cpp" \
+  -o "${frame_capture_logic_test}"
+"${frame_capture_logic_test}"
+
+for capture_hook in hooked_set_render_targets hooked_set_render_targets_and_uavs; do
+  hook_body="$(awk "/^void STDMETHODCALLTYPE ${capture_hook}\\(/,/^}/" \
+    "${project_dir}/src/hooks/context_hooks.cpp")"
+  game_filter="$({ grep -n 'if (!from_game) {' <<<"${hook_body}" || true; } | tail -1 | cut -d: -f1)"
+  capture_call="$({ grep -n 'observe_capture_binds(' <<<"${hook_body}" || true; } | head -1 | cut -d: -f1)"
+  if [[ -z "${game_filter}" || -z "${capture_call}" ]] || (( capture_call < game_filter )); then
+    echo "${capture_hook} deixou de capturar so os passes do jogo: os passes do \
+proprio plugin entrariam na captura." >&2
+    exit 1
+  fi
+done
+for present_hook in hooked_present hooked_present1; do
+  present_body="$(awk "/^HRESULT STDMETHODCALLTYPE ${present_hook}\\(/,/^}/" \
+    "${project_dir}/src/hooks/swap_chain_hooks.cpp")"
+  end_line="$({ grep -n 'end_capture_frame();' <<<"${present_body}" || true; } | head -1 | cut -d: -f1)"
+  upscale_line="$({ grep -n 'upscale_present_frame(swap_chain);' <<<"${present_body}" || true; } | head -1 | cut -d: -f1)"
+  if [[ -z "${end_line}" || -z "${upscale_line}" ]] || (( end_line > upscale_line )); then
+    echo "${present_hook} fecha a captura depois de o plugin desenhar: o quadro \
+salvo passa a ter o pos-processo do plugin por cima." >&2
+    exit 1
+  fi
+done
+if ! grep -Fq 'action_row(RowKind::Capture, "Capturar quadro para analise", kPageMain)' \
+  "${project_dir}/src/overlay/bindings/menu_pages.cpp"; then
+  echo "O botao de captura sumiu da pagina inicial do menu." >&2
+  exit 1
+fi
+if ! grep -Fq 'Captura de quadro 0.24.0 salva: %u de %u alvos em %s' "${dxgi_strings}"; then
+  echo "A linha de log da captura de quadro sumiu do nucleo DXGI." >&2
+  exit 1
+fi
+python3 "${project_dir}/tools/gbuffer_report.py" --auto-teste
+
+# 0.24.1: pre-exposicao, pre-contraste e contraste dinamico agem no HDR que entra
+# no tom do jogo. O passe do tom e reconhecido pela forma (um alvo f10 seguido de
+# um alvo f29 do mesmo tamanho), o efeito roda depois de a captura observar o
+# bind -- ela guarda o quadro do jogo sem o efeito -- e devolve todos os 128 slots
+# de textura do pixel shader: o tom do jogo pode ter ligado o HDR em qualquer um.
+pre_tone_test="/tmp/photorealism-pre-tone-test"
+g++ -std=c++20 -Wall -Wextra -Werror \
+  "${project_dir}/tests/pre_tone_test.cpp" \
+  "${project_dir}/src/config/effect_quality.cpp" \
+  -o "${pre_tone_test}"
+"${pre_tone_test}"
+
+for effect_hook in hooked_set_render_targets hooked_set_render_targets_and_uavs; do
+  hook_body="$(awk "/^void STDMETHODCALLTYPE ${effect_hook}\\(/,/^}/" \
+    "${project_dir}/src/hooks/context_hooks.cpp")"
+  capture_call="$({ grep -n 'observe_capture_binds(' <<<"${hook_body}" || true; } | head -1 | cut -d: -f1)"
+  effect_call="$({ grep -n 'apply_pass_effects(' <<<"${hook_body}" || true; } | head -1 | cut -d: -f1)"
+  if [[ -z "${capture_call}" || -z "${effect_call}" ]] || (( effect_call < capture_call )); then
+    echo "${effect_hook} aplica os efeitos entre passes antes de a captura ver o \
+bind, ou deixou de aplica-los: a captura passa a gravar o quadro ja modificado." >&2
+    exit 1
+  fi
+done
+if ! grep -Fq 'constexpr UINT kPixelSlots = D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT;' \
+  "${project_dir}/src/passfx/pre_tone_effect.cpp" ||
+  ! grep -Fq 'context->PSGetShaderResources(0, kPixelSlots, game_resources);' \
+  "${project_dir}/src/passfx/pre_tone_effect.cpp" ||
+  ! grep -Fq 'context->PSSetShaderResources(0, kPixelSlots, game_resources);' \
+  "${project_dir}/src/passfx/pre_tone_effect.cpp"; then
+  echo "O pre-tom deixou de devolver os 128 slots de textura do jogo: o tom do jogo \
+pode ficar sem o HDR e a tela sai preta." >&2
+  exit 1
+fi
+for pre_tone_message in \
+  'Pre-tom 0.24.1 ativo: ganho=%.3f (%+.2f EV) contraste=%.2f no HDR %ux%u' \
+  'Pre-tom 0.24.1: %u quadros aplicados nos ultimos 10 s.' \
+  'buffers de constantes'; do
+  if ! grep -Fq "${pre_tone_message}" "${dxgi_strings}"; then
+    echo "Linha de log da 0.24.1 sumiu: ${pre_tone_message}" >&2
+    exit 1
+  fi
+done
+if ! grep -Fq 'shaders/pre_tone.hlsl' "${project_dir}/tools/package.sh"; then
+  echo "O shader do pre-tom ficou fora do pacote." >&2
+  exit 1
+fi
+if ! grep -Fq 'g_constants.take(context, index);' "${project_dir}/src/frame_capture/frame_capture.cpp"; then
+  echo "A captura deixou de gravar os buffers de constantes de cada passe: sem \
+eles as matrizes da camera para o motion blur nao aparecem." >&2
+  exit 1
+fi
+
+# 0.24.2: o ETS2 liga as constantes reais por VSSetConstantBuffers1/PSSetConstantBuffers1
+# com deslocamento dentro de um buffer grande compartilhado (2MB medidos no jogo). Ler
+# pelo metodo sem o "1" devolve o buffer inteiro e a captura rejeita tudo como grande
+# demais -- foi o que aconteceu nas duas primeiras capturas de anti-aliasing do usuario,
+# sem nenhum arquivo salvo no passe temporal. A leitura tem que ser pelo intervalo real.
+constant_snapshots_source="${project_dir}/src/frame_capture/constant_snapshots.cpp"
+if ! grep -Fq 'VSGetConstantBuffers1(' "${constant_snapshots_source}" ||
+  ! grep -Fq 'PSGetConstantBuffers1(' "${constant_snapshots_source}" ||
+  ! grep -Fq 'CopySubresourceRegion(' "${constant_snapshots_source}"; then
+  echo "A captura de constantes voltou a ler o buffer inteiro em vez do intervalo que \
+o jogo usa: as matrizes da camera ficam presas atras do limite de tamanho de novo." >&2
   exit 1
 fi
 

@@ -5,6 +5,8 @@
 #include "../font.hpp"
 #include "../input_state.hpp"
 
+#include <cstddef>
+
 namespace photorealism {
 namespace overlay {
 
@@ -32,8 +34,23 @@ RowResult slider_row(
     const SettingBinding& binding,
     float* value);
 
-void tab_header(
-    UiContext& ui, const Rect& area, const char* label, bool selected);
+bool choice_row(
+    UiContext& ui,
+    const Rect& area,
+    const SettingBinding& binding,
+    float value,
+    bool open);
+
+Rect choice_box(const Rect& area, const SettingBinding& binding);
+
+Rect choice_popup_rect(
+    const Rect& box, std::size_t count, const Rect& bounds);
+
+int choice_popup(
+    UiContext& ui,
+    const Rect& popup,
+    const SettingBinding& binding,
+    float value);
 
 }
 }

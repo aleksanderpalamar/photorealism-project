@@ -13,16 +13,20 @@ class ConditionAdapter {
     void reset_state();
     void update(const Settings& settings, const SceneFeatures& features);
 
-    float temperature() const { return temperature_; }
-    float tint() const { return tint_; }
+    float night_weight() const { return night_weight_; }
 
   private:
+    float elapsed_seconds(unsigned long long now);
+    void log_when_due(
+        const Settings& settings,
+        const ConditionWeights& weights,
+        unsigned long long now);
+
     ConditionSmoother smoother_;
     unsigned long long last_update_ms_ = 0ull;
     unsigned long long last_log_ms_ = 0ull;
     bool logged_once_ = false;
-    float temperature_ = 6500.0f;
-    float tint_ = 0.0f;
+    float night_weight_ = 0.0f;
 };
 
-}  // namespace photorealism
+}

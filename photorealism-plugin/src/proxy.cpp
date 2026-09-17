@@ -8,6 +8,7 @@
 #include "dinput/input_gate.hpp"
 #include "fsr/game_scale.hpp"
 #include "native_aa/native_aa_config.hpp"
+#include "native_quality/native_quality_config.hpp"
 
 namespace {
 HMODULE g_proxy_module = nullptr;
@@ -36,6 +37,7 @@ FARPROC real_export(const char* name) {
 
 DWORD WINAPI bootstrap_graphics_proxy(LPVOID) {
     configure_native_aa_for_photorealism(g_proxy_module);
+    configure_native_quality_for_photorealism(g_proxy_module);
     photorealism::fsr::apply_render_scale_to_game(g_proxy_module);
     wchar_t sibling_path[MAX_PATH] = {};
     if (g_proxy_module == nullptr ||

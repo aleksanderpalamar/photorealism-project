@@ -65,38 +65,6 @@ static_assert(
     sizeof(DepthPreviewConstants) == 32,
     "depth preview constant buffer must be aligned");
 
-struct SsaoConstants {
-    float input_needs_srgb_decode;
-    float output_needs_srgb_encode;
-    float near_plane;
-    float radius;
-    float intensity;
-    float bias;
-    float fade_start;
-    float fade_end;
-    float edge_rejection;
-    float debug_mode;
-    float depth_texel_size[2];
-    float projection_scale[2];
-    float padding[2];
-    float refinement_enabled;
-    float highlight_start;
-    float highlight_end;
-    float highlight_ao_floor;
-    float interior_enabled;
-    float interior_near_start;
-    float interior_near_end;
-    float interior_radius;
-    float interior_intensity;
-    float interior_bias;
-    float interior_edge_rejection;
-    float interior_padding;
-};
-
-static_assert(
-    sizeof(SsaoConstants) == 112,
-    "SSAO constant buffer must be aligned");
-
 struct TemporalConstants {
     float texel_size[2];
     float near_plane;

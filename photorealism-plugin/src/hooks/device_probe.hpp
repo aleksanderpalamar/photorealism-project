@@ -12,6 +12,7 @@ class DeviceProbe {
     bool create();
 
     IDXGISwapChain* swap_chain() const { return swap_chain_; }
+    ID3D11Device* device() const { return device_; }
     ID3D11DeviceContext* context() const { return context_; }
     D3D_FEATURE_LEVEL feature_level() const { return feature_level_; }
 

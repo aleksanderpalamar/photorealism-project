@@ -34,6 +34,8 @@ common_flags=(
   "${project_dir}/src/fsr/game_scale.cpp" \
   "${project_dir}/src/fsr/render_scale.cpp" \
   "${project_dir}/src/native_aa/policy.cpp" \
+  "${project_dir}/src/native_quality/quality_apply.cpp" \
+  "${project_dir}/src/native_quality/quality_policy.cpp" \
   "${project_dir}/src/native_aa/game_target.cpp" \
   "${project_dir}/src/native_aa/config_file.cpp" \
   "${project_dir}/src/config/file_io.cpp" \
@@ -52,10 +54,27 @@ common_flags=(
   -Wno-cast-function-type-mismatch \
   "${project_dir}/src/dxgi_proxy.cpp" \
   "${project_dir}/src/hooks/hook_install.cpp" \
+  "${project_dir}/src/shader_patch/dxbc.cpp" \
+  "${project_dir}/src/shader_patch/shex.cpp" \
+  "${project_dir}/src/shader_patch/hlsl_emit.cpp" \
+  "${project_dir}/src/shader_patch/gbuffer_patch.cpp" \
+  "${project_dir}/src/shader_patch/shader_patch.cpp" \
+  "${project_dir}/src/shader_patch/device_shader_hooks.cpp" \
+  "${project_dir}/src/shader_patch/surface_constants.cpp" \
   "${project_dir}/src/hooks/hook_state.cpp" \
   "${project_dir}/src/hooks/hook_audit.cpp" \
   "${project_dir}/src/hooks/swap_chain_hooks.cpp" \
   "${project_dir}/src/hooks/context_hooks.cpp" \
+  "${project_dir}/src/frame_capture/bind_runs.cpp" \
+  "${project_dir}/src/passfx/pass_effects.cpp" \
+  "${project_dir}/src/passfx/pre_tone_effect.cpp" \
+  "${project_dir}/src/frame_capture/capture_folder.cpp" \
+  "${project_dir}/src/frame_capture/capture_manifest.cpp" \
+  "${project_dir}/src/frame_capture/constant_snapshots.cpp" \
+  "${project_dir}/src/frame_capture/dds_header.cpp" \
+  "${project_dir}/src/frame_capture/frame_capture.cpp" \
+  "${project_dir}/src/frame_capture/staging_snapshots.cpp" \
+  "${project_dir}/src/frame_capture/target_description.cpp" \
   "${project_dir}/src/hooks/device_probe.cpp" \
   "${project_dir}/src/hooks/vtable_patch.cpp" \
   "${project_dir}/src/hooks/module_names.cpp" \
@@ -76,6 +95,13 @@ common_flags=(
   "${project_dir}/src/postprocess/frame_constants.cpp" \
   "${project_dir}/src/postprocess/frame_log.cpp" \
   "${project_dir}/src/postprocess/frame_passes.cpp" \
+  "${project_dir}/src/postprocess/effect_chain.cpp" \
+  "${project_dir}/src/postprocess/effect_draws.cpp" \
+  "${project_dir}/src/postprocess/effect_runner.cpp" \
+  "${project_dir}/src/postprocess/effect_shaders.cpp" \
+  "${project_dir}/src/postprocess/effect_constants_upload.cpp" \
+  "${project_dir}/src/postprocess/occlusion_target.cpp" \
+  "${project_dir}/src/postprocess/effect_log.cpp" \
   "${project_dir}/src/steam/capture_pipeline.cpp" \
   "${project_dir}/src/steam/integration.cpp" \
   "${project_dir}/src/steam/capture_gate.cpp" \
@@ -88,7 +114,13 @@ common_flags=(
   "${project_dir}/src/config/path_utils.cpp" \
   "${project_dir}/src/config/defaults.cpp" \
   "${project_dir}/src/config/section_table.cpp" \
-  "${project_dir}/src/config/grade_fields.cpp" \
+  "${project_dir}/src/config/photorealism_profile.cpp" \
+  "${project_dir}/src/config/profile_fields.cpp" \
+  "${project_dir}/src/config/profile_logging.cpp" \
+  "${project_dir}/src/config/profile_reference.cpp" \
+  "${project_dir}/src/config/profile_state.cpp" \
+  "${project_dir}/src/config/effect_quality.cpp" \
+  "${project_dir}/src/config/effect_logging.cpp" \
   "${project_dir}/src/config/limits.cpp" \
   "${project_dir}/src/config/logging.cpp" \
   "${project_dir}/src/resource_observer/discovery_control.cpp" \
@@ -110,15 +142,14 @@ common_flags=(
   "${project_dir}/src/overlay/layout.cpp" \
   "${project_dir}/src/overlay/panel.cpp" \
   "${project_dir}/src/overlay/page_view.cpp" \
+  "${project_dir}/src/overlay/page_rows.cpp" \
+  "${project_dir}/src/overlay/page_keys.cpp" \
   "${project_dir}/src/overlay/persistence.cpp" \
-  "${project_dir}/src/overlay/grade_keys.cpp" \
   "${project_dir}/src/overlay/widgets/button.cpp" \
   "${project_dir}/src/overlay/widgets/slider.cpp" \
-  "${project_dir}/src/overlay/bindings/grade_bindings.cpp" \
-  "${project_dir}/src/overlay/bindings/render_bindings.cpp" \
-  "${project_dir}/src/overlay/bindings/condition_bindings.cpp" \
-  "${project_dir}/src/overlay/bindings/upscale_bindings.cpp" \
-  "${project_dir}/src/overlay/bindings/pages.cpp" \
+  "${project_dir}/src/overlay/widgets/choice.cpp" \
+  "${project_dir}/src/overlay/bindings/binding_values.cpp" \
+  "${project_dir}/src/overlay/bindings/menu_pages.cpp" \
   "${project_dir}/src/overlay/font.cpp" \
   "${project_dir}/src/overlay/font_bitmap.cpp" \
   "${project_dir}/src/overlay/text.cpp" \

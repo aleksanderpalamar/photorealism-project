@@ -1,5 +1,703 @@
 # Changelog
 
+## Pacote 0.25.3 - 2026-09-17
+
+**Cinco defeitos apontados pela revisao automatica do PR #6.** Todos se
+confirmaram na leitura do codigo; nenhum era falso positivo.
+
+### O que muda
+
+- **a chave geral volta a valer para a troca de shader.** `set_enabled()` do
+  modulo de troca estava declarada no header e **nunca era chamada**: o hook de
+  `CreatePixelShader` ficava ativo com `[plugin] enabled=false` e depois do Home.
+  Pior, `update_surface_constants()` so roda depois da saida antecipada de
+  `render()`, entao num inicio ja desligado o buffer b13 subia zerado -- e
+  saturacao zero em `photorealism_surface_grade` deixa **todo o albedo do jogo em
+  escala de cinza**. Agora o estado da chave geral e propagado para o modulo, o
+  buffer nasce neutro (saturacao 1.0) e e reneutralizado ao desligar;
+- **as normais de estrada saem de dentro da porta do piso molhado.** O padrao de
+  fabrica e `wet_roads_amount=0`, o que fazia `photorealism_wet_surface()`
+  retornar antes de ler `roads_normal_intensity` e `roads_default_normals`. Os
+  dois controles que a 0.25.0 tirou de pendente **nao faziam nada em pista seca**,
+  e desligar o piso molhado desligava eles junto. A graduacao de normal agora
+  roda para toda superficie de estrada; ondulacao, brilho e escurecimento
+  continuam so no molhado;
+- **o nivel de qualidade e lido como numero.** `level_from_text()` comparava o
+  texto exato contra `"1"`, `"1.0"` e `"1.000000"`; qualquer outra grafia valida
+  para o carregador de perfil (`1.00`, `01`, notacao cientifica) caia no preset
+  alto. O menu mostrava medio ou baixo e o proximo inicio escrevia alto nas 23
+  chaves do jogo. Passa a converter e arredondar com a mesma semantica do perfil;
+- **amostra de cena velha nao sobrevive ao desligamento.** `configure(false, ...)`
+  nao limpava `latest_`, e `capture_scene_for_grade()` realimentava a amostra
+  antiga em `ConditionAdapter::update()` a cada quadro, sustentando um peso de
+  noite baseado em cena que nao existe mais. O observador agora zera a amostra ao
+  ser desligado;
+- **entrada de cache invalida e recusada e reconstruida.** `write_cache()`
+  ignorava a contagem de bytes escritos e `read_cache()` aceitava qualquer arquivo
+  acima de 32 bytes, entao uma escrita interrompida virava um blob permanente: o
+  `CreatePixelShader` recusava, o hook voltava ao original e ninguem despejava a
+  entrada -- aquele shader ficava sem troca para sempre. Agora a escrita curta
+  apaga o arquivo, a leitura confere o contentor DXBC (assinatura e tamanho
+  declarado) e a recusa do dispositivo despeja memoria e disco.
+
+### Verificacao
+
+- Build e `validate.sh` completo: as 25 suites passam.
+- A biblioteca de injecao alterada compila com o `d3dcompiler_47.dll` do runtime
+  (`compilados=1 falhas=0`), num shader de prova que declara os quatro alvos de
+  G-buffer e chama as duas funcoes que o patch emite.
+
+**Ainda nao rodou no jogo.** A cobertura acima e de compilacao e de teste de
+unidade, nao de imagem.
+
+
+## Pacote 0.25.2 - 2026-09-16
+
+**Saturacao do albedo e espessura das folhas passam a funcionar.** Eram duas
+opcoes do menu marcadas "pendente" desde a 0.23.0. O levantamento dos 87 efeitos
+que o SnowyMoon ataca mostrou que elas ja estavam ao alcance do contrato de
+G-buffer entregue na 0.25.0 -- nao faltava mecanismo, faltava usar.
+
+### O levantamento dos 87 alvos
+
+Cada efeito foi resolvido para o `.fso` de cada passe `sm5x` e passado pela
+inspecao do plugin. Resultado: **46 dos 87 ja tem passe coberto** (41 `defattr`
+mais 6 `defattrcu`, o recorte alfa), o que bate com os 43 trocados no jogo.
+
+Entre os cobertos estao `truckpaint` (9), `leaves` (4), `water` (3), `lamp` (2),
+`baked` (2) e `retroreflective` -- nao so a estrada.
+
+Os 41 restantes nao escrevem G-buffer: tem **uma saida so** (`o0:float`). Sao
+`decal`/`decalpost` (11), `blend` (8), a cadeia deferida em `defquad`/`defgeom`
+(8: tonemap, fog, adapt, compose lighting, fake shadow), `transparent` (2) e
+avulsos. Precisam de outro contrato de injecao.
+
+**Seis dos 87 alvos do SnowyMoon estao mortos**: sao caminhos diretos de
+`_shd/<md5>.sm5x.fso` que nao existem no `effect.scs` do ETS2 **nem do ATS**
+atuais. Ele identifica por hash e caminho fixo, que apodrece a cada patch do
+jogo; a inspecao por estrutura (assinatura de saida mais amostragem de albedo)
+nao tem essa lista para envelhecer.
+
+### O que muda
+
+- `photorealism_surface_grade()` na biblioteca de injecao, chamada **antes** da
+  de piso molhado e para todo shader de G-buffer, nao so para estrada:
+  - saturacao do albedo em `o2.rgb`, neutra em 1.0;
+  - espessura das folhas em `o2.a`, neutra em 0.0. A chave e que `o2.a` so e
+    diferente de zero na vegetacao, medido na captura 0.24.0 e confirmado agora
+    no proprio shader: `eut2.leaves` escreve `o2.w = 2 x mascara.r` quando a
+    textura de mascara existe, e `cb0[0].w` quando nao;
+- `surface_albedo_saturation` e `vegetation_leaves_thickness` saem de
+  `PendingReason`;
+- o buffer de superficie em b13 ganha um quinto `float4` (64 -> 80 bytes).
+
+`vegetation_grass_thickness` **continua pendente**: nao ha como separar grama de
+folha no shader com o que foi medido, e inventar um criterio seria fingir que
+funciona.
+
+### Verificacao
+
+- `tests/shader_patch_test.cpp`: a chamada de graduacao e emitida, e emitida
+  antes da de piso molhado, e aparece no HLSL final.
+- `eut2.leaves` e `eut2.dif.spec.weight`, transpilados do `effect.scs` real com
+  a injecao nova, compilam com o `d3dcompiler_47.dll` do runtime.
+- Build, validate e package.
+
+### Confirmado no jogo (0.25.0)
+
+A troca de shader rodou: **716 pixel shaders inspecionados, 43 trocados, zero
+falhas**, G-buffer reconhecido e constantes ligadas em b13. As ligacoes de
+albedo saíram certas e variadas (`t6/s0` em `v4.xy`, `t0/s1` em `v5.xy`,
+`t1/s0` em `v3.xy`), o que so acontece se a inspecao estiver lendo o shader.
+
+**A graduacao desta versao ainda nao rodou no jogo.**
+
+## Pacote 0.25.1 - 2026-09-16
+
+**"Qualidade alta / media / baixa" passa a valer para as opcoes graficas do
+jogo.** O usuario reportou que a opcao nao fazia nada e estava certo: desde a
+0.24.6 ela so limitava o teto de niveis do bloom, que e imperceptivel. Agora ela
+escreve 23 chaves do `config.cfg` do ETS2/ATS.
+
+O SnowyMoon **nao** faz isso. Medido no `dxgi.dll` dele: as chaves
+`r_texture_detail`, `r_anisotropy_factor`, `r_sun_shadow_quality`,
+`r_interior_shadow`, `r_far_shadow_disable`, `r_deferred_mirrors`,
+`r_mirror_view_distance`, `r_sunshafts`, `g_grass_density`, `g_pedestrian`,
+`r_scale_x` e `g_gfx_quality` nao existem como string no binario. Ele so forca
+oito chaves de que o pipeline dele depende (`r_aa`, `r_ssao`, `r_dof`,
+`r_normal_maps`, `r_fake_shadows`, `r_color_correction`, `g_veg_detail`,
+`g_reflection`) e, para o DLSS, apenas mostra um aviso pedindo ao usuario que
+mude a escala de resolucao do jogo a mao. O `Quality High/Medium/Low` dele
+regula o custo dos efeitos dele, nao do jogo.
+
+### O que muda
+
+- novo `src/native_quality/`, irmao do modulo de AA nativo: no bootstrap, antes
+  do DXGI, escreve as opcoes graficas do jogo conforme `global_quality` do menu.
+  E o unico momento possivel -- o ETS2 le o `config.cfg` na inicializacao e
+  ignora alteracoes feitas depois, entao **a escolha vale a partir do proximo
+  inicio do jogo**;
+- 23 chaves em tres niveis: textura, filtragem anisotropica, mapas de normal,
+  sombras (sol, distantes, interiores, falsas, de nuvem), espelhos (qualidade,
+  escala, alcance), reflexos, raios solares, vegetacao, grama, pedestres, raio
+  de luz e tres fatores de LOD;
+- a tabela carrega a direcao de cada chave (`lower_is_better`), porque
+  `r_texture_detail` e `r_far_shadow_disable` sao invertidas: 0 e o melhor valor
+  nas duas. O teste confere a ordenacao por essa marca;
+- chave ausente do `config.cfg` **nunca** e criada, so atualizada;
+- backup e escrita atomica, os mesmos do modulo de AA;
+- cada nivel e sobrescrivel chave a chave na secao `[native_quality.0.25.1]` do
+  `photorealism-plugin.cfg`, sem recompilar.
+
+### Verificacao
+
+- `tests/native_quality_test.cpp`: unicidade e nomes das chaves, ordenacao por
+  `lower_is_better`, o preset alto levanta um config baixo por inteiro, o preset
+  baixo e ponto fixo, chaves de fora sobrevivem, chave ausente nao e criada,
+  cada nivel atinge o proprio alvo e a descricao reporta a transicao.
+- Ensaio contra o `config.cfg` real do ETS2 instalado: as 23 chaves existem
+  (nenhuma ausente), "alta" muda 22 delas e a releitura pos-escrita acusa zero
+  divergencias. "baixa" muda so 3, o que confirma que o arquivo ja estava
+  praticamente no preset baixo.
+- Build, validate e package.
+
+### Sobre o rebaixamento relatado nesta versao
+
+As capturas do usuario mostram tudo no minimo depois de instalar a 0.25.0. **Nao
+foi o plugin.** O `game.log.txt` da sessao mostra que, aos 12,5 s de
+inicializacao -- quando o jogo le o `config.cfg`, antes de o plugin agir --
+`r_texture_detail` ja era `2`, `r_anisotropy_factor` `0`, `r_normal_maps` `0`,
+`r_interior_shadow` `0` e `r_deferred_mirrors` `0`. O log do proprio plugin
+registra `nenhuma escrita necessaria` no mesmo minuto. Nenhuma versao do plugin
+escreveu essas chaves antes desta.
+
+**Ainda nao rodou no jogo.**
+
+## Pacote 0.25.0 - 2026-09-16
+
+**O plugin passa a reescrever os pixel shaders do proprio jogo.** Ate aqui ele
+so fazia pos-processo no Present. O SnowyMoon atua em outro lugar: intercepta
+`ID3D11Device::CreatePixelShader` e devolve ao jogo um shader trocado, que altera
+o G-buffer antes da iluminacao. Este pacote implanta o mesmo mecanismo, por um
+caminho diferente. Medicoes e leitura do binario dele em
+`references/shader-patch-0.25.0.md`.
+
+### O que muda
+
+- novo `src/shader_patch/`: contentor DXBC (chunks, ISGN/OSGN, hash FNV-1a de 64
+  bits), decodificador de SHEX, transpilador de DXBC para HLSL, inspecao do
+  G-buffer, cache em disco e hook de `CreatePixelShader` (slot 15 da vtable do
+  device, pelo mesmo `DeviceProbe` que ja pega Present);
+- `shaders/gbuffer_inject.hlsl`: normal de detalhe por gradiente de luminancia do
+  albedo, ondulacao de chuva procedural, escurecimento e brilho do piso molhado.
+  Roda **depois** do codigo do jogo, entao le `o0.xyz` (normal), `o0.w`
+  (profundidade), `o3.y` (mascara de estrada = 32, medida na 0.24.0) e `o3.z`
+  (refletividade) em vez de precisar de ligacao por variante;
+- buffer de constantes do plugin em `b13`, ligado quando o bind de 4 alvos
+  f10/f10/f10/f12 aparece. b13 e livre porque os 1703 pixel shaders `sm5x` do
+  jogo declaram so `cb0` -- medido, nao suposto;
+- `Intensidade das normais` e `Normais padrao` (Objetos / Estradas) saem de
+  `PendingReason::GBuffer`: existiam desde a 0.23.0 sem mecanismo por tras, e
+  agora alimentam o shader. A pagina ganhou `Piso molhado`, `Quantidade de agua`,
+  `Molhado minimo`, `Ondulacao da chuva`, `Brilho molhado` e `Escurecimento
+  molhado`, na secao `module.wet_surface.0.25.0`;
+- `src/native_graphics/` removido a pedido, com as referencias em `proxy.cpp`,
+  `build.sh` e `validate.sh`. **O `r_ssao` do jogo volta a ficar por conta do
+  usuario**: era o que a 0.24.5 desligava para o SSAO nativo nao somar com o do
+  plugin.
+
+### Verificacao
+
+- `tools/shader_transpile` (nativo) e `tools/shader_batch_compile.exe` (Wine,
+  mesmo `d3dcompiler_47.dll` e mesmos flags do runtime), contra o `effect.scs` do
+  ETS2 instalado: **1703 de 1703** pixel shaders `sm5x` transpilam e **1699 de
+  1699** arquivos distintos recompilam, zero falhas.
+- Ida e volta do `defattr` de `eut2.dif.spec.weight`: o HLSL gerado bate
+  instrucao a instrucao com o DXBC original (`dp3`/`rsq`/`mul`->`o0.xyz`,
+  `mov o0.w`, `sample t6/s0`), e o mesmo shader com a injecao compila.
+- Essa varredura achou quatro defeitos que o shader de referencia sozinho nao
+  mostraria: broadcast em construtor (601 shaders), `SamplerComparisonState`
+  (384), registradores empacotados no ISGN (5) e imediatos `nan` (27).
+- `tests/shader_patch_test.cpp`: monta DXBC em bytes e confere parse de
+  assinatura, decodificacao, elegibilidade do G-buffer, recusa de shader de um
+  alvo so, forma do HLSL emitido, montagem de registrador empacotado e hash.
+- Build e validate.
+
+**Ainda nao rodou no jogo.** A cobertura acima e de compilacao, nao de imagem:
+nenhum pixel foi visto em tela.
+
+## Pacote 0.24.6 - 2026-09-16
+
+**"Qualidade alta / media / baixa" da pagina inicial para de mexer no SSAO.**
+As opcoes de SSAO ja tem pagina propria (preset, detalhe, intensidade); a
+qualidade global nao devia se misturar com elas.
+
+### O que muda
+
+- `ssao_quality()` usa so `ssao_detail_quality` (pagina de Renderizacao /
+  Iluminacao) para amostras e meia resolucao do SSAO; `global_quality` (pagina
+  inicial) nao entra mais nessa conta;
+- `global_quality` continua controlando o teto de niveis do bloom (5/4/3), que
+  nao tem controle proprio em nenhuma outra pagina.
+
+### Verificacao
+
+- `tests/effect_quality_test.cpp`: `global_quality` em qualquer valor nao muda
+  amostras nem meia resolucao do SSAO; so `ssao_detail_quality` muda.
+- Build e validate.
+
+**Ainda nao rodou no jogo.**
+
+
+## Pacote 0.24.5 - 2026-09-16
+
+**O plugin passa a desligar o SSAO nativo do jogo.** O usuario testou outro
+plugin grafico ao lado e percebeu que ele reseta configuracoes graficas do
+proprio jogo; o `config.cfg` do ETS2 (fora da pasta do plugin) tem uma chave
+`r_ssao` propria do motor que o photorealism-plugin nunca gerenciava. Se
+estiver ligada, o motor ja aplica a propria oclusao de ambiente antes do
+pos-processo comecar, e o SSAO do plugin soma em cima -- consistente com o
+efeito de "fantasma" ja relatado em intensidade alta. Detalhes em
+`references/ssao-nativo-do-jogo-0.24.5.md`.
+
+### O que muda
+
+- novo `src/native_graphics/`, irmao do gerenciamento de AA nativo ja
+  existente: no bootstrap, antes do DXGI, forca `r_ssao=0` no `config.cfg` do
+  jogo (Documents\Euro Truck Simulator 2), so se a chave ja existir e
+  estiver diferente;
+- politica em `[native_graphics.0.1.0]` no `photorealism-plugin.cfg`,
+  `manage=true` por padrao;
+- backup do `config.cfg` original antes da primeira escrita, reaproveitando o
+  mesmo arquivo que o AA nativo ja cria;
+- `r_aa` continua so com o AA nativo (valor 6): o outro plugin desliga o AA
+  nativo dele (r_aa=0), mas o nosso depende do TAA nativo ligado para expor o
+  depth ao SSAO e ao resolve temporal -- nao da pra copiar;
+- `r_color_correction`, `r_dof` e as chaves de espelho/chuva/vegetacao do
+  outro plugin ficam de fora por enquanto: sem efeito equivalente implementado
+  ainda para justificar mexer, e `r_color_correction` desligado arrisca mudar
+  o passe de tom que o pre-tom (0.24.1) depende para funcionar.
+
+### Verificacao
+
+- Build e validate com as guardas novas: secao no cfg, gancho no bootstrap,
+  lista de chaves geridas e escrita atomica;
+- **Guardas**, quebradas numa copia: as tres acusam a falta.
+
+**Ainda nao rodou no jogo.** Falta confirmar que isso reduz o "fantasma" do
+SSAO em intensidade alta.
+
+
+## Pacote 0.24.4 - 2026-09-16
+
+**Luz de interior parava de ser so da cabine, e o SSAO nao desligava de
+verdade.** Os dois com causa achada e provada em cima do depth real capturado
+pelo usuario. Detalhes em `references/luz-interior-e-ssao-0.24.4.md`.
+
+### O que muda
+
+- **Luz de interior**: o limiar que separa cabine de mundo exterior
+  (`kInteriorLightNearStart`/`End`) passa de 1,5m-4,0m para 0,4m-1,0m. O depth
+  real de duas capturas do usuario mostra um vao vazio entre ~0,25m e ~1,75m; o
+  limiar antigo caia quase todo dentro do mundo, nao da cabine, e acendia 11,4%
+  do quadro no chao e no asfalto visiveis por baixo do capo;
+- o mesmo limiar dentro do SSAO (`ssao_interior_near_start`/`end`, perfil
+  "interior" da oclusao) tinha o mesmo problema com valores ainda mais largos
+  (2,0m-8,0m) e leva a mesma correcao;
+- **SSAO**: o passe de oclusao inteiro agora e pulado quando a intensidade
+  efetiva chega a zero, e nao so neutralizado pela matematica do shader --
+  mesma garantia que a luz de interior ja tinha. Com o slider no minimo, nenhum
+  preset (Suave/Medio/Forte) tem mais como mudar a imagem, porque o passe nem
+  roda.
+
+### Verificacao
+
+- `tests/interior_light_test.cpp` (novo): o depth real do capo fica com peso
+  de interior >0,99; a distancia onde o mundo comeca nas duas capturas do
+  usuario (1,75m, 2,0m, 5,9m) fica com peso <0,01; os limiares ficam dentro do
+  vao vazio medido;
+- reconferido nas duas capturas reais do usuario, cenas diferentes, mesmo vao;
+- **Guardas**, quebradas numa copia: o teste da luz de interior aborta com o
+  limiar antigo; a guarda do SSAO acusa se o passe voltar a rodar so por causa
+  de `ssao_enabled`.
+
+**Ainda nao rodou no jogo.** O "fantasma" do SSAO em intensidade alta, que o
+usuario ja tinha apontado como vindo do proprio SSAO, continua sem causa
+isolada -- falta uma captura em intensidade alta antes de mexer no algoritmo de
+amostragem.
+
+
+## Pacote 0.24.3 - 2026-09-16
+
+**O menu abre no canto superior esquerdo.** Antes abria centralizado na tela.
+
+### O que muda
+
+- o painel do menu (Ctrl+P) ancora no canto superior esquerdo, com a mesma margem
+  (32 px) usada nos dois eixos, em vez de centralizar pela largura e altura da tela;
+- a altura maxima do painel continua se ajustando ao conteudo da pagina, agora
+  descontando a margem do topo e uma folga do mesmo tamanho embaixo.
+
+### Verificacao
+
+- build e validate.
+
+
+## Pacote 0.24.2 - 2026-09-16
+
+**Correcao da captura de constantes: le pelo intervalo real, nao mais o buffer
+inteiro.** Sem mudanca na imagem. As duas capturas do usuario com o caminhao andando e
+a camera girando (feitas na 0.24.1) mostraram que a captura de constantes nao estava
+gravando nada no passe de anti-aliasing temporal do jogo -- e e ali que devem estar as
+matrizes da camera para o motion blur.
+
+### O que foi encontrado
+
+- nos dois passes do anti-aliasing temporal (binds 139-146 e 119-127 nas capturas do
+  usuario), o vertex e o pixel shader tem ligado um unico buffer de **2.097.152 bytes (2
+  MB)** no slot 0, em vez de um buffer pequeno por passe;
+- a captura rejeitava esse buffer inteiro com `"buffer grande demais"` (limite de 64 KB)
+  e nenhum arquivo chegava a ser gravado: os binds do anti-aliasing ficaram sem nenhuma
+  constante salva nas duas capturas;
+- os 11-14 arquivos que a 0.24.1 salvou por captura sao de outro passe (mapa de sombra,
+  no comeco do quadro), sem relacao com a camera principal;
+- **causa**: o ETS2 liga um buffer grande compartilhado e usa
+  `VSSetConstantBuffers1`/`PSSetConstantBuffers1` com um deslocamento e uma contagem
+  apontando so para o pedaco que cada desenho usa (tecnica comum de "ring buffer"). A
+  leitura da 0.24.1, com `VSGetConstantBuffers`/`PSGetConstantBuffers` (sem o "1"),
+  devolve o buffer inteiro e perde essa informacao.
+
+### O que muda
+
+- a captura agora le com `VSGetConstantBuffers1`/`PSGetConstantBuffers1`, que devolvem
+  tambem o deslocamento e o tamanho que o proprio jogo esta usando naquele desenho, e
+  copia so esse intervalo com `CopySubresourceRegion`, em vez do buffer inteiro com
+  `CopyResource`;
+- quando o dispositivo nao suporta a leitura por intervalo, a captura volta ao
+  comportamento da 0.24.1 (buffer inteiro);
+- o limite de 64 KB por constante continua valendo, agora so como rede de seguranca: a
+  API do Direct3D 11 ja impede ligar mais que 4096 registradores (64 KB) de uma vez, entao
+  um intervalo de verdade nunca deveria estourar esse limite.
+
+### Verificacao
+
+- **GPU** (Wine + DXVK, dispositivo real, codigo de producao incluido direto no
+  executavel de teste): um payload de 16 floats plantado no offset do registrador 64 de
+  um buffer de 2 MB saiu inteiro e correto no arquivo, sem rejeicao por tamanho; um
+  intervalo de exatamente 64 KB (o maximo que a API aceita numa unica ligacao) tambem foi
+  aceito; a API confirmou na pratica o teto de 4096 registradores por ligacao;
+- **Guardas**, quebrada numa copia: a leitura por intervalo (`VSGetConstantBuffers1`,
+  `PSGetConstantBuffers1`, `CopySubresourceRegion`) tem que continuar presente na
+  captura.
+
+**Ainda nao rodou no jogo.** Pede uma nova captura do usuario (dirigindo e olhando ao
+redor, mesmo teste de antes) para conferir se o intervalo agora capturado tem as
+matrizes da camera.
+
+
+## Pacote 0.24.1 - 2026-09-15
+
+**Pre-exposicao, pre-contraste e contraste dinamico passam a mudar a imagem.** Primeiro
+efeito entre passes do jogo: o plugin desenha no HDR do ETS2 logo antes do tom do
+proprio jogo. A captura de quadro passa a gravar os constant buffers, para achar as
+matrizes da camera do motion blur. Detalhes em `references/pre-tom-0.24.1.md`.
+
+### O que muda
+
+- **Pre-tom**: com o conjunto de tom ativo, o HDR recebe ganho `2^pre_exposure` e
+  uma curva de contraste `pre_contrast * dynamic_contrast` na luminancia, parada no
+  cinza medio 0.18, antes de o jogo aplicar o tom:
+  - Iluminacao A: -1 EV e contraste 0.42; B: contraste 0.26; C: +0.10 EV;
+  - Iluminacao D padrao nao tem pre-tom e o passe nao roda;
+  - os tres sliders de Cores / Tom agem em qualquer iluminacao;
+- **Onde**: o alvo HDR unico em resolucao de saida seguido do alvo SRGB do tom,
+  reconhecido pela forma dos dois binds, como nas tres capturas do usuario. Esse
+  alvo nao e historico do anti-aliasing do jogo (o historico e o segundo alvo do
+  bind anterior) e e reescrito no quadro seguinte;
+- **Estado do jogo**: alvos, viewport, shaders, estados e os 128 slots de textura do
+  pixel shader voltam como estavam. Nenhum gancho por desenho;
+- **Log**: `Pre-tom 0.24.1 ativo` com ganho, EV e contraste a cada troca, e a
+  contagem de quadros aplicados a cada 10 s;
+- **Captura de quadro**: em cada bind, os constant buffers ligados no vertex e no
+  pixel shader vao para `cb_bPPP_vsS.bin` / `cb_bPPP_psS.bin`, com a lista
+  `constantes` no manifesto. A linha de log da captura conta os buffers;
+- o log do perfil deixa de listar pre-exposicao, pre-contraste e contraste
+  dinamico como pendentes do HDR do jogo;
+- `tools/gbuffer_dds.py` le `R16G16B16A16_UINT`, `R8G8B8A8_SNORM` e `D16_UNORM`,
+  formatos que apareceram nas capturas do usuario;
+- `references/gbuffer-ets2-0.24.0.md`: mapa do quadro do ETS2 a partir das tres
+  capturas (G-buffer, material, luz, HDR do tom, espelhos, velocidade, estrada).
+
+### Verificacao
+
+- **GPU** (Wine + DXVK, "jogo" sintetico): ganho 0.5 e contraste 0.42 sobre
+  (0.4, 0.2, 0.1, 0.7) deram 0.1671 / 0.0836 / 0.0418 / 0.6997 contra
+  0.1673 / 0.0836 / 0.0418 / 0.7 esperados; o alvo do tom, a textura do slot 5 e o
+  buffer do slot 3 do jogo continuaram ligados; um bind do tom sem HDR antes nao foi
+  tocado. Constant buffers de 16 floats conhecidos sairam iguais na captura.
+- **Testes de host**: `pre_tone_test` (reconhecimento do tom, mapeamento dos
+  conjuntos, pivo do contraste) e `frame_capture_logic_test` com constantes no
+  manifesto.
+- **Guardas**, quebradas numa copia: o pre-tom roda depois da captura nos dois
+  ganchos, salva e restaura os 128 slots, as linhas de log, o shader no pacote e a
+  copia das constantes em cada bind.
+
+**Ainda nao rodou no jogo.**
+
+## Pacote 0.24.0 - 2026-09-15
+
+**Captura do quadro para analise.** Primeiro passo do grupo entre passes do jogo:
+antes de mexer no G-buffer, no HDR ou no espelho, e preciso saber em que alvo cada
+coisa esta. Nada muda na imagem. Detalhes em `references/captura-quadro-0.24.0.md`.
+
+### O que muda
+
+- botao **Capturar quadro para analise** na pagina inicial do menu. O quadro
+  seguinte do jogo e gravado inteiro e o botao passa a mostrar "Captura salva: N
+  alvos";
+- em cada `OMSetRenderTargets` do jogo sao registrados todos os slots (ate 8
+  alvos de cor e o depth), com tamanho, formato da textura, formato da view, mip e
+  fatia;
+- cada alvo e copiado quando o passe seguinte deixa de liga-lo: o arquivo guarda o
+  que aquele passe escreveu. Um alvo religado mais tarde no quadro gera outra
+  copia;
+- os arquivos vao para `photorealism-plugin/captura-quadro-AAAAMMDD-HHMMSS/`: um
+  DDS por copia, no formato original, e um `manifesto.json` com os binds e as
+  copias. Limite de 160 copias e 1,5 GB; passando disso o manifesto marca
+  `truncado`;
+- a gravacao roda no Present e o jogo pausa enquanto os arquivos sao escritos;
+- `tools/gbuffer_report.py <pasta>` gera `relatorio.md` e previews PNG de cada
+  alvo, com estatisticas por canal e etiquetas: normal, possivel normal
+  codificada, id de material, possivel velocidade, HDR, cor LDR, profundidade.
+
+### Verificacao
+
+- **GPU** (Wine + DXVK, "jogo" sintetico):
+  - 4 alvos em MRT, depth `D32_FLOAT_S8X24`, view sRGB sobre textura typeless,
+    `R11G11B10`, `R8G8`, mip 1 e fatia 4 de array;
+  - os 9 arquivos gravados decodificam para os valores desenhados;
+  - um alvo limpo de novo depois de liberado saiu com o valor do passe, e nao
+    com o posterior.
+- **Testes de host**: `frame_capture_logic_test` (agenda de um quadro, fim de
+  passe, reabertura com a mesma identidade, cabecalho DDS, manifesto) e o
+  autoteste da ferramenta sobre capturas sinteticas de resposta conhecida.
+- **Guardas**, quebradas numa copia: so passes do jogo entram na captura, o
+  quadro fecha no Present antes de o plugin desenhar, o botao existe, e a linha de
+  log e o autoteste da ferramenta.
+- **Menu**: rasterizado com o botao antes e depois do clique.
+
+**Ainda nao rodou no jogo.**
+
+## Pacote 0.23.3 - 2026-09-14
+
+**As opcoes do menu que o pos-processo alcanca passam a mudar a imagem.** Na
+0.23.2 so iluminacao, cores (menos quatro controles) e FSR mudavam algo no
+jogo. Detalhes em `references/efeitos-0.23.3.md`.
+
+### O que muda
+
+- **Brancos**: virou ponto de branco nos claros, e nao mais soma de no maximo 6
+  codigos. Medido na GPU: -0.13 leva 250 a 243 e 230 a 225; +0.13 leva 230 a 236;
+- **Qualidade alta/media/baixa**: SSAO com 16/12/8 amostras (baixa tambem em meia
+  resolucao) e bloom com ate 5/4/3 niveis;
+- **Anti-aliasing**: Desligado desliga o resolve temporal; Temporal liga; Temporal
+  nitido liga o resolve e uma nitidez RCAS 0.90 depois dele, fora do historico.
+  DLAA e DLSS aparecem esmaecidos e nao podem ser escolhidos. O `taa=4` do cfg de
+  referencia vale como Temporal nitido;
+- **FXAA**: passe proprio antes do grade. Medido: 91 pixels de borda suavizados
+  numa diagonal de teste, nenhum pixel longe da borda alterado;
+- **SSAO**: `ssao_intensity` virou a forca da oclusao (ganho 2.2 sobre a base),
+  e o slider agora aparece: visibilidade minima 0.69 em 1.0, 0.54 em 1.5 e 0.00 em
+  4.0 no canto de teste. Preset suave/medio/forte muda raio, vies e curva;
+  detalhe alto/medio/baixo muda as amostras; "SSAO em baixa resolucao" calcula a
+  oclusao em meia resolucao e compoe com upsample bilateral pelo depth;
+- **Luz de interior**: clareia so o que esta perto da camera (1.5 a 4 m, a cabine),
+  proporcional a luminancia externa. Medido: 128 vai a 139 com a forca 0.17 e a
+  222 com 2.0; fora da cabine e ceu ficam iguais;
+- o log ganha a linha `Efeitos 0.23.3` na leitura do cfg e a cada mudanca no menu.
+
+### O que nao mudou
+
+Exposicao noturna ja funcionava e so age a noite: a sessao testada era de dia
+(`Condicao 0.19.0: noite=0.000`). Pre-exposicao, pre-contraste, motion blur,
+espelhos, SSS, albedo e normais da estrada dependem da captura da 0.24.0; folhas,
+grama e chuva, dos shaders do jogo na 0.25.x.
+
+### Verificacao
+
+- **GPU** (Wine + DXVK, com o `d3dcompiler_47.dll` do ETS2): os cinco shaders
+  novos compilam e os numeros acima sao dessas medicoes;
+- **testes novos**: `effect_quality_test`, `effect_chain_test` (ordem dos passes, a
+  nitidez fora do historico), `white_point_test` (espelho do shader), DLAA/DLSS
+  nao selecionaveis no `overlay_bindings_test`, `taa=4` valendo 2 no
+  `config_load_test`;
+- **guardas**: pinos dos shaders novos, ordem da cadeia, historico do resolve,
+  DLAA/DLSS nao selecionaveis, shaders de efeito no pacote, ponto de branco;
+- menu rasterizado fora do jogo com a lista de anti-aliasing aberta.
+
+**Ainda nao rodou no jogo.**
+
+## Pacote 0.23.2 - 2026-09-14
+
+**O perfil faz todo o trabalho, e o menu segue as telas de referencia.** A 0.23.1
+foi reprovada no jogo: trocar o perfil arrastando slider e as chaves ainda sem
+efeito esmaecidas. Detalhes em `references/perfil-photorealism-0.23.2.md`.
+
+### O que muda na imagem
+
+- o grade vem so de `[profile.photorealism.0.23.0]`. Sairam do cfg e do codigo as
+  camadas medidas (`base.0.1.2`, `module.visual.0.2.0`,
+  `module.rain_overcast.0.3.0`), a camada do usuario (`module.user.0.20.0`) e a
+  adaptacao de cor por condicao (`module.condition_adaptation.0.19.0`). Piso de
+  preto, joelho de altas luzes, matiz e vinheta ficam neutros, como o perfil ja
+  fazia na 0.23.0;
+- o conjunto de tom segue `lighting_method`: A usa o conjunto 1, B o 2, C o 3 e D
+  o 4. O pacote sai em D, o mesmo conjunto 4 aprovado na 0.23.0. O conjunto 5
+  continua lido e nenhuma iluminacao o usa;
+- `taa` liga e desliga o resolve temporal do plugin: 0 desliga; 1 e 2 ligam; 3 a 6
+  sao DLAA/DLSS, sem suporte, e ligam o resolve do plugin no lugar. O pacote traz
+  `taa=4`, copiado do cfg de referencia;
+- as secoes `depth.0.6.4`, `module.ssao.0.7.0`, `module.ssao_refinement.0.8.0`,
+  `module.ssao_interior.0.9.0` e `module.temporal.0.10.0` sairam do cfg. SSAO e
+  resolve temporal continuam rodando com os mesmos valores, agora internos; o SSAO
+  so se ajusta por `ssao_intensity` do perfil;
+- a deteccao de noite continua, interna, e so pesa a exposicao noturna do
+  conjunto.
+
+### O que muda no menu
+
+- sem abas: pagina inicial com iluminacao e qualidade em listas suspensas e botoes
+  para Anti-aliasing / Motion blur, Renderizacao / Iluminacao, Cores / Tom,
+  Objetos (Superficie, Estradas, Vegetacao) e Upscale FSR, cada pagina com
+  Voltar;
+- escolha entre opcoes e lista suspensa, chave 0/1 e botao ligado/desligado,
+  slider so para faixa continua, sliders inteiros andam de 1 em 1; nada esmaecido;
+- Cores / Tom edita o conjunto da iluminacao escolhida, e o Salvar grava
+  `tonemap_<controle>_<n>` desse conjunto;
+- Restaurar padroes devolve o perfil inteiro aos valores do cfg de referencia;
+- sairam as abas Render, Clima e Cena. Observador de cena e bloom continuam no
+  cfg; FSR ganhou pagina propria;
+- teclado: setas movem e ajustam, Enter abre, liga ou reinicia, Tab volta.
+
+### Guardas que mudaram
+
+Sairam as que fixavam as camadas medidas no cfg (secoes, `black_lift`, `tint`,
+`blacks`, perfil cumulativo somado por awk), a da ordem da camada do usuario, a da
+trava de cor da adaptacao e as de valor de SSAO/temporal/depth no cfg. Entraram:
+secoes aposentadas nao podem voltar ao cfg, valores internos de SSAO e temporal
+fixados em `defaults.cpp`, a cor nao pode voltar a vir da adaptacao, e a cor do
+menu tem que ir e voltar do conjunto da iluminacao ativa.
+
+### Verificacao
+
+Testes reescritos: `config_load_test` (cfg empacotado igual ao default interno em
+todas as chaves do perfil, secoes aposentadas ignoradas, limites),
+`photorealism_profile_test` (iluminacao escolhe o conjunto, perfil como unica
+fonte, edicao presa ao proprio conjunto, restaurar padroes),
+`menu_roundtrip_test` (Salvar do menu de verdade e releitura),
+`menu_save_test` e `overlay_bindings_test` (toda pagina alcancavel e com Voltar,
+nenhum slider escolhendo entre opcoes, listas andando uma opcao por vez). O menu
+foi rasterizado fora do jogo, pagina por pagina e com as listas abertas, e
+conferido nas imagens.
+
+**Ainda nao rodou no jogo.**
+
+## Pacote 0.23.1 - 2026-09-14
+
+**Os cinco conjuntos de tom escolhiveis e as demais chaves do cfg de
+referencia.** Detalhes em `references/perfil-photorealism-0.23.1.md`.
+
+### O que muda
+
+- os cinco conjuntos de tom do cfg de referencia estao no cfg, com os valores
+  copiados como estao; o pacote continua saindo no conjunto 4;
+- aba **Perfil** do Ctrl+P com o slider "Conjunto de tom" (1 a 5): trocar o
+  conjunto recompoe o grade na hora, a partir do cfg em disco, e o Salvar grava
+  `tonemap_set` na secao do perfil. A referencia do menu segue o conjunto, para o
+  delta da camada do usuario bater com a tela;
+- exposicao noturna aplicada: `exposure + night_exposure * peso_de_noite`, com o
+  peso de noite da adaptacao por condicao. A adaptacao passou a medir a cena
+  tambem com a cor travada pelo perfil, sem mexer em temperatura e matiz. So o
+  conjunto 1 usa (+2 EV);
+- as outras 26 chaves do cfg de referencia entram na secao do perfil com os
+  valores dele (`lighting_interior=0.17`, `use_sss=1`, `fxaa=1`, `taa=4`,
+  `hide_show_key=520`, ...). Sao lidas, mostradas em cinza no menu com `*` e
+  listadas no log com o motivo de ainda nao terem efeito; o menu nunca as grava.
+  Pre-exposicao, pre-contraste e contraste dinamico do conjunto tambem aparecem
+  em cinza, pendentes do HDR do jogo;
+- Enter numa linha cinza do menu nao reinicia mais o valor;
+- o cfg empacotado nao tem mais comentarios. Nenhum valor mudou; a
+  justificativa de cada numero segue neste CHANGELOG, em `references/` e no cfg
+  da 0.23.0 no historico do git.
+
+### O que e suposicao
+
+Que a exposicao noturna do cfg de referencia seja um acrescimo em EV que cresce
+com a noite. As chaves sem efeito foram copiadas sem interpretar.
+
+### Verificacao
+
+`photorealism_profile_test` ganhou os cinco conjuntos contra a referencia, o cfg
+empacotado contra o default interno (conjuntos, `tonemap_set` e as 26 chaves),
+arredondamento e limite do conjunto, grade e exposicao noturna seguindo o
+conjunto escolhido, chaves pendentes sem tocar no grade e a recomposicao so
+quando a escolha muda. `menu_roundtrip_test` grava o conjunto e rele;
+`overlay_bindings_test` exige uma linha cinza por chave pendente e o slider do
+conjunto gravando na secao do perfil. Guardas novas, quebradas de proposito numa
+copia: peso de noite antes da trava de cor, exposicao noturna no shader,
+referencia do menu com o conjunto, cinco conjuntos no cfg, Enter em linha cinza,
+linhas novas do log. A guarda que lia a ressalva do bloom no cfg passou a le-la
+no log do modulo.
+
+**Ainda nao rodou no jogo.**
+
+## Pacote 0.23.0 - 2026-09-14
+
+**Perfil de tom do photorealism-plugin.** O grade pode sair de um perfil com os
+valores de um cfg de referencia fornecido pelo usuario, em vez das camadas
+medidas. Primeira entrega do plano de efeitos desse cfg; detalhes em
+`references/perfil-photorealism-0.23.0.md`.
+
+### O que muda
+
+- secao nova `[profile.photorealism.0.23.0]`, **ligada por padrao**: cinco
+  conjuntos de tom (`tonemap_<controle>_<n>`), o escolhido em `tonemap_set`, e
+  `sharpness`, `sharpen_edges`, `ssao_intensity`;
+- o pacote sai com o conjunto 4: exposicao -0.06, contraste 0.99, saturacao
+  1.00, sombras -0.01, altas luzes -0.07, brancos -0.01, temperatura 6500 K;
+  nitidez 0.6, contraste local 0.4, SSAO x1.5;
+- com o perfil ligado as camadas medidas ficam guardadas no cfg, fora da
+  composicao; a camada do usuario do menu continua somada por cima. Desligado,
+  o grade volta a ser exatamente o medido;
+- a cor fica travada no conjunto: a adaptacao por condicao continua medindo a
+  cena, mas nao mexe em temperatura e matiz;
+- o multiplicador de SSAO entra so na hora de desenhar. Gravado no ajuste,
+  cada Salvar do menu multiplicaria de novo;
+- aba **Perfil** no Ctrl+P com o botao de ligar e desligar, que recompoe o
+  grade na hora a partir do cfg em disco, sem recompilar shader; a referencia
+  do menu segue o botao, para o delta gravado bater com a tela;
+- o log mostra o perfil ativo, o conjunto e os valores, e avisa quando o
+  conjunto escolhido usa pre-exposicao, pre-contraste, contraste dinamico ou
+  exposicao noturna, que ainda nao sao aplicados.
+
+### O que e suposicao
+
+As formulas do cfg de referencia nao sao conhecidas; cada valor entra no
+controle homonimo do grade. `sharpness` e `sharpen_edges` vem numa escala
+0-10 e entram divididos por 10. Mesmos valores nao garantem a mesma imagem.
+
+### Verificacao
+
+Teste novo `photorealism_profile_test` (chaves por conjunto, chaves
+malformadas recusadas, conversao das escalas, composicao com o perfil ligado e
+desligado) e um caso novo no `menu_roundtrip_test` com o perfil ligado. Os
+testes das camadas medidas passam a desligar o perfil explicitamente. Guardas
+novas, quebradas de proposito numa copia: multiplicador de SSAO no desenho e
+fora do cfg, cor travada, referencia do menu, camada do usuario por ultimo e
+nenhum nome de plugin de terceiros no codigo.
+
+**Ainda nao rodou no jogo.**
+
 ## Pacote 0.22.8 - 2026-09-13
 
 **Dois defeitos apontados pela revisao automatica do PR #5.** Os dois foram

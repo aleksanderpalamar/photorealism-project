@@ -2,7 +2,7 @@
 set -euo pipefail
 
 project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-version="0.22.8"
+version="0.25.3"
 package_name="photorealism-plugin-${version}-ets2-ats-1.60-proton"
 output_dir="${project_dir}/dist"
 staging_dir="$(mktemp -d)"
@@ -22,12 +22,22 @@ cp "${project_dir}/config/photorealism-plugin.cfg" \
   "${staging_dir}/${package_name}/photorealism-plugin/photorealism-plugin.cfg"
 cp "${project_dir}/shaders/depth_view_space.hlsli" \
   "${staging_dir}/${package_name}/photorealism-plugin/shaders/depth_view_space.hlsli"
+cp "${project_dir}/shaders/gbuffer_inject.hlsl" \
+  "${staging_dir}/${package_name}/photorealism-plugin/shaders/gbuffer_inject.hlsl"
 cp "${project_dir}/shaders/photorealism.hlsl" \
   "${staging_dir}/${package_name}/photorealism-plugin/shaders/photorealism.hlsl"
 cp "${project_dir}/shaders/depth-preview.hlsl" \
   "${staging_dir}/${package_name}/photorealism-plugin/shaders/depth-preview.hlsl"
-cp "${project_dir}/shaders/ssao.hlsl" \
-  "${staging_dir}/${package_name}/photorealism-plugin/shaders/ssao.hlsl"
+cp "${project_dir}/shaders/ssao_occlusion.hlsl" \
+  "${staging_dir}/${package_name}/photorealism-plugin/shaders/ssao_occlusion.hlsl"
+cp "${project_dir}/shaders/ssao_compose.hlsl" \
+  "${staging_dir}/${package_name}/photorealism-plugin/shaders/ssao_compose.hlsl"
+cp "${project_dir}/shaders/pre_tone.hlsl" \
+  "${staging_dir}/${package_name}/photorealism-plugin/shaders/pre_tone.hlsl"
+cp "${project_dir}/shaders/fxaa.hlsl" \
+  "${staging_dir}/${package_name}/photorealism-plugin/shaders/fxaa.hlsl"
+cp "${project_dir}/shaders/interior_light.hlsl" \
+  "${staging_dir}/${package_name}/photorealism-plugin/shaders/interior_light.hlsl"
 cp "${project_dir}/shaders/temporal.hlsl" \
   "${staging_dir}/${package_name}/photorealism-plugin/shaders/temporal.hlsl"
 cp "${project_dir}/shaders/bloom.hlsl" \

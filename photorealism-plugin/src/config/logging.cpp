@@ -1,6 +1,8 @@
 #include "logging.hpp"
 
 #include "../runtime.hpp"
+#include "effect_logging.hpp"
+#include "profile_logging.hpp"
 #include "text_utils.hpp"
 
 #include <cmath>
@@ -52,12 +54,12 @@ void log_white_balance(const Settings& settings) {
 void log_modules(const Settings& settings) {
     log_message(
         "Depth linearization 0.6.4: reversed_z=sim near_plane=%.4f "
-        "preview_distance=%.1f vertical_fov=%.1f.",
+        "preview_distance=%.1f vertical_fov=%.1f (valores internos).",
         settings.depth_near_plane, settings.depth_preview_distance,
         settings.depth_vertical_fov);
     log_message(
         "Modulo SSAO 0.7.0: %s samples=8 radius=%.3f intensity=%.3f "
-        "bias=%.3f fade=%.1f-%.1f edge_rejection=%.2f.",
+        "bias=%.3f fade=%.1f-%.1f edge_rejection=%.2f (valores internos).",
         settings.ssao_enabled ? "ativo" : "inativo", settings.ssao_radius,
         settings.ssao_intensity, settings.ssao_bias, settings.ssao_fade_start,
         settings.ssao_fade_end, settings.ssao_edge_rejection);
@@ -76,7 +78,7 @@ void log_modules(const Settings& settings) {
         settings.ssao_interior_bias, settings.ssao_interior_edge_rejection);
     log_message(
         "Modulo temporal 0.10.0: %s history_weight=%.2f "
-        "depth_rejection=%.3f color_rejection=%.3f.",
+        "depth_rejection=%.3f color_rejection=%.3f (liga pela chave taa).",
         settings.temporal_enabled ? "ativo" : "inativo",
         settings.temporal_history_weight, settings.temporal_depth_rejection,
         settings.temporal_color_rejection);
@@ -92,9 +94,9 @@ void log_modules(const Settings& settings) {
         settings.scene_observer_interval_frames,
         settings.scene_observer_log_seconds);
     log_message(
-        "Modulo adaptacao por condicao 0.19.0: %s tau=%.0fs log=%.0fs "
-        "dia=%.1f-%.1f encoberto_sat=%.3f-%.3f porta_faixa=%.1f.",
-        settings.condition_adaptation_enabled ? "ativo" : "inativo",
+        "Detector de noite 0.19.0: tau=%.0fs log=%.0fs dia=%.1f-%.1f "
+        "encoberto_sat=%.3f-%.3f porta_faixa=%.1f (valores internos; so pesa a "
+        "exposicao noturna do perfil).",
         static_cast<double>(settings.condition_time_constant_seconds),
         static_cast<double>(settings.condition_log_seconds),
         static_cast<double>(settings.condition_daylight_median_low),
@@ -102,28 +104,15 @@ void log_modules(const Settings& settings) {
         static_cast<double>(settings.condition_overcast_saturation_low),
         static_cast<double>(settings.condition_overcast_saturation_high),
         static_cast<double>(settings.condition_minimum_dynamic_range));
-    log_message(
-        "Ancoras 0.19.0: sol=%.0fK/%.3f chuva=%.0fK/%.3f noite=%.0fK/%.3f "
-        "(perfil fixo era %.0fK/%.3f em toda condicao).",
-        static_cast<double>(settings.condition_sun_temperature),
-        static_cast<double>(settings.condition_sun_tint),
-        static_cast<double>(settings.condition_rain_temperature),
-        static_cast<double>(settings.condition_rain_tint),
-        static_cast<double>(settings.condition_night_temperature),
-        static_cast<double>(settings.condition_night_tint),
-        static_cast<double>(settings.temperature),
-        static_cast<double>(settings.tint));
 }
 
 }
 
-void log_stack(const CalibrationStack& stack, const Settings& settings) {
-    log_message(
-        "Camadas cumulativas: base_0.1.2=%s visual_0.2.0=%s "
-        "rain_overcast_0.3.0=%s.",
-        stack.base.enabled ? "ativa" : "inativa",
-        stack.visual_0_2.enabled ? "ativa" : "inativa",
-        stack.rain_overcast_0_3.enabled ? "ativa" : "inativa");
+void log_settings(const Settings& settings) {
+    log_profile(settings);
+    char effects[512] = {};
+    format_effect_settings(settings, effects, sizeof(effects));
+    log_message("%s", effects);
     log_effective_profile(settings);
     log_white_balance(settings);
     log_modules(settings);

@@ -1,7 +1,11 @@
 #include "postprocess.hpp"
 
 #include "../config/config.hpp"
+#include "../config/effect_quality.hpp"
+#include "../config/profile_state.hpp"
+#include "../frame_capture/frame_capture.hpp"
 #include "../fsr/upscaler.hpp"
+#include "../passfx/pass_effects.hpp"
 #include "../resource_observer/color_observation.hpp"
 #include "../hooks/present_target.hpp"
 #include "../overlay/overlay.hpp"
@@ -9,6 +13,8 @@
 #include "../runtime.hpp"
 
 #include "../scene/observer.hpp"
+#include "../shader_patch/shader_patch.hpp"
+#include "../shader_patch/surface_constants.hpp"
 #include "../steam/steam_screenshots.hpp"
 #include "com_utils.hpp"
 #include "condition_adapter.hpp"
@@ -19,11 +25,15 @@
 #include "bloom_pyramid.hpp"
 #include "depth_capture.hpp"
 #include "depth_liveness.hpp"
+#include "effect_chain.hpp"
+#include "effect_log.hpp"
+#include "effect_shaders.hpp"
 #include "format_utils.hpp"
 #include "frame_constants.hpp"
 #include "frame_log.hpp"
 #include "frame_passes.hpp"
 #include "frame_resources.hpp"
+#include "occlusion_target.hpp"
 #include "shader_library.hpp"
 #include "temporal_history.hpp"
 
@@ -32,6 +42,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cfloat>
 #include <cmath>
 #include <cstdio>
@@ -52,6 +63,8 @@ bool key_pressed_once(int virtual_key, bool* was_down) {
     return pressed;
 }
 
+std::atomic<bool> g_pass_effects_wanted{false};
+
 class PostProcessor : public overlay::MenuHost {
 public:
     PostProcessor() : settings_(default_settings()) {
@@ -62,11 +75,35 @@ public:
         return fsr::upscaler().status();
     }
 
+    void request_frame_capture() override {
+        photorealism::request_frame_capture();
+    }
+
+    const char* frame_capture_status() const override {
+        return photorealism::frame_capture_status();
+    }
+
     void settings_changed(const overlay::SettingBinding& binding) override {
-        if (overlay::binding_touches_observer(binding)) {
-            apply_scene_observer_settings();
+        if (overlay::binding_edits_tonemap(binding)) {
+            store_active_tonemap(&settings_);
+        }
+        refresh_derived_settings();
+    }
+
+    void settings_reloaded() override {
+        refresh_derived_settings();
+        apply_scene_observer_settings();
+    }
+
+    void refresh_derived_settings() {
+        const bool temporal_before = settings_.temporal_enabled;
+        finish_settings(&settings_);
+        refresh_surface_constants();
+        if (temporal_before != settings_.temporal_enabled) {
+            invalidate_temporal_history("menu trocou o anti-aliasing");
         }
         fsr::upscaler().configure(settings_);
+        effect_log_.report(settings_);
     }
 
     struct FrameTargets {
@@ -90,6 +127,9 @@ public:
         bool ssao;
         bool temporal;
         bool bloom;
+        bool fxaa;
+        bool interior_light;
+        bool sharpen;
     };
 
     void track_active_swap_chain(IDXGISwapChain* swap_chain) {
@@ -293,6 +333,7 @@ public:
 
     bool depth_is_requested() const {
         return settings_.ssao_enabled || settings_.temporal_enabled ||
+               interior_light_strength(settings_) > 0.0f ||
                (depth_preview_mode_ != 0 && depth_preview_mode_ != 6);
     }
 
@@ -322,7 +363,7 @@ public:
                         depth.description,
                         depth.generation,
                         shaders_.depth_preview() != nullptr ||
-                            shaders_.ssao() != nullptr);
+                            effect_shaders_.available(EffectShader::Occlusion));
         if (depth.available) {
             depth_capture_.copy_from(candidate);
         }
@@ -331,27 +372,18 @@ public:
     }
 
     bool plan_temporal(
-        const D3D11_TEXTURE2D_DESC& description,
-        const DepthState& depth,
-        bool ssao_active) {
+        const D3D11_TEXTURE2D_DESC& description, const DepthState& depth) {
         const bool eligible =
             depth.available && depth_preview_mode_ == 0 &&
             settings_.temporal_enabled && shaders_.temporal() != nullptr &&
-            frame_resources_.visual_target() != nullptr && frame_resources_.visual_view() != nullptr;
-        if (!eligible) {
-            return false;
-        }
-        if (!temporal_.ensure(
-                description,
-                depth.description,
-                depth.generation,
-                shaders_.temporal() != nullptr,
-                depth_capture_.texture())) {
-            return false;
-        }
-        const bool spatial_missing =
-            frame_resources_.spatial_target() == nullptr || frame_resources_.spatial_view() == nullptr;
-        return !(ssao_active && spatial_missing);
+            frame_resources_.intermediates_ready();
+        return eligible &&
+               temporal_.ensure(
+                   description,
+                   depth.description,
+                   depth.generation,
+                   shaders_.temporal() != nullptr,
+                   depth_capture_.texture());
     }
 
     bool plan_bloom(
@@ -363,10 +395,23 @@ public:
         if (!eligible) {
             return false;
         }
-        return bloom_.ensure(
-            description,
-            BloomPyramid::levels_for_radius(
-                settings_.bloom_radius, description.Height));
+        const UINT by_radius = BloomPyramid::levels_for_radius(
+            settings_.bloom_radius, description.Height);
+        const UINT limit = bloom_level_limit(settings_);
+        return bloom_.ensure(description, by_radius < limit ? by_radius : limit);
+    }
+
+    bool ensure_occlusion_target(const D3D11_TEXTURE2D_DESC& description) {
+        const bool half = ssao_quality(settings_).half_resolution;
+        const UINT width = half ? (description.Width + 1) / 2 : description.Width;
+        const UINT height = half ? (description.Height + 1) / 2 : description.Height;
+        return occlusion_target_.ensure(width, height);
+    }
+
+    float exterior_luma() const {
+        constexpr float kFallbackLuma = 0.35f;
+        const SceneFeatures features = scene_observer_.latest();
+        return features.valid ? features.mean / 255.0f : kFallbackLuma;
     }
 
     FramePlan plan_frame(const D3D11_TEXTURE2D_DESC& description) {
@@ -376,14 +421,28 @@ public:
         plan.depth_preview =
             plan.depth.available && depth_preview_mode_ >= 1 &&
             depth_preview_mode_ <= 4 && shaders_.depth_preview() != nullptr;
-        plan.ssao_preview =
-            plan.depth.available && depth_preview_mode_ == 5 &&
-            shaders_.ssao() != nullptr;
-        plan.ssao =
-            plan.depth.available && depth_preview_mode_ == 0 &&
-            settings_.ssao_enabled && shaders_.ssao() != nullptr &&
-            frame_resources_.visual_target() != nullptr && frame_resources_.visual_view() != nullptr;
-        plan.temporal = plan_temporal(description, plan.depth, plan.ssao);
+        const bool occlusion_wanted =
+            settings_.ssao_enabled || depth_preview_mode_ == 5;
+        const bool occlusion_ready = occlusion_wanted && plan.depth.available &&
+                                     effect_shaders_.available(EffectShader::Occlusion) &&
+                                     effect_shaders_.available(EffectShader::Compose) &&
+                                     ensure_occlusion_target(description);
+        const bool chain_ready = depth_preview_mode_ == 0 &&
+                                 frame_resources_.intermediates_ready();
+        plan.ssao_preview = depth_preview_mode_ == 5 && occlusion_ready;
+        plan.ssao = chain_ready && settings_.ssao_enabled && occlusion_ready &&
+                    ssao_strength(settings_) > 0.0f;
+        plan.temporal = plan_temporal(description, plan.depth);
+        plan.fxaa = chain_ready && fxaa_enabled(settings_) &&
+                    effect_shaders_.available(EffectShader::Fxaa);
+        plan.interior_light =
+            chain_ready && plan.depth.available &&
+            interior_light_strength(settings_) > 0.0f &&
+            effect_shaders_.available(EffectShader::InteriorLight);
+        plan.sharpen =
+            chain_ready &&
+            anti_aliasing_mode(settings_) == AntiAliasingMode::TemporalSharp &&
+            effect_shaders_.available(EffectShader::Sharpen);
 
         if (!plan.temporal && temporal_.valid()) {
             invalidate_temporal_history("depth ou passe temporal indisponivel");
@@ -481,26 +540,35 @@ public:
         log_input.temporal_active = plan.temporal;
         log_frame_plan(settings_, log_input, &log_state_);
         capture_scene_for_grade(plan, targets.back_buffer);
+        const EffectChain chain = plan_effect_chain(
+            {plan.fxaa, plan.interior_light, plan.ssao, plan.temporal,
+             plan.sharpen});
         FrameConstantsInput input = {};
         input.description = targets.description;
         input.depth_description = plan.depth.description;
         input.depth_preview_mode = depth_preview_mode_;
         input.depth_available = plan.depth.available;
-        input.ssao_active = plan.ssao;
         input.ssao_preview = plan.ssao_preview;
-        input.temporal_active = plan.temporal;
         input.temporal_history_valid = temporal_.valid();
         input.bloom_active = plan.bloom;
         input.scene_needs_srgb_decode =
             frame_resources_.scene_needs_srgb_decode();
         input.output_needs_srgb_encode = targets.output_needs_srgb_encode;
-        input.temperature = condition_.temperature();
-        input.tint = condition_.tint();
+        input.temperature = settings_.temperature;
+        input.tint = settings_.tint;
+        input.night_weight = condition_.night_weight();
+        input.exterior_luma = exterior_luma();
+        input.occlusion_width = occlusion_target_.width();
+        input.occlusion_height = occlusion_target_.height();
+        input.chain = &chain;
         upload_frame_constants(context_, pipeline_, settings_, input);
         FramePassScene scene = {};
         scene.context = context_;
         scene.pipeline = &pipeline_;
         scene.shaders = &shaders_;
+        scene.effects = &effect_shaders_;
+        scene.occlusion = &occlusion_target_;
+        scene.chain = &chain;
         scene.resources = &frame_resources_;
         scene.depth = &depth_capture_;
         scene.temporal = &temporal_;
@@ -516,7 +584,6 @@ public:
         pass_plan.depth_preview = plan.depth_preview;
         pass_plan.ssao_preview = plan.ssao_preview;
         pass_plan.bloom_preview = plan.bloom_preview;
-        pass_plan.ssao = plan.ssao;
         pass_plan.temporal = plan.temporal;
         pass_plan.bloom = plan.bloom;
 
@@ -543,7 +610,10 @@ public:
         if (!ensure_device_for(swap_chain)) {
             return;
         }
+        g_pass_effects_wanted.store(pass_effects_wanted(), std::memory_order_release);
+        shader_patch::set_enabled(settings_.enabled);
         if (!settings_.enabled) {
+            shader_patch::neutralize_surface_constants();
             return;
         }
 
@@ -551,9 +621,41 @@ public:
 
         FrameTargets targets = {};
         if (acquire_frame_targets(swap_chain, &targets)) {
+            note_surface_size(targets.description);
+            refresh_surface_constants();
             render_frame(targets);
         }
         release_frame_targets(&targets);
+    }
+
+    void note_surface_size(const D3D11_TEXTURE2D_DESC& description) {
+        surface_width_ = description.Width;
+        surface_height_ = description.Height;
+    }
+
+    void refresh_surface_constants() {
+        if (surface_width_ == 0 || surface_height_ == 0) {
+            return;
+        }
+        shader_patch::update_surface_constants(
+            settings_, surface_width_, surface_height_);
+        report_shader_patch();
+    }
+
+    void report_shader_patch() {
+        constexpr unsigned long long kReportIntervalMs = 60000ull;
+        const unsigned long long now = GetTickCount64();
+        if (surface_report_ms_ != 0ull &&
+            now - surface_report_ms_ < kReportIntervalMs) {
+            return;
+        }
+        surface_report_ms_ = now;
+        const shader_patch::PatchStatistics current =
+            shader_patch::statistics();
+        if (current.inspected == 0 && current.patched == 0) {
+            return;
+        }
+        shader_patch::log_statistics("quadro");
     }
 
     bool acquire_overlay_target(
@@ -585,6 +687,23 @@ public:
         fsr::upscaler().present(
             device_, back_buffer, description.Width, description.Height);
         back_buffer->Release();
+    }
+
+    void pass_effects_in_frame(
+        ID3D11DeviceContext* context,
+        UINT render_target_count,
+        ID3D11RenderTargetView* const* render_targets) {
+        if (context == nullptr || context != context_ || resize_in_progress_ ||
+            !settings_.enabled) {
+            return;
+        }
+        pass_effects_.observe(
+            context_, render_target_count, render_targets, settings_,
+            shaders_.vertex());
+    }
+
+    bool pass_effects_wanted() const {
+        return settings_.enabled && pre_tone_active(pre_tone_parameters(settings_));
     }
 
     void reconstruct_in_frame(
@@ -690,13 +809,11 @@ private:
             return false;
         }
         log_message(
-            "Recursos de frame criados: %ux%u format=%u "
-            "ssao_intermediate=%s temporal_spatial=%s.",
+            "Recursos de frame criados: %ux%u format=%u intermediarios=%s.",
             source.Width,
             source.Height,
             static_cast<unsigned>(source.Format),
-            frame_resources_.visual_target() != nullptr ? "ok" : "indisponivel",
-            frame_resources_.spatial_target() != nullptr ? "ok" : "indisponivel");
+            frame_resources_.intermediates_ready() ? "ok" : "indisponivel");
         return true;
     }
 
@@ -704,6 +821,9 @@ private:
         if (!shaders_.compile(device_)) {
             return false;
         }
+        effect_shaders_.compile(device_);
+        pass_effects_.create(device_);
+        shader_patch::create_surface_constants(device_);
         invalidate_temporal_history("recompilacao de shader");
         shaders_.log_state();
         return true;
@@ -719,6 +839,7 @@ private:
             return false;
         }
         frame_resources_.attach(device_);
+        occlusion_target_.attach(device_);
         depth_capture_.attach(device_, context_);
         temporal_.attach(device_, context_);
         gpu_timer_.attach(device_, context_);
@@ -779,13 +900,14 @@ private:
             settings_.scene_observer_log_seconds);
 
         condition_.reset_log();
-        if (!settings_.condition_adaptation_enabled) {
+        if (!settings_.scene_observer_enabled) {
             condition_.reset_state();
         }
     }
 
     void release_frame_resources() {
         release_depth_capture_resources();
+        occlusion_target_.release();
         bloom_.release();
 
         scene_observer_.release();
@@ -809,6 +931,9 @@ private:
         release_frame_resources();
         gpu_timer_.release();
         shaders_.release();
+        effect_shaders_.release();
+        pass_effects_.release();
+        shader_patch::release_surface_constants();
         pipeline_.release();
         bloom_.release_constant_buffer();
         safe_release(context_);
@@ -816,9 +941,16 @@ private:
     }
 
     Settings settings_;
+    UINT surface_width_ = 0;
+    UINT surface_height_ = 0;
+    unsigned long long surface_report_ms_ = 0ull;
     SceneObserver scene_observer_;
     GpuTimer gpu_timer_;
     ShaderLibrary shaders_;
+    EffectShaders effect_shaders_;
+    passfx::PassEffects pass_effects_;
+    EffectLog effect_log_;
+    OcclusionTarget occlusion_target_;
     BloomPyramid bloom_;
     TemporalHistory temporal_;
     DepthCapture depth_capture_;
@@ -891,6 +1023,21 @@ void upscale_present_frame(IDXGISwapChain* swap_chain) {
     }
     g_post_processor.upscale_frame(swap_chain);
     end_color_frame();
+}
+
+void apply_pass_effects(
+    ID3D11DeviceContext* context,
+    UINT render_target_count,
+    ID3D11RenderTargetView* const* render_targets) {
+    if (!g_pass_effects_wanted.load(std::memory_order_acquire)) {
+        return;
+    }
+    ProcessorScope scope;
+    if (!scope.entered()) {
+        return;
+    }
+    g_post_processor.pass_effects_in_frame(
+        context, render_target_count, render_targets);
 }
 
 void reconstruct_game_frame(

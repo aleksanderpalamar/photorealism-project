@@ -1,16 +1,12 @@
 #include "frame_constants.hpp"
 
+#include "../config/profile_state.hpp"
 #include "shader_constants.hpp"
 
 #include <cmath>
 
 namespace photorealism {
 namespace {
-
-struct ProjectionScale {
-    float x;
-    float y;
-};
 
 ProjectionScale projection_scale_for(
     const Settings& settings, const D3D11_TEXTURE2D_DESC& description) {
@@ -34,7 +30,7 @@ void upload_visual_constants(
         1.0f / static_cast<float>(input.description.Width);
     constants.texel_size[1] =
         1.0f / static_cast<float>(input.description.Height);
-    constants.exposure = settings.exposure;
+    constants.exposure = night_adjusted_exposure(settings, input.night_weight);
     constants.temperature = input.temperature;
     constants.contrast = settings.contrast;
     constants.saturation = settings.saturation;
@@ -54,13 +50,17 @@ void upload_visual_constants(
     constants.bloom_enabled = input.bloom_active ? 1.0f : 0.0f;
     constants.bloom_intensity = settings.bloom_intensity;
     constants.input_needs_srgb_decode =
-        input.scene_needs_srgb_decode ? 1.0f : 0.0f;
-    const bool visual_writes_to_output = !input.ssao_active && !input.temporal_active;
+        reads_scene(*input.chain, EffectPass::Visual) &&
+                input.scene_needs_srgb_decode
+            ? 1.0f
+            : 0.0f;
     constants.output_needs_srgb_encode =
-        visual_writes_to_output && input.output_needs_srgb_encode ? 1.0f
-                                                                   : 0.0f;
+        writes_output(*input.chain, EffectPass::Visual) &&
+                input.output_needs_srgb_encode
+            ? 1.0f
+            : 0.0f;
     context->UpdateSubresource(
-        pipeline.visual_constants(), 0, nullptr, &constants, 0, 0);
+        pipeline.constants(ConstantSlot::Visual), 0, nullptr, &constants, 0, 0);
 }
 
 void upload_depth_constants(
@@ -83,54 +83,8 @@ void upload_depth_constants(
     depth_constants.projection_scale[0] = projection.x;
     depth_constants.projection_scale[1] = projection.y;
     context->UpdateSubresource(
-        pipeline.depth_constants(), 0, nullptr, &depth_constants, 0, 0);
-}
-
-void upload_ssao_constants(
-    ID3D11DeviceContext* context,
-    const PipelineState& pipeline,
-    const Settings& settings,
-    const FrameConstantsInput& input,
-    const ProjectionScale& projection,
-    float depth_texel_x,
-    float depth_texel_y) {
-    SsaoConstants ssao_constants = {};
-    ssao_constants.input_needs_srgb_decode =
-        input.ssao_preview && input.scene_needs_srgb_decode ? 1.0f : 0.0f;
-    const bool ssao_writes_to_output = !input.temporal_active;
-    ssao_constants.output_needs_srgb_encode =
-        ssao_writes_to_output && input.output_needs_srgb_encode ? 1.0f
-                                                                 : 0.0f;
-    ssao_constants.near_plane = settings.depth_near_plane;
-    ssao_constants.radius = settings.ssao_radius;
-    ssao_constants.intensity = settings.ssao_intensity;
-    ssao_constants.bias = settings.ssao_bias;
-    ssao_constants.fade_start = settings.ssao_fade_start;
-    ssao_constants.fade_end = settings.ssao_fade_end;
-    ssao_constants.edge_rejection = settings.ssao_edge_rejection;
-    ssao_constants.debug_mode = input.ssao_preview ? 1.0f : 0.0f;
-    ssao_constants.depth_texel_size[0] = depth_texel_x;
-    ssao_constants.depth_texel_size[1] = depth_texel_y;
-    ssao_constants.projection_scale[0] = projection.x;
-    ssao_constants.projection_scale[1] = projection.y;
-    ssao_constants.refinement_enabled =
-        settings.ssao_refinement_enabled ? 1.0f : 0.0f;
-    ssao_constants.highlight_start = settings.ssao_highlight_start;
-    ssao_constants.highlight_end = settings.ssao_highlight_end;
-    ssao_constants.highlight_ao_floor =
-        settings.ssao_highlight_ao_floor;
-    ssao_constants.interior_enabled =
-        settings.ssao_interior_enabled ? 1.0f : 0.0f;
-    ssao_constants.interior_near_start =
-        settings.ssao_interior_near_start;
-    ssao_constants.interior_near_end = settings.ssao_interior_near_end;
-    ssao_constants.interior_radius = settings.ssao_interior_radius;
-    ssao_constants.interior_intensity = settings.ssao_interior_intensity;
-    ssao_constants.interior_bias = settings.ssao_interior_bias;
-    ssao_constants.interior_edge_rejection =
-        settings.ssao_interior_edge_rejection;
-    context->UpdateSubresource(
-        pipeline.ssao_constants(), 0, nullptr, &ssao_constants, 0, 0);
+        pipeline.constants(ConstantSlot::DepthPreview), 0, nullptr,
+        &depth_constants, 0, 0);
 }
 
 void upload_temporal_constants(
@@ -153,9 +107,12 @@ void upload_temporal_constants(
     temporal_constants.history_valid =
         input.temporal_history_valid ? 1.0f : 0.0f;
     temporal_constants.output_needs_srgb_encode =
-        input.output_needs_srgb_encode ? 1.0f : 0.0f;
+        writes_output(*input.chain, EffectPass::Temporal) &&
+                input.output_needs_srgb_encode
+            ? 1.0f
+            : 0.0f;
     context->UpdateSubresource(
-        pipeline.temporal_constants(),
+        pipeline.constants(ConstantSlot::Temporal),
         0,
         nullptr,
         &temporal_constants,
@@ -183,9 +140,7 @@ void upload_frame_constants(
     upload_depth_constants(
         context, pipeline, settings, input, projection, depth_texel_x,
         depth_texel_y);
-    upload_ssao_constants(
-        context, pipeline, settings, input, projection, depth_texel_x,
-        depth_texel_y);
+    upload_effect_constants(context, pipeline, settings, input, projection);
     upload_temporal_constants(context, pipeline, settings, input);
 }
 

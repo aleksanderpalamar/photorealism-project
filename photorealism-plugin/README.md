@@ -1,5 +1,7 @@
 # Photorealism Plugin
 
+<img src=".github/images/screenshot.png" alt="Screenshot do projeto" width="800">
+
 Plugin grafico independente para Euro Truck Simulator 2 e American Truck
 Simulator, voltado ao caminho Windows x64 / Direct3D 11 executado pelo Proton
 e traduzido para Vulkan pelo DXVK.

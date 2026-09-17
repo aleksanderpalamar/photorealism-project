@@ -5,6 +5,21 @@
 #include "format_utils.hpp"
 
 namespace photorealism {
+namespace {
+
+void release_intermediate(IntermediateTarget* intermediate) {
+    safe_release(intermediate->target);
+    safe_release(intermediate->raw_view);
+    safe_release(intermediate->view);
+    safe_release(intermediate->texture);
+}
+
+bool intermediate_complete(const IntermediateTarget& intermediate) {
+    return intermediate.texture != nullptr && intermediate.view != nullptr &&
+           intermediate.raw_view != nullptr && intermediate.target != nullptr;
+}
+
+}
 
 void FrameResources::attach(ID3D11Device* device) {
     device_ = device;
@@ -18,12 +33,6 @@ void FrameResources::release() {
     scene_needs_srgb_decode_ = false;
 }
 
-void FrameResources::release_intermediate_target(FrameResources::IntermediateTarget* intermediate) {
-    safe_release(intermediate->target);
-    safe_release(intermediate->view);
-    safe_release(intermediate->texture);
-}
-
 D3D11_TEXTURE2D_DESC FrameResources::intermediate_description(
     const D3D11_TEXTURE2D_DESC& source, UINT bind_flags) const {
     D3D11_TEXTURE2D_DESC description = source;
@@ -35,85 +44,68 @@ D3D11_TEXTURE2D_DESC FrameResources::intermediate_description(
     return description;
 }
 
-HRESULT FrameResources::create_srgb_view(
-    ID3D11Texture2D* texture,
-    const D3D11_TEXTURE2D_DESC& source,
+HRESULT FrameResources::create_view(
+    ID3D11Texture2D* texture, DXGI_FORMAT format,
     ID3D11ShaderResourceView** view) {
     D3D11_SHADER_RESOURCE_VIEW_DESC description = {};
-    description.Format = srgb_view_format(source.Format);
+    description.Format = format;
     description.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-    description.Texture2D.MostDetailedMip = 0;
-    description.Texture2D.MipLevels = source.MipLevels;
+    description.Texture2D.MipLevels = 1;
     return device_->CreateShaderResourceView(texture, &description, view);
 }
 
-HRESULT FrameResources::create_srgb_target(
-    ID3D11Texture2D* texture,
-    const D3D11_TEXTURE2D_DESC& source,
-    ID3D11RenderTargetView** target) {
-    D3D11_RENDER_TARGET_VIEW_DESC description = {};
-    description.Format = srgb_view_format(source.Format);
-    description.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
-    description.Texture2D.MipSlice = 0;
-    return device_->CreateRenderTargetView(texture, &description, target);
-}
-
-HRESULT FrameResources::create_intermediate_target(
-    const D3D11_TEXTURE2D_DESC& source, FrameResources::IntermediateTarget* intermediate) {
+HRESULT FrameResources::create_intermediate(
+    const D3D11_TEXTURE2D_DESC& source, IntermediateTarget* intermediate) {
     const D3D11_TEXTURE2D_DESC description = intermediate_description(
         source, D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET);
-    HRESULT result = device_->CreateTexture2D(
-        &description, nullptr, &intermediate->texture);
-    if (FAILED(result) || intermediate->texture == nullptr) {
-        return FAILED(result) ? result : E_FAIL;
-    }
-    result = create_srgb_view(
-        intermediate->texture, source, &intermediate->view);
-    if (FAILED(result)) {
-        return result;
-    }
-    return create_srgb_target(
-        intermediate->texture, source, &intermediate->target);
-}
-
-bool FrameResources::intermediate_is_complete(
-    HRESULT result, const FrameResources::IntermediateTarget& intermediate) {
-    return SUCCEEDED(result) && intermediate.texture != nullptr &&
-           intermediate.view != nullptr && intermediate.target != nullptr;
+    HRESULT result =
+        device_->CreateTexture2D(&description, nullptr, &intermediate->texture);
+    result = SUCCEEDED(result)
+                 ? create_view(intermediate->texture,
+                               srgb_view_format(source.Format), &intermediate->view)
+                 : result;
+    result = SUCCEEDED(result)
+                 ? create_view(intermediate->texture,
+                               unorm_view_format(source.Format),
+                               &intermediate->raw_view)
+                 : result;
+    D3D11_RENDER_TARGET_VIEW_DESC target_description = {};
+    target_description.Format = srgb_view_format(source.Format);
+    target_description.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
+    return SUCCEEDED(result)
+               ? device_->CreateRenderTargetView(
+                     intermediate->texture, &target_description,
+                     &intermediate->target)
+               : result;
 }
 
 bool FrameResources::create_scene_texture(const D3D11_TEXTURE2D_DESC& source) {
     D3D11_TEXTURE2D_DESC description =
         intermediate_description(source, D3D11_BIND_SHADER_RESOURCE);
-    HRESULT result = device_->CreateTexture2D(
-        &description, nullptr, &scene_texture_);
-    if (SUCCEEDED(result) && scene_texture_ != nullptr) {
-        result = create_srgb_view(scene_texture_, source, &scene_view_);
-    }
-
+    HRESULT result =
+        device_->CreateTexture2D(&description, nullptr, &scene_texture_);
+    result = SUCCEEDED(result)
+                 ? create_view(scene_texture_, srgb_view_format(source.Format),
+                               &scene_view_)
+                 : result;
     scene_needs_srgb_decode_ = false;
-    if (FAILED(result) || scene_texture_ == nullptr ||
-        scene_view_ == nullptr) {
-        safe_release(scene_view_);
-        safe_release(scene_texture_);
-
-        description.Format = source.Format;
-        result = device_->CreateTexture2D(
-            &description, nullptr, &scene_texture_);
-        if (SUCCEEDED(result) && scene_texture_ != nullptr) {
-            result = device_->CreateShaderResourceView(
-                scene_texture_, nullptr, &scene_view_);
-        }
-        scene_needs_srgb_decode_ = is_unorm_format(source.Format);
-        if (!input_fallback_logged_) {
-            log_message(
-                "SRV sRGB indisponivel; usando decodificacao manual na entrada.");
-            input_fallback_logged_ = true;
-        }
+    if (SUCCEEDED(result)) {
+        return true;
     }
+    safe_release(scene_view_);
+    safe_release(scene_texture_);
 
-    if (SUCCEEDED(result) && scene_texture_ != nullptr &&
-        scene_view_ != nullptr) {
+    description.Format = source.Format;
+    result = device_->CreateTexture2D(&description, nullptr, &scene_texture_);
+    result = SUCCEEDED(result)
+                 ? device_->CreateShaderResourceView(scene_texture_, nullptr, &scene_view_)
+                 : result;
+    scene_needs_srgb_decode_ = is_unorm_format(source.Format);
+    if (!input_fallback_logged_) {
+        log_message("SRV sRGB indisponivel; usando decodificacao manual na entrada.");
+        input_fallback_logged_ = true;
+    }
+    if (SUCCEEDED(result)) {
         return true;
     }
     log_message(
@@ -124,51 +116,26 @@ bool FrameResources::create_scene_texture(const D3D11_TEXTURE2D_DESC& source) {
     return false;
 }
 
-void FrameResources::create_visual_target(const D3D11_TEXTURE2D_DESC& source) {
-    FrameResources::IntermediateTarget created = {};
-    const HRESULT result = create_intermediate_target(source, &created);
-    if (intermediate_is_complete(result, created)) {
-        visual_texture_ = created.texture;
-        visual_view_ = created.view;
-        visual_target_ = created.target;
+void FrameResources::create_named_intermediate(
+    const D3D11_TEXTURE2D_DESC& source, IntermediateTarget* intermediate,
+    const char* name) {
+    const HRESULT result = create_intermediate(source, intermediate);
+    if (SUCCEEDED(result) && intermediate_complete(*intermediate)) {
         return;
     }
-    if (!visual_failure_logged_) {
+    release_intermediate(intermediate);
+    if (!intermediate_failure_logged_) {
         log_message(
-            "SSAO 0.9.1 sem textura intermediaria: 0x%08X; "
-            "mantendo o passe visual normal.",
-            static_cast<unsigned>(result));
-        visual_failure_logged_ = true;
+            "Sem textura intermediaria %s: 0x%08X; efeitos encadeados ficam "
+            "desligados e o passe visual continua.",
+            name, static_cast<unsigned>(result));
+        intermediate_failure_logged_ = true;
     }
-    release_intermediate_target(&created);
-}
-
-void FrameResources::create_spatial_target(const D3D11_TEXTURE2D_DESC& source) {
-    FrameResources::IntermediateTarget created = {};
-    const HRESULT result = create_intermediate_target(source, &created);
-    if (intermediate_is_complete(result, created)) {
-        spatial_texture_ = created.texture;
-        spatial_view_ = created.view;
-        spatial_target_ = created.target;
-        return;
-    }
-    if (!spatial_failure_logged_) {
-        log_message(
-            "Temporal 0.10.0 sem textura espacial: 0x%08X; "
-            "mantendo a pilha visual/SSAO anterior.",
-            static_cast<unsigned>(result));
-        spatial_failure_logged_ = true;
-    }
-    release_intermediate_target(&created);
 }
 
 void FrameResources::release_scene_textures() {
-    safe_release(spatial_target_);
-    safe_release(spatial_view_);
-    safe_release(spatial_texture_);
-    safe_release(visual_target_);
-    safe_release(visual_view_);
-    safe_release(visual_texture_);
+    release_intermediate(&second_);
+    release_intermediate(&first_);
     safe_release(scene_view_);
     safe_release(scene_texture_);
 }
@@ -183,24 +150,12 @@ bool FrameResources::create(const D3D11_TEXTURE2D_DESC& source) {
     if (!create_scene_texture(source)) {
         return false;
     }
-
-    create_visual_target(source);
-    if (visual_target_ != nullptr) {
-        create_spatial_target(source);
-    }
-
+    create_named_intermediate(source, &first_, "primeira");
+    create_named_intermediate(source, &second_, "segunda");
     width_ = source.Width;
     height_ = source.Height;
     format_ = source.Format;
-    log_message(
-        "Recursos de frame criados: %ux%u format=%u "
-        "ssao_intermediate=%s temporal_spatial=%s.",
-        width_,
-        height_,
-        static_cast<unsigned>(format_),
-        visual_target_ != nullptr ? "ok" : "indisponivel",
-        spatial_target_ != nullptr ? "ok" : "indisponivel");
     return true;
 }
 
-}  // namespace photorealism
+}

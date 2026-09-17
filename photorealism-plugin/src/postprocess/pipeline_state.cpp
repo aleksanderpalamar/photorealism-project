@@ -1,7 +1,9 @@
 #include "pipeline_state.hpp"
 
 #include "../runtime.hpp"
+#include "../fsr/rcas_constants.hpp"
 #include "com_utils.hpp"
+#include "effect_constants.hpp"
 #include "shader_constants.hpp"
 
 #include <cfloat>
@@ -18,10 +20,9 @@ bool PipelineState::create(ID3D11Device* device) {
 }
 
 void PipelineState::release() {
-    safe_release(visual_constants_);
-    safe_release(depth_constants_);
-    safe_release(ssao_constants_);
-    safe_release(temporal_constants_);
+    for (ID3D11Buffer*& buffer : constants_) {
+        safe_release(buffer);
+    }
     safe_release(linear_sampler_);
     safe_release(point_sampler_);
     safe_release(rasterizer_);
@@ -31,29 +32,29 @@ void PipelineState::release() {
 }
 
 bool PipelineState::create_constant_buffers(ID3D11Device* device) {
-    const PipelineState::ConstantBufferSlot slots[] = {
-        {sizeof(ShaderConstants), &PipelineState::visual_constants_, ""},
-        {sizeof(DepthPreviewConstants),
-         &PipelineState::depth_constants_, " depth"},
-        {sizeof(SsaoConstants), &PipelineState::ssao_constants_,
-         " SSAO"},
-        {sizeof(TemporalConstants),
-         &PipelineState::temporal_constants_, " temporal"},
+    constexpr UINT kByteWidths[kConstantSlotCount] = {
+        sizeof(ShaderConstants),
+        sizeof(DepthPreviewConstants),
+        sizeof(TemporalConstants),
+        sizeof(FxaaConstants),
+        sizeof(OcclusionConstants),
+        sizeof(ComposeConstants),
+        sizeof(InteriorLightConstants),
+        sizeof(fsr::RcasConstants),
     };
 
-    for (const PipelineState::ConstantBufferSlot& slot : slots) {
+    for (unsigned slot = 0; slot < kConstantSlotCount; ++slot) {
         D3D11_BUFFER_DESC description = {};
-        description.ByteWidth = slot.byte_width;
+        description.ByteWidth = kByteWidths[slot];
         description.Usage = D3D11_USAGE_DEFAULT;
         description.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-        const HRESULT result = device->CreateBuffer(
-            &description, nullptr, &(this->*slot.member));
+        const HRESULT result =
+            device->CreateBuffer(&description, nullptr, &constants_[slot]);
         if (SUCCEEDED(result)) {
             continue;
         }
         log_message(
-            "Falha ao criar constant buffer%s: 0x%08X.",
-            slot.description,
+            "Falha ao criar constant buffer %u: 0x%08X.", slot,
             static_cast<unsigned>(result));
         return false;
     }

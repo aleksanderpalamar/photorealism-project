@@ -3,6 +3,8 @@
 #include "../text.hpp"
 #include "../theme.hpp"
 
+#include <cstdio>
+
 namespace photorealism {
 namespace overlay {
 namespace {
@@ -32,46 +34,15 @@ bool toggle_row(UiContext& ui, const Rect& area, const char* label, bool* value)
     const bool hovered = rect_contains(area, ui.pointer.x, ui.pointer.y);
     ui.list->push_rect(
         area, surface_for(hovered, *value), theme::kControlRadius);
-
-    const Rect text_area = {
-        area.x + theme::kPadding * 0.5f,
-        area.y,
-        area.width - theme::kPadding,
-        area.height};
-    draw_text(
-        *ui.list,
-        *ui.font,
-        text_area.x,
-        text_area.y + (text_area.height - ui.font->line_height()) * 0.5f,
-        label,
-        theme::kText);
-    draw_text_right(
-        *ui.list,
-        *ui.font,
-        text_area,
-        *value ? "Ligado" : "Desligado",
-        *value ? theme::kText : theme::kTextDim);
-
+    char text[96] = {};
+    std::snprintf(
+        text, sizeof(text), "%s: %s", label, *value ? "ligado" : "desligado");
+    draw_text_centered(*ui.list, *ui.font, area, text, theme::kText);
     if (!clicked(ui, area)) {
         return false;
     }
     *value = !*value;
     return true;
-}
-
-void tab_header(
-    UiContext& ui, const Rect& area, const char* label, bool selected) {
-    const bool hovered = rect_contains(area, ui.pointer.x, ui.pointer.y);
-    const Color surface = selected ? theme::kAccent
-                                   : (hovered ? theme::kControlHover
-                                              : theme::kControl);
-    ui.list->push_rect(area, surface, theme::kControlRadius);
-    draw_text_centered(
-        *ui.list,
-        *ui.font,
-        area,
-        label,
-        selected ? theme::kText : theme::kTextDim);
 }
 
 }

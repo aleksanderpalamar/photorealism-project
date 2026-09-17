@@ -1,5 +1,6 @@
 #include "swap_chain_hooks.hpp"
 
+#include "../frame_capture/frame_capture.hpp"
 #include "../postprocess/postprocess.hpp"
 #include "../runtime.hpp"
 #include "../steam/steam_screenshots.hpp"
@@ -14,6 +15,7 @@ HRESULT STDMETHODCALLTYPE hooked_present(
     IDXGISwapChain* swap_chain, UINT sync_interval, UINT flags) {
     PresentDispatchScope dispatch;
     if (dispatch.should_process()) {
+        end_capture_frame();
         upscale_present_frame(swap_chain);
         process_frame(swap_chain);
         observe_postprocessed_frame(swap_chain);
@@ -43,6 +45,7 @@ HRESULT STDMETHODCALLTYPE hooked_present1(
     const DXGI_PRESENT_PARAMETERS* parameters) {
     PresentDispatchScope dispatch;
     if (dispatch.should_process()) {
+        end_capture_frame();
         upscale_present_frame(swap_chain);
         process_frame(swap_chain);
         observe_postprocessed_frame(swap_chain);

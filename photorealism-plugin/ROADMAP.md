@@ -527,7 +527,75 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
 - **0.22.8 (entregue)** a escala do jogo e guardada e devolvida por eixo, e a
   captura do FSR se reinicia na troca de dispositivo D3D11 -- os dois defeitos
   da revisao do PR #5, reproduzidos antes de corrigidos;
-- **0.23.0** raios de sol. E o efeito que as referencias realmente
+- **0.23.0 (entregue)** perfil de tom do photorealism-plugin: o grade pode sair
+  de um perfil com os valores de um cfg de referencia do usuario, conjunto 4,
+  no lugar das camadas medidas, que ficam intactas; aba Perfil no menu. Rodou
+  no jogo e foi aprovado pelo usuario;
+- **0.23.1 (entregue)** os cinco conjuntos de tom escolhiveis no menu, exposicao
+  noturna pelo peso de noite da adaptacao por condicao, as demais chaves do cfg
+  de referencia lidas e mostradas em cinza, e o cfg sem comentarios. Reprovada
+  no jogo pelo usuario: perfil trocado por slider e linhas esmaecidas;
+- **0.23.2 (entregue)** o perfil e a unica fonte da imagem: saem do cfg as camadas
+  de cor medidas, a camada do usuario, a adaptacao de cor por condicao e as
+  secoes de SSAO, resolve temporal e depth. Menu refeito em paginas no molde das
+  telas de referencia do usuario: listas suspensas para iluminacao, qualidade,
+  anti-aliasing e SSAO, botoes para chaves 0/1, sliders so para faixas. Rodou no
+  jogo: iluminacao, cores (menos quatro controles) e FSR funcionam; o resto das
+  opcoes nao mudava a imagem;
+- **0.23.3 (entregue)** as opcoes que o pos-processo alcanca passam a mudar a
+  imagem: brancos como ponto de branco, qualidade, lista de anti-aliasing com
+  Temporal nitido e DLAA/DLSS esmaecidos, FXAA, SSAO com forca, preset, detalhe
+  e meia resolucao, e luz de interior pelo depth. Rodou no jogo e foi aprovado;
+  SSAO muito alto deixa marca de "fantasma", causa ainda nao isolada;
+- **0.24.0 (entregue)** captura do quadro para analise, sem mudar a imagem: botao
+  no menu, todos os alvos de cada passe gravados em DDS com manifesto, e
+  `tools/gbuffer_report.py` com estatisticas, etiquetas e previews por alvo.
+  Primeira captura do usuario analisada em `references/gbuffer-ets2-0.24.0.md`:
+  G-buffer, material, luz, HDR antes do tom e atlas dos espelhos identificados;
+  velocidade e mascara de estrada pedem uma captura com o caminhao andando.
+  Duas capturas andando: estrada = canal 1 do material igual a 32; a velocidade
+  do jogo so tem objetos, sem o movimento da camera;
+- **0.24.1 (entregue)** pre-exposicao, pre-contraste e contraste dinamico no HDR
+  do jogo, logo antes do tom, reconhecido pela forma dos binds. A captura passa a
+  gravar os constant buffers de cada bind, para achar as matrizes da camera no
+  anti-aliasing temporal do jogo. Detalhe em `references/pre-tom-0.24.1.md`;
+- **0.24.2 (entregue)** correcao da captura de constantes, sem mudar a imagem: as
+  duas capturas do usuario com o caminhao andando e a camera girando mostraram que
+  o passe de anti-aliasing temporal liga um buffer de 2 MB por deslocamento
+  (`VSSetConstantBuffers1`), e a leitura da 0.24.1 (sem o "1") devolvia o buffer
+  inteiro e rejeitava tudo por tamanho -- nenhuma constante do anti-aliasing foi
+  salva nas duas capturas. A leitura agora segue o deslocamento real. Pede nova
+  captura do usuario para conferir se as matrizes aparecem;
+- **0.24.3 (entregue)** o menu abre no canto superior esquerdo (margem de 32 px),
+  em vez de centralizado na tela. Pedido do usuario, sem relacao com o resto do
+  0.24.x;
+- **0.24.4 (entregue)** dois defeitos achados pelo usuario, causa provada em cima
+  do depth real capturado: a luz de interior vazava pro mundo exterior (limiar de
+  distancia calibrado errado, 11,4% do quadro acendia no asfalto visivel pelo
+  parabrisa) e o SSAO nao desligava de verdade no minimo do slider (o passe
+  rodava do mesmo jeito, so a matematica zerava o resultado). Detalhe em
+  `references/luz-interior-e-ssao-0.24.4.md`. O "fantasma" do SSAO em
+  intensidade alta continua sem causa isolada;
+- **0.24.5 (entregue)** o plugin passa a desligar o SSAO nativo do ETS2
+  (`r_ssao` no `config.cfg` do jogo, fora da pasta do plugin), que ate aqui
+  ficava ligado e somava com o SSAO do proprio plugin -- achado comparando com
+  outro plugin do mesmo genero, que reseta a qualidade grafica nativa e tem a
+  mesma chave desligada nos proprios strings. Mecanismo novo
+  `src/native_graphics/`, irmao do gerenciamento de AA nativo. Detalhe em
+  `references/ssao-nativo-do-jogo-0.24.5.md`. Falta confirmar no jogo se isso
+  reduz o "fantasma";
+- **0.24.6 (entregue)** a qualidade global (pagina inicial) parou de mexer no
+  SSAO -- amostras e meia resolucao do SSAO agora vem so do detalhe do SSAO,
+  na propria pagina de Renderizacao / Iluminacao. Qualidade global continua
+  so com o teto de niveis do bloom;
+- **0.24.7 em diante** um efeito entre passes por pacote: saturacao do albedo;
+  espelhos do jogo; SSS; normais da estrada; motion blur pelas matrizes do
+  anti-aliasing do jogo, se a nova captura as mostrar. O que nao der entre passes
+  vai para a 0.25.x;
+- **0.25.x** shaders do jogo alterados em memoria, a partir dos arquivos do
+  proprio usuario: espessura de folhas e grama, chuva do jogo e, se preciso,
+  normais da estrada. A Fase 2 do FSR fica depois disso;
+- **0.26.0** raios de sol. E o efeito que as referencias realmente
   mostram, e que a medicao do bloom revelou: estriados radiais saindo do sol
   atras da linha de arvores, projetados no teto escuro da cabine. Sao
   **direcionais**, e nenhuma piramide gaussiana produz aquilo. Reaproveita o
@@ -536,7 +604,7 @@ RTGI, SSAO e resolve temporal sem fonte. Detalhe em
   descobrir a posicao do sol na tela sem dados do motor no `Present`.
   **Desceu de prioridade na 0.18.0**: cor errada em toda condicao pesa mais
   que um efeito ausente;
-- **0.24.0 (condicional)** upgrade de bind flag via hook de `CreateTexture2D`,
+- **0.27.0 (condicional)** upgrade de bind flag via hook de `CreateTexture2D`,
   na tecnica do ReShade: promover o depth a typeless com
   `BIND_SHADER_RESOURCE`, sintetizando o descritor no `CreateDepthStencilView`.
   So entra se o `CopyResource` de um depth `DEPTH_STENCIL`-only falhar sob

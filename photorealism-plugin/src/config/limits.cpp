@@ -12,6 +12,15 @@ struct Limit {
 };
 
 constexpr Limit kLimits[] = {
+    {&Settings::profile_lighting_method, 0.0f, 3.0f},
+    {&Settings::profile_global_quality, 0.0f, 2.0f},
+    {&Settings::profile_taa, 0.0f, 2.0f},
+    {&Settings::profile_ssao_preset, 0.0f, 2.0f},
+    {&Settings::profile_ssao_detail_quality, 0.0f, 2.0f},
+    {&Settings::profile_sharpness, 0.0f, 10.0f},
+    {&Settings::profile_sharpen_edges, 0.0f, 10.0f},
+    {&Settings::profile_ssao_intensity, 0.0f, 4.0f},
+    {&Settings::profile_night_exposure, -4.0f, 4.0f},
     {&Settings::temperature, 3000.0f, 9000.0f},
     {&Settings::exposure, -2.0f, 2.0f},
     {&Settings::contrast, 0.5f, 1.5f},
@@ -55,18 +64,16 @@ constexpr Limit kLimits[] = {
     {&Settings::fsr_sharpness, 0.0f, 1.0f},
     {&Settings::fsr_grain, 0.0f, 1.0f},
 
+    {&Settings::wet_roads_amount, 0.0f, 1.0f},
+    {&Settings::wet_roads_ripple, 0.0f, 1.0f},
+    {&Settings::wet_roads_gloss, 0.0f, 1.0f},
+    {&Settings::wet_roads_darkening, 0.0f, 1.0f},
+    {&Settings::wet_roads_floor, 0.0f, 1.0f},
     {&Settings::scene_observer_interval_frames, 1.0f, 600.0f},
     {&Settings::scene_observer_log_seconds, 0.0f, 3600.0f},
     {&Settings::condition_time_constant_seconds, 1.0f, 1800.0f},
     {&Settings::condition_log_seconds, 0.0f, 3600.0f},
     {&Settings::condition_minimum_dynamic_range, 0.0f, 255.0f},
-
-    {&Settings::condition_sun_temperature, 3000.0f, 9000.0f},
-    {&Settings::condition_rain_temperature, 3000.0f, 9000.0f},
-    {&Settings::condition_night_temperature, 3000.0f, 9000.0f},
-    {&Settings::condition_sun_tint, -1.0f, 1.0f},
-    {&Settings::condition_rain_tint, -1.0f, 1.0f},
-    {&Settings::condition_night_tint, -1.0f, 1.0f},
 };
 
 struct OrderedPair {
