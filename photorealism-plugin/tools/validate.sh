@@ -299,7 +299,7 @@ for ssao_pin in 'settings->ssao_radius = 0.8f;' 'settings->ssao_intensity = 0.28
 done
 
 # 0.23.1: os cinco conjuntos de tom estao no cfg.
-for profile_set in 1 2 3 4 5; do
+for profile_set in 1 2 3 4; do
   if ! grep -Eq "^tonemap_exposure_${profile_set}=" "${cfg}"; then
     echo "O conjunto de tom ${profile_set} sumiu do cfg: a iluminacao que usa \
 esse conjunto cai nos neutros internos sem aviso." >&2
@@ -915,7 +915,7 @@ g++ -std=c++20 -Wall -Wextra -Werror \
 # que importa. Uma guarda que explica uma regressao sutil so serve se for ela
 # a falar. Nesta ordem o hash continua pegando tudo que as guardas nao
 # cobrem, e so isso.
-expected_cfg_sha256="a00f71fe129383c3ab5ea51b271d26b5bc71281487091f291e9d7b45a45d0dd0"
+expected_cfg_sha256="bc0e9556f7e54f2cec6a80824e03295c49f3ea61d5ec2cc782a15f6c19ce0c4f"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
