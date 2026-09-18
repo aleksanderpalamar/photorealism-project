@@ -16,7 +16,8 @@ float photorealism_luminance(float3 color)
 
 bool photorealism_is_road(uint4 material)
 {
-    return material.y == (uint)photorealism_mask.x;
+    uint surface_class = (material.w >> 8) & 0xffu;
+    return material.y == (uint)photorealism_mask.x && surface_class == 0x1fu;
 }
 
 float3 photorealism_view_position(float2 pixel, float view_depth)
