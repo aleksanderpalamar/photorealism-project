@@ -4,6 +4,33 @@
 
 namespace photorealism {
 
+namespace {
+
+void capture_pixel_constants(ID3D11DeviceContext* context, SavedState* state) {
+    context->QueryInterface(
+        IID_ID3D11DeviceContext1,
+        reinterpret_cast<void**>(&state->pixel_context1));
+    if (state->pixel_context1 == nullptr) {
+        context->PSGetConstantBuffers(0, 1, &state->pixel_constant_buffer);
+        return;
+    }
+    state->pixel_context1->PSGetConstantBuffers1(
+        0, 1, &state->pixel_constant_buffer,
+        &state->pixel_first_constant, &state->pixel_constant_count);
+}
+
+void restore_pixel_constants(ID3D11DeviceContext* context, SavedState* state) {
+    if (state->pixel_context1 == nullptr) {
+        context->PSSetConstantBuffers(0, 1, &state->pixel_constant_buffer);
+        return;
+    }
+    state->pixel_context1->PSSetConstantBuffers1(
+        0, 1, &state->pixel_constant_buffer,
+        &state->pixel_first_constant, &state->pixel_constant_count);
+}
+
+}
+
 void capture_state(ID3D11DeviceContext* context, SavedState* state) {
     context->OMGetRenderTargets(
         D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT,
@@ -26,7 +53,7 @@ void capture_state(ID3D11DeviceContext* context, SavedState* state) {
     context->VSGetShaderResources(0, 1, &state->vertex_resource);
     context->PSGetShaderResources(0, 4, state->pixel_resources);
     context->PSGetSamplers(0, 2, state->pixel_samplers);
-    context->PSGetConstantBuffers(0, 1, &state->pixel_constant_buffer);
+    capture_pixel_constants(context, state);
     context->CSGetShader(&state->compute_shader, nullptr, nullptr);
     context->CSGetShaderResources(0, 1, &state->compute_resource);
     context->CSGetUnorderedAccessViews(0, 1, &state->compute_access);
@@ -55,7 +82,7 @@ void restore_state(ID3D11DeviceContext* context, SavedState* state) {
     context->VSSetShaderResources(0, 1, &state->vertex_resource);
     context->PSSetShaderResources(0, 4, state->pixel_resources);
     context->PSSetSamplers(0, 2, state->pixel_samplers);
-    context->PSSetConstantBuffers(0, 1, &state->pixel_constant_buffer);
+    restore_pixel_constants(context, state);
     context->CSSetShader(state->compute_shader, nullptr, 0);
     context->CSSetShaderResources(0, 1, &state->compute_resource);
     context->CSSetUnorderedAccessViews(
@@ -83,6 +110,7 @@ void restore_state(ID3D11DeviceContext* context, SavedState* state) {
         safe_release(sampler);
     }
     safe_release(state->pixel_constant_buffer);
+    safe_release(state->pixel_context1);
     safe_release(state->compute_shader);
     safe_release(state->compute_resource);
     safe_release(state->compute_access);

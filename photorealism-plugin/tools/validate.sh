@@ -2175,6 +2175,17 @@ g++ -std=c++20 -Wall -Wextra -Werror \
   -o "${pre_tone_test}"
 "${pre_tone_test}"
 
+if [[ "${PHOTOREALISM_WINDOWS_TESTS:-0}" == "1" ]]; then
+  device_state_range_test="/tmp/photorealism-device-state-range-test.exe"
+  "${ZIG_BIN:-zig}" c++ -target x86_64-windows-gnu -std=c++20 -O2 \
+    -Wall -Wextra -Werror -Wno-nullability-completeness \
+    -DUNICODE -D_UNICODE -DWIN32_LEAN_AND_MEAN -DNOMINMAX \
+    "${project_dir}/tests/device_state_range_test.cpp" \
+    "${project_dir}/src/postprocess/device_state.cpp" \
+    -o "${device_state_range_test}" -ld3d11 -ldxgi
+  WINEDEBUG=-all "${WINE_BIN:-wine}" "${device_state_range_test}"
+fi
+
 for effect_hook in hooked_set_render_targets hooked_set_render_targets_and_uavs; do
   hook_body="$(awk "/^void STDMETHODCALLTYPE ${effect_hook}\\(/,/^}/" \
     "${project_dir}/src/hooks/context_hooks.cpp")"
