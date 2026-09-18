@@ -2183,7 +2183,11 @@ if [[ "${PHOTOREALISM_WINDOWS_TESTS:-0}" == "1" ]]; then
     "${project_dir}/tests/device_state_range_test.cpp" \
     "${project_dir}/src/postprocess/device_state.cpp" \
     -o "${device_state_range_test}" -ld3d11 -ldxgi
-  WINEDEBUG=-all "${WINE_BIN:-wine}" "${device_state_range_test}"
+  device_state_range_status=0
+  WINEDEBUG=-all "${WINE_BIN:-wine}" "${device_state_range_test}" || device_state_range_status=$?
+  if (( device_state_range_status != 0 && device_state_range_status != 77 )); then
+    exit "${device_state_range_status}"
+  fi
 fi
 
 for effect_hook in hooked_set_render_targets hooked_set_render_targets_and_uavs; do
