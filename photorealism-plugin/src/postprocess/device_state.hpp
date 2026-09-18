@@ -1,6 +1,6 @@
 #pragma once
 
-#include <d3d11.h>
+#include <d3d11_1.h>
 
 namespace photorealism {
 
@@ -28,6 +28,9 @@ struct SavedState {
     ID3D11ShaderResourceView* pixel_resources[4] = {};
     ID3D11SamplerState* pixel_samplers[2] = {};
     ID3D11Buffer* pixel_constant_buffer = nullptr;
+    ID3D11DeviceContext1* pixel_context1 = nullptr;
+    UINT pixel_first_constant = 0;
+    UINT pixel_constant_count = 0;
     ID3D11ComputeShader* compute_shader = nullptr;
     ID3D11ShaderResourceView* compute_resource = nullptr;
     ID3D11UnorderedAccessView* compute_access = nullptr;
