@@ -50,9 +50,13 @@ float bilateral_visibility(float2 uv)
         float2 tap_uv = (base + offset + 0.5) * VisibilityTexelSize;
         float2 bilinear = lerp(1.0 - fraction, fraction, offset);
         float similarity = exp(-abs(linear_distance(tap_uv) - center) / max(0.05 * center, 0.01));
-        float weight = bilinear.x * bilinear.y * similarity + 0.0001;
+        float weight = bilinear.x * bilinear.y * similarity;
         total += VisibilityTexture.SampleLevel(PointSampler, tap_uv, 0.0) * weight;
         weights += weight;
+    }
+    if (weights <= 0.00001)
+    {
+        return 1.0;
     }
     return total / weights;
 }

@@ -385,7 +385,7 @@ if [[ "${actual_ssao_occlusion_sha256}" != "${expected_ssao_occlusion_sha256}" ]
 fi
 
 ssao_compose_shader="${project_dir}/shaders/ssao_compose.hlsl"
-expected_ssao_compose_sha256="802d887b66a0d17bbcc7df8ea2f70ac3df1d45d0952243dcee20626aff397adf"
+expected_ssao_compose_sha256="1e2db7ca11fe884cb35a44e2ff8f4093ef65388add8f572f9aa3771945570fc5"
 actual_ssao_compose_sha256="$(sha256sum "${ssao_compose_shader}" | awk '{print $1}')"
 if [[ "${actual_ssao_compose_sha256}" != "${expected_ssao_compose_sha256}" ]]; then
   echo "Shader de composicao SSAO aprovado foi alterado: ${actual_ssao_compose_sha256}" >&2
