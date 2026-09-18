@@ -19,6 +19,8 @@ void SceneObserver::configure(
 
     first_measurement_logged_ = false;
     if (!enabled_) {
+        sampler_.release();
+        frame_counter_ = 0u;
         latest_ = SceneFeatures{};
     }
 }
