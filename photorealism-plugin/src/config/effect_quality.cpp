@@ -82,6 +82,10 @@ bool fxaa_enabled(const Settings& settings) {
     return switched_on(settings.profile_fxaa);
 }
 
+bool shader_patch_active(const Settings& settings) {
+    return settings.enabled && settings.shader_patch_enabled;
+}
+
 float interior_light_strength(const Settings& settings) {
     if (!switched_on(settings.profile_use_interior_lighting)) {
         return 0.0f;

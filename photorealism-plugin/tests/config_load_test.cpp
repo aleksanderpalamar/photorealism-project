@@ -151,6 +151,27 @@ void module_switches_are_read() {
     assert(!load_from_text("[module.bloom.0.17.0]\nenabled=nao\n").bloom_enabled);
 }
 
+void the_shader_patch_switch_is_read() {
+    assert(load_from_text("").shader_patch_enabled);
+    assert(load_from_text(
+               "[module.shader_patch.0.25.4]\n"
+               "enabled=true\n")
+               .shader_patch_enabled);
+    assert(!load_from_text(
+                "[module.shader_patch.0.25.4]\n"
+                "enabled=false\n")
+                .shader_patch_enabled);
+
+    const Settings off = load_from_text(
+        "[module.shader_patch.0.25.4]\n"
+        "enabled=false\n"
+        "[module.wet_surface.0.25.0]\n"
+        "enabled=true\n");
+    assert(!off.shader_patch_enabled);
+    assert(off.wet_surface_enabled);
+    assert(off.enabled);
+}
+
 void an_empty_file_equals_the_internal_defaults() {
     const Settings empty = load_from_text("");
     const Settings internal = load_missing_file();
@@ -167,6 +188,7 @@ int main() {
     values_out_of_range_are_clamped();
     whitespace_and_comments_are_tolerated();
     module_switches_are_read();
+    the_shader_patch_switch_is_read();
     an_empty_file_equals_the_internal_defaults();
     std::printf("config_load_test ok\n");
     return 0;

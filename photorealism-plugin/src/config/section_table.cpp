@@ -53,6 +53,8 @@ const SectionSpec kSections[] = {
      count_of(kBloomFields), nullptr},
     {"module.fsr.0.21.0", &Settings::fsr_enabled, kFsrFields,
      count_of(kFsrFields), nullptr},
+    {"module.shader_patch.0.25.4", &Settings::shader_patch_enabled, nullptr, 0,
+     nullptr},
     {"module.wet_surface.0.25.0", &Settings::wet_surface_enabled,
      kWetSurfaceFields, count_of(kWetSurfaceFields), nullptr},
     {"module.scene_observer.0.18.0", &Settings::scene_observer_enabled,
