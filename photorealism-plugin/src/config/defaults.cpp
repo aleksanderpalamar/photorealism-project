@@ -101,6 +101,7 @@ Settings reference_settings() {
     settings.fsr_sharpness = 0.60f;
     settings.fsr_grain = 0.30f;
 
+    settings.shader_patch_enabled = true;
     settings.wet_surface_enabled = true;
     settings.wet_roads_amount = 0.0f;
     settings.wet_roads_ripple = 0.5f;

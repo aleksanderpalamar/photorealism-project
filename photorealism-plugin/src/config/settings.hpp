@@ -98,6 +98,8 @@ struct Settings {
     float fsr_sharpness;
     float fsr_grain;
 
+    bool shader_patch_enabled;
+
     bool wet_surface_enabled;
     float wet_roads_amount;
     float wet_roads_ripple;
