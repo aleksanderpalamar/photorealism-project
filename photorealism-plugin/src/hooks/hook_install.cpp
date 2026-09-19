@@ -1,6 +1,9 @@
 #include "hook.hpp"
 
+#include "../config/config.hpp"
+#include "../config/effect_quality.hpp"
 #include "../runtime.hpp"
+#include "../shader_patch/shader_patch.hpp"
 #include "context_hooks.hpp"
 #include "device_probe.hpp"
 #include "hook_audit.hpp"
@@ -144,6 +147,28 @@ void log_partial_failure(const InstallReport& report) {
         report.clear_depth_stencil ? "ok" : "falha");
 }
 
+void arm_shader_patch(ID3D11Device* device, InstallReport* report) {
+    Settings settings = {};
+    load_settings(&settings);
+    shader_patch::set_enabled(shader_patch_active(settings));
+
+    if (!shader_patch::is_enabled()) {
+        report->pixel_shader = true;
+        log_message(
+            "Troca de shader desligada no cfg: CreatePixelShader nao e "
+            "interceptado e os shaders do jogo ficam intactos.");
+        return;
+    }
+
+    report->pixel_shader = shader_patch::install_device_shader_hooks(device);
+    if (report->pixel_shader) {
+        return;
+    }
+    log_message(
+        "Patch de shader: nao foi possivel interceptar CreatePixelShader; "
+        "os shaders do jogo ficam como estao.");
+}
+
 }
 
 bool install_swap_chain_hooks() {
@@ -160,13 +185,7 @@ bool install_swap_chain_hooks() {
     patch_present(probe.swap_chain(), &report);
     patch_present1(probe.swap_chain(), &report);
     patch_context(probe.context(), &report);
-    report.pixel_shader =
-        shader_patch::install_device_shader_hooks(probe.device());
-    if (!report.pixel_shader) {
-        log_message(
-            "Patch de shader: nao foi possivel interceptar CreatePixelShader; "
-            "os shaders do jogo ficam como estao.");
-    }
+    arm_shader_patch(probe.device(), &report);
 
     if (!report_is_complete(report)) {
         log_partial_failure(report);

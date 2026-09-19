@@ -325,6 +325,23 @@ if ! grep -Fqx '[module.shader_patch.0.25.4]' "${cfg}"; then
 como desligar so ela, sem derrubar o plugin inteiro." >&2
   exit 1
 fi
+
+# 0.25.5: a porteira da troca de shader nasce FECHADA e e' armada com a config
+# antes de o hook ser instalado. Com g_enabled{true} o hook subia no DeviceProbe,
+# antes de load_settings(), e a chave do cfg so valia no primeiro Present -- que
+# num crash de inicializacao nunca chega.
+if ! grep -Fq 'std::atomic<bool> g_enabled{false};' \
+  "${project_dir}/src/shader_patch/shader_patch.cpp"; then
+  echo "A porteira da troca de shader deixou de nascer fechada: o hook de \
+CreatePixelShader volta a subir antes de a config ser lida." >&2
+  exit 1
+fi
+if ! grep -Fq 'shader_patch::set_enabled(shader_patch_active(settings));' \
+  "${project_dir}/src/hooks/hook_install.cpp"; then
+  echo "A instalacao do hook parou de armar a porteira pela config: a chave \
+do cfg volta a nao impedir a interceptacao." >&2
+  exit 1
+fi
 if grep -Eq '^intensity=0(\.0+)?$' "${cfg}"; then
   echo "intensity do bloom em zero: a piramide inteira roda todo frame e o \
 resultado e multiplicado por zero. O log diria 'ativo' e a tela nao mudaria -- \

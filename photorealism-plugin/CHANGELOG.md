@@ -1,5 +1,47 @@
 # Changelog
 
+## Pacote 0.25.5 - 2026-09-19
+
+**Dois defeitos da revisao automatica do PR #11, os dois na chave que a 0.25.4
+acabou de criar.** Nenhum era falso positivo, e o primeiro anulava o proposito da
+chave.
+
+### A chave nao impedia o hook
+
+`install_device_shader_hooks()` roda no `DeviceProbe`, **antes** de
+`load_settings()`. Com `g_enabled{true}` como padrao, o hook de
+`CreatePixelShader` subia sempre, e a chave do cfg so era aplicada no primeiro
+`Present` -- que num crash de inicializacao nunca chega. Resultado: a chave
+desligava o *patching*, nunca o *hooking*, e por isso nao servia para o unico
+teste para o qual foi feita.
+
+- `g_enabled` passa a nascer **fechado**. O modo a prova de falha vira nao
+  reescrever shader, em vez de reescrever;
+- a instalacao dos hooks passa por `arm_shader_patch()`, que le a config, arma a
+  porteira e **so entao** instala -- ou registra no log que nao instalou;
+- com a chave desligada, `CreatePixelShader` nao e interceptado: a vtable do
+  device do jogo fica intocada.
+
+### Ligar pelo menu nao valia para o que ja existe
+
+A troca so afeta shaders criados **depois** dela. Ligar no meio da sessao deixava
+o resultado dependente da ordem de carga dos objetos: o que ja estava carregado
+ficava sem efeito, o que viesse depois ganhava. Com a porteira fechada no inicio
+o hook nem existe, entao ligar no menu nao faz nada ate o proximo inicio, e o
+rotulo passa a dizer isso: **"Troca de shader (ligar no proximo inicio)"**.
+
+Desligar continua valendo na hora: o hook passa a repassar direto e as constantes
+vao a neutro.
+
+### Verificacao
+
+- `validate.sh` ganhou duas guardas de fonte: a porteira nasce fechada, e a
+  instalacao arma pela config antes de instalar.
+- Build e validate completos.
+
+**Ainda nao rodou no jogo.**
+
+
 ## Pacote 0.25.4 - 2026-09-19
 
 **A troca de shader ganha chave propria.** Ate aqui ela era o unico subsistema

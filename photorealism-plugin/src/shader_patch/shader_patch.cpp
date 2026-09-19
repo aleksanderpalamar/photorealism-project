@@ -25,7 +25,7 @@ using CompileFunction = decltype(&D3DCompile);
 constexpr UINT kCompileFlags =
     D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_OPTIMIZATION_LEVEL3;
 
-std::atomic<bool> g_enabled{true};
+std::atomic<bool> g_enabled{false};
 std::mutex g_mutex;
 PatchStatistics g_statistics;
 std::unordered_map<std::uint64_t, std::vector<std::uint8_t>> g_memory_cache;
