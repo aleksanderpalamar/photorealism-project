@@ -39,6 +39,7 @@ SsaoQuality ssao_quality(const Settings& settings);
 unsigned bloom_level_limit(const Settings& settings);
 float ssao_strength(const Settings& settings);
 bool fxaa_enabled(const Settings& settings);
+bool shader_patch_active(const Settings& settings);
 float interior_light_strength(const Settings& settings);
 
 }

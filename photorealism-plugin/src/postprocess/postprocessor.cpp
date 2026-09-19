@@ -611,7 +611,7 @@ public:
             return;
         }
         g_pass_effects_wanted.store(pass_effects_wanted(), std::memory_order_release);
-        shader_patch::set_enabled(settings_.enabled);
+        shader_patch::set_enabled(shader_patch_active(settings_));
         if (!settings_.enabled) {
             shader_patch::neutralize_surface_constants();
             return;
@@ -635,6 +635,10 @@ public:
 
     void refresh_surface_constants() {
         if (surface_width_ == 0 || surface_height_ == 0) {
+            return;
+        }
+        if (!settings_.shader_patch_enabled) {
+            shader_patch::neutralize_surface_constants();
             return;
         }
         shader_patch::update_surface_constants(

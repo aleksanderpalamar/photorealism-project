@@ -86,10 +86,29 @@ void switches_turn_effects_off() {
     assert(ssao_strength(settings) == 0.0f);
 }
 
+void the_shader_patch_needs_both_switches() {
+    Settings settings = neutral();
+
+    settings.enabled = true;
+    settings.shader_patch_enabled = true;
+    assert(shader_patch_active(settings));
+
+    settings.shader_patch_enabled = false;
+    assert(!shader_patch_active(settings));
+
+    settings.enabled = false;
+    settings.shader_patch_enabled = true;
+    assert(!shader_patch_active(settings));
+
+    settings.shader_patch_enabled = false;
+    assert(!shader_patch_active(settings));
+}
+
 }
 
 int main() {
     levels_round_and_clamp();
+    the_shader_patch_needs_both_switches();
     anti_aliasing_follows_the_list();
     global_quality_never_touches_ssao();
     only_the_ssao_page_drives_ssao_detail();

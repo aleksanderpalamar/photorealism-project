@@ -1,5 +1,96 @@
 # Changelog
 
+## Pacote 0.25.5 - 2026-09-19
+
+**Dois defeitos da revisao automatica do PR #11, os dois na chave que a 0.25.4
+acabou de criar.** Nenhum era falso positivo, e o primeiro anulava o proposito da
+chave.
+
+### A chave nao impedia o hook
+
+`install_device_shader_hooks()` roda no `DeviceProbe`, **antes** de
+`load_settings()`. Com `g_enabled{true}` como padrao, o hook de
+`CreatePixelShader` subia sempre, e a chave do cfg so era aplicada no primeiro
+`Present` -- que num crash de inicializacao nunca chega. Resultado: a chave
+desligava o *patching*, nunca o *hooking*, e por isso nao servia para o unico
+teste para o qual foi feita.
+
+- `g_enabled` passa a nascer **fechado**. O modo a prova de falha vira nao
+  reescrever shader, em vez de reescrever;
+- a instalacao dos hooks passa por `arm_shader_patch()`, que le a config, arma a
+  porteira e **so entao** instala -- ou registra no log que nao instalou;
+- com a chave desligada, `CreatePixelShader` nao e interceptado: a vtable do
+  device do jogo fica intocada.
+
+### Ligar pelo menu nao valia para o que ja existe
+
+A troca so afeta shaders criados **depois** dela. Ligar no meio da sessao deixava
+o resultado dependente da ordem de carga dos objetos: o que ja estava carregado
+ficava sem efeito, o que viesse depois ganhava. Com a porteira fechada no inicio
+o hook nem existe, entao ligar no menu nao faz nada ate o proximo inicio, e o
+rotulo passa a dizer isso: **"Troca de shader (ligar no proximo inicio)"**.
+
+Desligar continua valendo na hora: o hook passa a repassar direto e as constantes
+vao a neutro.
+
+### Verificacao
+
+- `validate.sh` ganhou duas guardas de fonte: a porteira nasce fechada, e a
+  instalacao arma pela config antes de instalar.
+- Build e validate completos.
+
+**Ainda nao rodou no jogo.**
+
+
+## Pacote 0.25.4 - 2026-09-19
+
+**A troca de shader ganha chave propria.** Ate aqui ela era o unico subsistema
+sem desligamento independente: so saia junto com `[plugin] enabled=false`, que
+derruba tambem tom, bloom, SSAO, FSR e menu. E justamente o subsistema mais novo
+e o unico que nunca rodou validado no jogo.
+
+### O que muda
+
+- nova secao `[module.shader_patch.0.25.4]` com `enabled=`, e o botao
+  **"Troca de shader"** no topo da pagina Objetos do Ctrl+P, que e onde ela e o
+  mecanismo por tras de Superficie, Estradas e Vegetacao;
+- a regra de ativacao vira `shader_patch_active()` em `effect_quality.hpp`,
+  junto das outras regras derivadas de `Settings`: a troca exige **as duas**
+  chaves, a geral e a do modulo;
+- com o modulo desligado, `refresh_surface_constants()` sobe constantes neutras
+  em vez das do perfil, entao um shader ja trocado em cache para de aplicar
+  efeito sem precisar de reinicio;
+- o padrao continua `true`: nenhuma imagem muda em quem nao mexer na chave.
+
+### Por que agora
+
+O ETS2 atualizou de 1.60 para 1.61 e o jogo passou a crashar na maquina do
+usuario. O levantamento em cima dos logs mostrou tres variaveis movendo juntas
+-- plugin instalado, prefixo Proton mudando de Windows 11 para Windows 10, e
+mods `.scs` de 1.60 marcados incompativeis. Nao da para separar isso sem poder
+desligar a troca de shader sozinha.
+
+Vale registrar o que o 1.61 fez com a inspecao de G-buffer, medido no log do
+proprio plugin: **43 shaders trocados no 1.60, 14 no 1.61**. A calibracao da
+0.25.0 (mascara de estrada `o3.y == 32`, bind de quatro alvos
+`f10/f10/f10/f12`) foi medida no 1.60 e nao foi remedida.
+
+O reset das opcoes graficas que o usuario relatou **nao e o plugin**: e o safe
+mode do ETS2, que o proprio `game.log.txt` anuncia com "It looks like the game
+did crash during last startup, triggering safe mode" e que zera as opcoes.
+
+### Verificacao
+
+- `tests/effect_quality_test.cpp`: a troca exige as duas chaves -- as quatro
+  combinacoes de geral x modulo estao cobertas.
+- `tests/config_load_test.cpp`: a secao e lida ligada e desligada, o padrao sem
+  secao e ligado, e desligar a troca nao mexe em `wet_surface` nem na chave geral.
+- `validate.sh` ganhou a guarda da secao no cfg, no molde da guarda do bloom.
+- Build, validate e package.
+
+**Ainda nao rodou no jogo.**
+
+
 ## Pacote 0.25.3 - 2026-09-17
 
 **Cinco defeitos apontados pela revisao automatica do PR #6.** Todos se

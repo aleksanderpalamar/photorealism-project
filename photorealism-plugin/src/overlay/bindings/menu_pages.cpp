@@ -78,6 +78,10 @@ constexpr MenuRow kColorRows[] = {
 };
 
 constexpr MenuRow kObjectRows[] = {
+    setting_row(flag_toggle(
+        "Troca de shader (ligar no proximo inicio)",
+        &Settings::shader_patch_enabled)),
+    separator_row(),
     link_row("Superficie", kPageSurface),
     link_row("Estradas", kPageRoads),
     link_row("Vegetacao", kPageVegetation),

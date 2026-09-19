@@ -317,6 +317,31 @@ if ! grep -Fqx '[module.bloom.0.17.0]' "${cfg}"; then
 internos de config.cpp sem ninguem notar." >&2
   exit 1
 fi
+
+# 0.25.4: ate a 0.25.3 a troca de shader so saia junto com a chave geral, e era
+# o unico subsistema sem desligamento proprio.
+if ! grep -Fqx '[module.shader_patch.0.25.4]' "${cfg}"; then
+  echo "Secao da troca de shader 0.25.4 sumiu do cfg: volta a nao existir \
+como desligar so ela, sem derrubar o plugin inteiro." >&2
+  exit 1
+fi
+
+# 0.25.5: a porteira da troca de shader nasce FECHADA e e' armada com a config
+# antes de o hook ser instalado. Com g_enabled{true} o hook subia no DeviceProbe,
+# antes de load_settings(), e a chave do cfg so valia no primeiro Present -- que
+# num crash de inicializacao nunca chega.
+if ! grep -Fq 'std::atomic<bool> g_enabled{false};' \
+  "${project_dir}/src/shader_patch/shader_patch.cpp"; then
+  echo "A porteira da troca de shader deixou de nascer fechada: o hook de \
+CreatePixelShader volta a subir antes de a config ser lida." >&2
+  exit 1
+fi
+if ! grep -Fq 'shader_patch::set_enabled(shader_patch_active(settings));' \
+  "${project_dir}/src/hooks/hook_install.cpp"; then
+  echo "A instalacao do hook parou de armar a porteira pela config: a chave \
+do cfg volta a nao impedir a interceptacao." >&2
+  exit 1
+fi
 if grep -Eq '^intensity=0(\.0+)?$' "${cfg}"; then
   echo "intensity do bloom em zero: a piramide inteira roda todo frame e o \
 resultado e multiplicado por zero. O log diria 'ativo' e a tela nao mudaria -- \
@@ -915,7 +940,7 @@ g++ -std=c++20 -Wall -Wextra -Werror \
 # que importa. Uma guarda que explica uma regressao sutil so serve se for ela
 # a falar. Nesta ordem o hash continua pegando tudo que as guardas nao
 # cobrem, e so isso.
-expected_cfg_sha256="bc0e9556f7e54f2cec6a80824e03295c49f3ea61d5ec2cc782a15f6c19ce0c4f"
+expected_cfg_sha256="03ea86611b67e46dadeba14fb0a00807035de60ecc25234bef4df42f744550fa"
 actual_cfg_sha256="$(sha256sum "${cfg}" | awk '{print $1}')"
 if [[ "${actual_cfg_sha256}" != "${expected_cfg_sha256}" ]]; then
   echo "Configuracao consolidada foi alterada: ${actual_cfg_sha256}" >&2
